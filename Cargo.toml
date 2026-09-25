@@ -1,0 +1,26 @@
+[package]
+name = "rust-ui"
+version = "0.1.0"
+edition = "2021"
+description = "A web-inspired, highly customizable retained/declarative UI framework for Rust desktop apps"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "rust_ui"
+
+[features]
+default = ["window", "bundled-fonts", "clipboard"]
+window = ["dep:winit", "dep:softbuffer"]
+bundled-fonts = []
+clipboard = ["dep:arboard"]
+
+[dependencies]
+taffy = "0.14"
+cosmic-text = "0.19"
+tiny-skia = "0.12"
+winit = { version = "0.30", optional = true }
+softbuffer = { version = "0.4", optional = true }
+arboard = { version = "3", optional = true, default-features = false }
+
+[profile.release]
+debug = "line-tables-only"

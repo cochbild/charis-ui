@@ -124,6 +124,31 @@ pub(crate) fn set_window_info(i: WindowInfo) {
     WINDOW_INFO.with(|w| w.set(i));
 }
 
+/// What a window-space point is, from the OS window manager's perspective
+/// (used for native frameless chrome: snap, system menu, Snap Layouts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChromeHit {
+    /// Normal app content.
+    Client,
+    /// Title-bar drag area.
+    Caption,
+    /// The maximize/restore button.
+    Maximize,
+}
+
+/// A snapshot of window-chrome regions, published after every frame.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChromeMap {
+    /// Back-to-front regions in logical pixels; later entries win.
+    pub regions: Vec<(Rect, ChromeHit)>,
+}
+
+impl ChromeMap {
+    pub fn hit(&self, p: Point) -> ChromeHit {
+        self.regions.iter().rev().find(|(r, _)| r.contains(p)).map(|(_, h)| *h).unwrap_or(ChromeHit::Client)
+    }
+}
+
 /// Mouse buttons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
@@ -474,6 +499,11 @@ impl<A: App> Runtime<A> {
     /// Last known pointer position.
     pub fn pointer_pos(&self) -> Option<Point> {
         self.pointer
+    }
+
+    /// The theme used for the last frame.
+    pub fn current_theme(&self) -> &Theme {
+        &self.theme
     }
 
     /// Window size in logical pixels.
@@ -2010,6 +2040,47 @@ impl<A: App> Runtime<A> {
             self.queue.push(h(v));
         }
         self.dirty = true;
+    }
+
+    /// Window-chrome regions of the current frame (drag areas, maximize
+    /// button, and interactive elements inside them).
+    pub fn chrome_map(&self) -> ChromeMap {
+        let mut regions = Vec::new();
+        for &i in &self.frame.order {
+            let n = &self.frame.nodes[i];
+            if !n.pointer_events {
+                continue;
+            }
+            let r = match n.clip {
+                Some(c) => n.rect.intersect(&c),
+                None => n.rect,
+            };
+            if r.is_empty() {
+                continue;
+            }
+            let h = &n.handlers;
+            let kind = match n.behavior {
+                Behavior::WindowDrag => ChromeHit::Caption,
+                Behavior::WindowControl(WindowControl::ToggleMaximize) => ChromeHit::Maximize,
+                Behavior::None
+                    if h.click.is_none()
+                        && h.double_click.is_none()
+                        && h.drag.is_none()
+                        && h.context_menu.is_none()
+                        && h.drop_target.is_none()
+                        && !n.focusable
+                        && !matches!(n.content, NodeContent::Input(_)) =>
+                {
+                    continue
+                }
+                _ => ChromeHit::Client,
+            };
+            regions.push((r, kind));
+        }
+        // Content outside any caption doesn't need entries: the default is Client.
+        let first_caption = regions.iter().position(|r| r.1 != ChromeHit::Client).unwrap_or(regions.len());
+        regions.drain(..first_caption);
+        ChromeMap { regions }
     }
 
     /// Programmatically scroll a scroll container (by `.id`) to an offset.

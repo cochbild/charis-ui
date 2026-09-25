@@ -59,6 +59,8 @@ pub mod gpu;
 pub mod headless;
 pub mod icons;
 pub mod paint;
+#[cfg(feature = "window")]
+mod platform;
 pub mod runtime;
 pub mod scene;
 pub mod style;
@@ -74,7 +76,7 @@ pub use element::*;
 pub use geometry::{Axis, Point, Rect, Size};
 pub use icons::Icon;
 pub use paint::Canvas;
-pub use runtime::{window_info, App, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
+pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
 pub use theme::{theme, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;

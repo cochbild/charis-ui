@@ -89,6 +89,9 @@ struct Shell<A: App> {
     clipboard: Option<arboard::Clipboard>,
     error: Option<String>,
     gpu_failed: bool,
+    chrome: crate::platform::SharedChrome,
+    native_chrome: bool,
+    dark: Option<bool>,
 }
 
 /// Open a window and run the app until it is closed.
@@ -107,6 +110,9 @@ pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error
         clipboard: arboard::Clipboard::new().ok(),
         error: None,
         gpu_failed: false,
+        chrome: Default::default(),
+        native_chrome: false,
+        dark: None,
     };
     event_loop.run_app(&mut shell)?;
     match shell.error {
@@ -256,6 +262,16 @@ impl<A: App> Shell<A> {
         }
         g.window.set_cursor(map_cursor(self.rt.cursor()));
         self.last_frame = Instant::now();
+        if self.native_chrome {
+            if let Ok(mut m) = self.chrome.lock() {
+                *m = self.rt.chrome_map();
+            }
+        }
+        let dark = self.rt.current_theme().dark;
+        if self.dark != Some(dark) {
+            self.dark = Some(dark);
+            crate::platform::set_dark_mode(&g.window, dark);
+        }
         if self.gpu_failed {
             self.gpu_failed = false;
             if let Some(g) = &mut self.gfx {
@@ -308,7 +324,9 @@ impl<A: App> ApplicationHandler for Shell<A> {
             .with_title(self.opts.title.clone())
             .with_inner_size(LogicalSize::new(self.opts.width as f64, self.opts.height as f64))
             .with_min_inner_size(LogicalSize::new(self.opts.min_width as f64, self.opts.min_height as f64))
-            .with_decorations(!self.opts.frameless)
+            // On Windows, frameless windows keep their native styles (for snap,
+            // shadow and resizing); the platform layer hides the frame.
+            .with_decorations(!self.opts.frameless || cfg!(windows))
             .with_resizable(self.opts.resizable);
         let window = match el.create_window(attrs) {
             Ok(w) => Arc::new(w),
@@ -319,6 +337,11 @@ impl<A: App> ApplicationHandler for Shell<A> {
             }
         };
         window.set_ime_allowed(true);
+        if self.opts.frameless && crate::platform::install_frameless(&window, self.chrome.clone()) {
+            self.native_chrome = true;
+            // The OS now handles edge resizing and dragging.
+            self.rt.frameless = false;
+        }
         let presenter = match Self::create_presenter(&window, true) {
             Ok(p) => p,
             Err(e) => {

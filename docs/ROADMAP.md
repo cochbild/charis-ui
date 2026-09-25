@@ -54,15 +54,15 @@ Each milestone ends with a tagged release, and each has exit criteria that can b
 ### M0: Release engineering
 
 - [ ] Final crate name, reserved on crates.io. `rust-ui`, `rui` and `rustui` are taken.
-- [ ] `LICENSE-MIT` and `LICENSE-APACHE` files, `CONTRIBUTING.md`, `CHANGELOG.md`, code of conduct.
+- [x] `LICENSE-MIT` and `LICENSE-APACHE` files. Still to do: `CONTRIBUTING.md`, `CHANGELOG.md`, code of conduct.
 - [ ] CI with GitHub Actions (**deferred to the end**):
   - fmt, clippy (`-D warnings`), and tests on Linux, Windows and macOS;
   - a feature matrix: `--no-default-features`, `gpu`, `serde`;
   - a minimum supported Rust version (MSRV) job;
   - `cargo doc` with `-D warnings`.
 - [ ] GPU parity test in CI using lavapipe (Linux) and WARP (Windows) (deferred along with CI).
-- [ ] Visual regression tests: golden PNG screenshots per theme, with a tolerance.
-- [ ] No panics in library code on user input: remove or justify every `unwrap`/`expect`, and
+- [x] Visual regression tests: golden PNG screenshots per theme, with a tolerance.
+- [x] No panics in library code on user input: remove or justify every `unwrap`/`expect`, and
       handle GPU errors (device lost, surface lost) by recovering or falling back to the CPU.
 
 **Exit:** green CI on 3 operating systems × the feature matrix, and a published 0.2 under the
@@ -70,11 +70,12 @@ final name.
 
 ### M1: Platform correctness
 
-- [ ] Windows:
+- [x] Windows (implemented; awaiting QA on real hardware, see `docs/WINDOWS_QA.md`):
   - DWM frameless window with snap layouts and Aero shake;
   - hit testing for the custom title bar (maximize-button hover shows the Snap Layouts flyout);
   - rounded corners and shadow on Windows 11;
-  - Mica/Acrylic backdrop (optional).
+  - dark or light system menus that follow the theme.
+- [ ] Windows: Mica/Acrylic backdrop (optional).
 - [ ] macOS:
   - transparent title bar with traffic lights positioned by the app;
   - native full-screen;

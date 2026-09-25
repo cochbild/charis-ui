@@ -70,6 +70,16 @@ impl<A: App> Headless<A> {
         self.rt.pixmap().ok_or("no frame")?.save_png(path).map_err(|e| e.to_string())
     }
 
+    /// Render the current frame with the GPU backend and save it as PNG.
+    /// Returns an error if no GPU adapter is available.
+    #[cfg(feature = "gpu")]
+    pub fn save_png_gpu(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        let mut gpu = crate::gpu::GpuRenderer::headless().ok_or("no GPU adapter available")?;
+        self.rt.render_scene();
+        let pm = self.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).ok_or("no frame")?;
+        pm.save_png(path).map_err(|e| e.to_string())
+    }
+
     /// RGBA pixel at logical coordinates (for assertions).
     pub fn pixel(&self, x: f32, y: f32) -> [u8; 4] {
         let pm = self.rt.pixmap().expect("frame");

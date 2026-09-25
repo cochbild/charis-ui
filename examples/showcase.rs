@@ -1068,7 +1068,11 @@ fn main() {
         let mut h = Headless::new(app, 1440.0, 900.0, scale);
         h.settle();
         h.move_to(500.0, 300.0);
-        h.save_png(&out).expect("save");
+        if args.iter().any(|a| a == "--gpu") {
+            h.save_png_gpu(&out).expect("gpu render");
+        } else {
+            h.save_png(&out).expect("save");
+        }
         println!("saved {out}");
         return;
     }

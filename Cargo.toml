@@ -9,10 +9,11 @@ license = "MIT OR Apache-2.0"
 name = "rust_ui"
 
 [features]
-default = ["window", "bundled-fonts", "clipboard"]
+default = ["window", "gpu", "bundled-fonts", "clipboard"]
 window = ["dep:winit", "dep:softbuffer"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
+gpu = ["dep:wgpu", "dep:pollster"]
 
 [dependencies]
 taffy = "0.14"
@@ -21,4 +22,6 @@ tiny-skia = "0.12"
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
 arboard = { version = "3", optional = true, default-features = false }
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
 

@@ -1,7 +1,7 @@
 //! Native window shell built on winit + softbuffer.
 
 use std::num::NonZeroU32;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
@@ -64,10 +64,18 @@ impl WindowOptions {
     }
 }
 
+enum Presenter {
+    #[cfg(feature = "gpu")]
+    Gpu(Box<crate::gpu::GpuSurface>),
+    Cpu {
+        surface: softbuffer::Surface<Arc<Window>, Arc<Window>>,
+        _context: softbuffer::Context<Arc<Window>>,
+    },
+}
+
 struct Gfx {
-    window: Rc<Window>,
-    surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
-    _context: softbuffer::Context<Rc<Window>>,
+    window: Arc<Window>,
+    presenter: Presenter,
 }
 
 struct Shell<A: App> {
@@ -213,25 +221,55 @@ impl<A: App> Shell<A> {
         self.rt.maximized = g.window.is_maximized();
         crate::runtime::set_window_info(crate::runtime::WindowInfo { maximized: self.rt.maximized, focused: true });
         self.rt.resize(Size::new(size.width as f32 / scale, size.height as f32 / scale), scale);
-        let pm = self.rt.render();
-        if g.surface.resize(w, h).is_err() {
-            return;
-        }
-        let Ok(mut buf) = g.surface.buffer_mut() else { return };
-        let data = pm.data();
-        let pw = pm.width() as usize;
-        let ph = pm.height() as usize;
-        let (bw, bh) = (w.get() as usize, h.get() as usize);
-        for y in 0..bh.min(ph) {
-            let row = &data[y * pw * 4..(y * pw + pw.min(bw)) * 4];
-            let out = &mut buf[y * bw..y * bw + pw.min(bw)];
-            for (o, px) in out.iter_mut().zip(row.chunks_exact(4)) {
-                *o = (px[0] as u32) << 16 | (px[1] as u32) << 8 | px[2] as u32;
+        match &mut g.presenter {
+            #[cfg(feature = "gpu")]
+            Presenter::Gpu(gs) => {
+                self.rt.render_scene();
+                self.rt.with_scene(|scene, text| gs.present(scene, text));
+            }
+            Presenter::Cpu { surface, .. } => {
+                let pm = self.rt.render();
+                if surface.resize(w, h).is_err() {
+                    return;
+                }
+                let Ok(mut buf) = surface.buffer_mut() else { return };
+                let data = pm.data();
+                let pw = pm.width() as usize;
+                let ph = pm.height() as usize;
+                let (bw, bh) = (w.get() as usize, h.get() as usize);
+                for y in 0..bh.min(ph) {
+                    let row = &data[y * pw * 4..(y * pw + pw.min(bw)) * 4];
+                    let out = &mut buf[y * bw..y * bw + pw.min(bw)];
+                    for (o, px) in out.iter_mut().zip(row.chunks_exact(4)) {
+                        *o = (px[0] as u32) << 16 | (px[1] as u32) << 8 | px[2] as u32;
+                    }
+                }
+                let _ = buf.present();
             }
         }
-        let _ = buf.present();
         g.window.set_cursor(map_cursor(self.rt.cursor()));
         self.last_frame = Instant::now();
+    }
+
+    /// GPU by default; falls back to the CPU renderer when no adapter is
+    /// available or `RUI_RENDERER=cpu` is set.
+    fn create_presenter(window: &Arc<Window>) -> Result<Presenter, String> {
+        #[cfg(feature = "gpu")]
+        if std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
+            let size = window.inner_size();
+            if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height) {
+                if std::env::var("RUI_PROFILE").is_ok() {
+                    eprintln!("rust-ui: GPU renderer on {}", gs.renderer.adapter_name);
+                }
+                return Ok(Presenter::Gpu(Box::new(gs)));
+            }
+        }
+        let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
+        let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
+        if std::env::var("RUI_PROFILE").is_ok() {
+            eprintln!("rust-ui: CPU renderer");
+        }
+        Ok(Presenter::Cpu { surface, _context: context })
     }
 
     fn modifiers(&self) -> Modifiers {
@@ -256,7 +294,7 @@ impl<A: App> ApplicationHandler for Shell<A> {
             .with_decorations(!self.opts.frameless)
             .with_resizable(self.opts.resizable);
         let window = match el.create_window(attrs) {
-            Ok(w) => Rc::new(w),
+            Ok(w) => Arc::new(w),
             Err(e) => {
                 self.error = Some(e.to_string());
                 el.exit();
@@ -264,24 +302,16 @@ impl<A: App> ApplicationHandler for Shell<A> {
             }
         };
         window.set_ime_allowed(true);
-        let context = match softbuffer::Context::new(window.clone()) {
-            Ok(c) => c,
+        let presenter = match Self::create_presenter(&window) {
+            Ok(p) => p,
             Err(e) => {
-                self.error = Some(e.to_string());
-                el.exit();
-                return;
-            }
-        };
-        let surface = match softbuffer::Surface::new(&context, window.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                self.error = Some(e.to_string());
+                self.error = Some(e);
                 el.exit();
                 return;
             }
         };
         window.request_redraw();
-        self.gfx = Some(Gfx { window, surface, _context: context });
+        self.gfx = Some(Gfx { window, presenter });
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

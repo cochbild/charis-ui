@@ -276,7 +276,7 @@ impl TextSystem {
     }
 
     /// Rasterized glyph image (cached).
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pub(crate) fn glyph_image(&mut self, key: cosmic_text::CacheKey) -> Option<&cosmic_text::SwashImage> {
         self.swash.get_image(&mut self.fs, key).as_ref()
     }

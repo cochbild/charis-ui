@@ -51,6 +51,8 @@ pub mod dock;
 pub mod edit;
 pub mod element;
 pub mod geometry;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub mod headless;
 pub mod icons;
 pub mod paint;

@@ -538,6 +538,12 @@ impl<A: App> Runtime<A> {
         &mut self.text
     }
 
+    /// Run `f` with the last recorded scene and the text system (for GPU backends).
+    pub fn with_scene<R>(&mut self, f: impl FnOnce(&Scene, &mut TextSystem) -> R) -> Option<R> {
+        let scene = self.scene.as_ref()?;
+        Some(f(scene, &mut self.text))
+    }
+
     /// The last recorded display list.
     pub fn scene(&self) -> Option<&Scene> {
         self.scene.as_ref()

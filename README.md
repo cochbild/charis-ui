@@ -217,21 +217,32 @@ h.save_png("shot.png")?;
 | Declarative tree + builders | `element`, `widgets`, `dock` |
 | Layout (flexbox/grid) | [taffy] |
 | Text shaping and rasterization | [cosmic-text] + swash, Inter bundled |
-| 2D rendering (anti-aliased paths, gradients, blurred shadows, clipping, layers) | [tiny-skia] (CPU) |
-| Runtime: diffing retained state, events, hit-testing, focus, drag and drop, animations | `runtime` |
-| Windowing | winit + softbuffer, clipboard via arboard |
+| Display list | `scene`: each frame is recorded once, then handed to a backend |
+| **GPU backend** (default) | `gpu`: wgpu. The whole frame is one instanced draw call, with SDF rounded rects and borders, analytic Gaussian shadows, and glyph/path atlases |
+| CPU backend (fallback, tests) | `cpu`: tiny-skia with bounded scratch buffers for clipping and layers |
+| Runtime: retained state, events, hit-testing, focus, drag and drop, animations | `runtime` |
+| Windowing | winit, with wgpu surfaces or softbuffer; clipboard via arboard |
 
-The renderer is CPU-based and backend-agnostic. It draws only when something changed. A full
-1440×900 IDE frame (about 570 elements) takes about 8 ms at 1× and about 20 ms at 2× (Retina) on
-one CPU core (`cargo run --release --example showcase -- --bench`).
+**Text quality.** Glyph coverage gets DirectWrite-style contrast enhancement and gamma correction,
+the same approach Windows Terminal and Zed use to match browser and native text. Baselines are
+snapped to the pixel grid. Both backends apply identical correction, and a test keeps the GPU
+output matching the CPU reference.
 
-Set `RUI_PROFILE=1` to print per-frame build and paint timings.
+**Choosing a renderer.** The GPU backend is used when an adapter is available (Vulkan, Metal, DX12
+or GL). Otherwise the app falls back to the CPU backend. Set `RUI_RENDERER=cpu` to force the CPU,
+or build without the `gpu` feature. Set `RUI_PROFILE=1` to print the chosen adapter and per-frame
+timings.
+
+**Performance.** On the CPU backend, a full 1440×900 IDE frame (about 600 elements) takes about
+10 ms at 1× and about 20 ms at 2× on one core. On the GPU backend, the CPU side of a frame is layout
+(about 5 ms) plus recording (about 0.4 ms), and the GPU draws everything in one call.
 
 ## Status and roadmap
 
 This is an early but working foundation. Known gaps and planned work:
 
-- GPU backend (wgpu/vello) for 4K and high refresh rates, plus damage-region repainting
+- Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
+  CPU backend
 - Multi-line text editing, IME pre-edit display, rich text spans
 - Virtualized lists for very large data sets
 - Accessibility (AccessKit) and screen-reader support

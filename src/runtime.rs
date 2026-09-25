@@ -215,6 +215,27 @@ struct Transition {
     seen: u64,
 }
 
+struct RectAnim {
+    from: Rect,
+    to: Rect,
+    start: f64,
+    dur: f32,
+    seen: u64,
+}
+
+impl RectAnim {
+    fn value(&self, now: f64, easing: crate::anim::Easing) -> Rect {
+        let t = if self.dur > 0.0 { easing.apply(((now - self.start) as f32 / self.dur).clamp(0.0, 1.0)) } else { 1.0 };
+        let l = |a: f32, b: f32| a + (b - a) * t;
+        Rect::new(
+            l(self.from.x, self.to.x),
+            l(self.from.y, self.to.y),
+            l(self.from.w, self.to.w),
+            l(self.from.h, self.to.h),
+        )
+    }
+}
+
 struct SplitState {
     axis: Axis,
     /// px for fixed panes, flex weight for flex panes.
@@ -363,6 +384,7 @@ pub struct Runtime<A: App> {
     drag: Drag,
     last_click: Option<(f64, Point, u64, u32)>,
     transitions: HashMap<u64, Transition>,
+    rect_anims: HashMap<u64, RectAnim>,
     splits: HashMap<u64, SplitState>,
     pane_meta: HashMap<(u64, usize), (f32, f32, bool)>,
     scrolls: HashMap<u64, ScrollState>,
@@ -409,6 +431,7 @@ impl<A: App> Runtime<A> {
             drag: Drag::None,
             last_click: None,
             transitions: HashMap::new(),
+            rect_anims: HashMap::new(),
             splits: HashMap::new(),
             pane_meta: HashMap::new(),
             scrolls: HashMap::new(),
@@ -494,6 +517,7 @@ impl<A: App> Runtime<A> {
         }
         let now = self.now;
         let animating = self.transitions.values().any(|t| ((now - t.start) as f32) < t.dur)
+            || self.rect_anims.values().any(|a| ((now - a.start) as f32) < a.dur)
             || self.splits.values().any(|s| s.collapse.iter().any(|a| a.is_animating(now)))
             || self.scrolls.values().any(|s| {
                 s.x.is_some_and(|a| a.is_animating(now))
@@ -639,6 +663,7 @@ impl<A: App> Runtime<A> {
         frame.order = paint_order(&frame.nodes);
         self.frame = frame;
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
+        self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -999,12 +1024,29 @@ impl<A: App> Runtime<A> {
             };
             let _ = portal;
             let n = &mut frame.nodes[i];
-            n.rect = Rect::new(
-                origin.x + l.location.x + n.style.translate.0,
-                origin.y + l.location.y + n.style.translate.1,
+            let mut rel = Rect::new(
+                l.location.x + n.style.translate.0,
+                l.location.y + n.style.translate.1,
                 l.size.width,
                 l.size.height,
             );
+            if n.style.layout_transition > 0.0 {
+                // FLIP-style layout animation of the element's box relative to its parent.
+                let dur = n.style.layout_transition;
+                let easing = n.style.easing;
+                let fno = self.frame_no;
+                let a =
+                    self.rect_anims.entry(n.id).or_insert(RectAnim { from: rel, to: rel, start: now, dur, seen: fno });
+                a.seen = fno;
+                if a.to != rel {
+                    a.from = a.value(now, easing);
+                    a.to = rel;
+                    a.start = now;
+                    a.dur = dur;
+                }
+                rel = a.value(now, easing);
+            }
+            n.rect = Rect::new(origin.x + rel.x, origin.y + rel.y, rel.w, rel.h);
             n.clip = clip;
             // Content extent for scroll containers.
             if let Behavior::Scroll { x, y } = n.behavior {

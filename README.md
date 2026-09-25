@@ -175,6 +175,21 @@ let dock = Dock::new(DockNode::hsplit(vec![
 // view:   self.dock.view("dock", |p| p.title(), |p| p.content(), Msg::Dock)
 ```
 
+What users can do:
+- Drag a tab onto another group's body to join it.
+- Drag a tab onto a group's edge (VS Code-style zones) to split it. The drop preview slides
+  between zones.
+- Drag a tab along a tab strip to reorder it, with an insertion marker.
+- Double-click a tab, or use the header button, to maximize a group and restore it.
+- Resize every split. Sizes are proportional and are written back into the layout tree.
+- Close tabs. Empty groups disappear.
+
+With the `serde` feature, the whole `Dock` (tree, weights, tabs, maximized group, and a
+`version` field) serializes, so layouts can be persisted per workspace.
+
+Any element can animate its layout changes with `.animate_layout(secs)` (FLIP-style), which is
+useful for indicators, previews and reordering.
+
 ### Widgets
 
 `button`, `primary_button`, `ghost_button`, `danger_button`, `icon_button`, `text_input`
@@ -247,8 +262,8 @@ This is an early but working foundation. Known gaps and planned work:
 - Virtualized lists for very large data sets
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs
-- Serializable dock layouts, tab reordering within a group, maximize/auto-hide panels,
-  floating tabs in OS windows
+- Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows
+  (needs multi-window support)
 - Hot-reloadable stylesheet layer
 
 See [`docs/LANDSCAPE.md`](docs/LANDSCAPE.md) for the survey of existing Rust UI frameworks and

@@ -199,6 +199,31 @@ fn main() {
         let out = args.get(pos + 1).cloned().unwrap_or_else(|| "dock.png".into());
         let mut h = Headless::new(DockDemo { dock: initial(), dark: true }, 1280.0, 800.0, 1.0);
         h.settle();
+        let state = args.iter().position(|a| a == "--state").and_then(|i| args.get(i + 1)).cloned();
+        if state.as_deref() == Some("reorder") {
+            // Tab strip of the editor group (the Explorer also lists these names).
+            let from = Point::new(288.0, 54.0);
+            let to = Rect::new(486.0, 40.0, 60.0, 28.0);
+            h.move_to(from.x, from.y);
+            h.event(rust_ui::Event::PointerDown(from, rust_ui::MouseButton::Left));
+            for i in 1..=8 {
+                let t = i as f32 / 8.0;
+                h.move_to(from.x + (to.x + 6.0 - from.x) * t, from.y);
+            }
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("maximize") {
+            let t = h.rt.rect_of_text("Terminal").unwrap().center();
+            h.click(t.x, t.y);
+            h.click(t.x, t.y);
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
         // Drag "Terminal" (bottom-center group) toward the editor's right edge, and
         // capture the frame mid-drag to show the drop preview.
         let from =

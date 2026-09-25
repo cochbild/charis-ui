@@ -44,15 +44,19 @@ pub type GroupId = u64;
 /// Where a dragged tab will land relative to a group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropZone {
+    /// Join the group (appended).
     Center,
     Left,
     Right,
     Top,
     Bottom,
+    /// Join the group at this tab position (reordering within a group).
+    Insert(usize),
 }
 
 /// A node of the dock layout tree.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DockNode<T> {
     /// Children laid out along `axis` with flex weights.
     Split {
@@ -64,6 +68,7 @@ pub enum DockNode<T> {
 
 /// A stack of tabs, one of which is visible.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TabGroup<T> {
     pub id: GroupId,
     pub tabs: Vec<T>,
@@ -195,7 +200,14 @@ pub enum DockMsg {
     Activate(GroupId, usize),
     Close(GroupId, usize),
     Drag(GroupId, usize, DragEvent),
+    /// A drag moved over a group body.
     Target(GroupId, DropEvent),
+    /// A drag moved over a tab (reordering).
+    TabTarget(GroupId, usize, DropEvent),
+    /// Maximize a group to fill the dock, or restore it.
+    ToggleMaximize(GroupId),
+    /// The user resized a split (identified by its first group and axis).
+    Resized(GroupId, Axis, Vec<f32>),
 }
 
 #[derive(Debug, Clone)]
@@ -206,11 +218,20 @@ struct DockDrag {
 }
 
 /// A dock layout: splits of tab groups that users can rearrange.
+///
+/// With the `serde` feature the whole dock (layout tree, split weights,
+/// tabs and maximized state) can be saved and restored.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dock<T> {
+    /// Layout format version, for forward-compatible persistence.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub version: u32,
     root: Option<DockNode<T>>,
     next_id: GroupId,
+    #[cfg_attr(feature = "serde", serde(skip))]
     drag: Option<DockDrag>,
+    maximized: Option<GroupId>,
     /// Height of each group's tab strip (0 = use the theme's `tab_height`).
     pub tab_height: f32,
     /// Show close buttons on tabs.
@@ -221,7 +242,15 @@ impl<T> Dock<T> {
     pub fn new(mut root: DockNode<T>) -> Self {
         let mut next = 0;
         root.assign_ids(&mut next);
-        Self { root: Some(root), next_id: next, drag: None, tab_height: 0.0, closable: true }
+        Self {
+            version: 1,
+            root: Some(root),
+            next_id: next,
+            drag: None,
+            maximized: None,
+            tab_height: 0.0,
+            closable: true,
+        }
     }
 
     /// The layout tree (for persistence or inspection).
@@ -259,6 +288,11 @@ impl<T> Dock<T> {
                 self.root = Some(DockNode::Group(TabGroup { id: self.next_id, tabs: vec![tab], active: 0 }));
             }
         }
+    }
+
+    /// The maximized group, if any.
+    pub fn maximized(&self) -> Option<GroupId> {
+        self.maximized
     }
 
     /// Whether a tab drag is in progress.
@@ -304,6 +338,46 @@ impl<T> Dock<T> {
                     }
                 }
             },
+            DockMsg::TabTarget(g, i, ev) => {
+                if let Some(d) = &mut self.drag {
+                    match ev.phase {
+                        DropPhase::Over | DropPhase::Drop => {
+                            let at = if ev.pos.x < ev.rect.center().x { i } else { i + 1 };
+                            d.over = Some((g, DropZone::Insert(at)));
+                        }
+                        DropPhase::Leave => {
+                            if d.over.is_some_and(|o| o.0 == g) {
+                                d.over = None;
+                            }
+                        }
+                    }
+                }
+            }
+            DockMsg::ToggleMaximize(g) => {
+                self.maximized = if self.maximized == Some(g) { None } else { Some(g) };
+            }
+            DockMsg::Resized(g, axis, weights) => {
+                fn find<T>(n: &mut DockNode<T>, g: GroupId, axis: Axis, w: &[f32]) -> bool {
+                    match n {
+                        DockNode::Split { axis: a, children } => {
+                            if *a == axis && n_first(children) == g && children.len() == w.len() {
+                                for (c, w) in children.iter_mut().zip(w) {
+                                    c.0 = *w;
+                                }
+                                return true;
+                            }
+                            children.iter_mut().any(|c| find(&mut c.1, g, axis, w))
+                        }
+                        DockNode::Group(_) => false,
+                    }
+                }
+                fn n_first<T>(c: &[(f32, DockNode<T>)]) -> GroupId {
+                    c.first().map(|c| c.1.first_group()).unwrap_or(0)
+                }
+                if let Some(r) = &mut self.root {
+                    find(r, g, axis, &weights);
+                }
+            }
             DockMsg::Target(g, ev) => {
                 let tab_h = if self.tab_height > 0.0 { self.tab_height } else { theme().tab_height };
                 if let Some(d) = &mut self.drag {
@@ -322,10 +396,19 @@ impl<T> Dock<T> {
 
     fn prune(&mut self) {
         let keep_one = self.root.as_ref().map(|r| r.count_groups() == 1).unwrap_or(false);
-        if keep_one {
-            return; // Keep the last group even when empty so there's a place to drop tabs.
+        if !keep_one {
+            // Keep the last group even when empty so there's a place to drop tabs.
+            self.root = self.root.take().and_then(|r| r.prune());
         }
-        self.root = self.root.take().and_then(|r| r.prune());
+        self.fix_maximized();
+    }
+
+    fn fix_maximized(&mut self) {
+        if let Some(m) = self.maximized {
+            if self.root.as_ref().and_then(|r| r.group(m)).is_none_or(|g| g.tabs.is_empty()) {
+                self.maximized = None;
+            }
+        }
     }
 
     /// Move tab `index` of group `from` to group `to` at `zone`.
@@ -334,6 +417,21 @@ impl<T> Dock<T> {
         let Some(src) = root.group(from) else { return };
         if index >= src.tabs.len() {
             return;
+        }
+        if let DropZone::Insert(k) = zone {
+            if from == to {
+                let g = root.group_mut(from).unwrap();
+                let k = k.min(g.tabs.len());
+                if k == index || k == index + 1 {
+                    g.active = index;
+                    return;
+                }
+                let t = g.tabs.remove(index);
+                let at = if index < k { k - 1 } else { k };
+                g.tabs.insert(at, t);
+                g.active = at;
+                return;
+            }
         }
         if from == to && (zone == DropZone::Center || src.tabs.len() == 1) {
             if let Some(g) = root.group_mut(from) {
@@ -351,7 +449,13 @@ impl<T> Dock<T> {
             }
             t
         };
-        if zone == DropZone::Center {
+        if let DropZone::Insert(k) = zone {
+            if let Some(g) = root.group_mut(to) {
+                let at = k.min(g.tabs.len());
+                g.tabs.insert(at, tab);
+                g.active = at;
+            }
+        } else if zone == DropZone::Center {
             if let Some(g) = root.group_mut(to) {
                 g.tabs.push(tab);
                 g.active = g.tabs.len() - 1;
@@ -368,6 +472,7 @@ impl<T> Dock<T> {
         }
         // Remove the source group if it became empty.
         self.root = self.root.take().and_then(|r| r.prune());
+        self.fix_maximized();
     }
 
     /// Render the dock.
@@ -397,9 +502,11 @@ impl<T> Dock<T> {
         let map: Rc<dyn Fn(DockMsg) -> M> = Rc::new(map);
         let ctx = ViewCtx { id, title: &title, icon: &tab_icon, content: &content, map, dock: self };
         let mut root = div().grow(1.0).min_w(0.0).min_h(0.0).flex_col();
-        root = match &self.root {
-            Some(r) => root.child(ctx.node(r).grow(1.0)),
-            None => root,
+        let maximized = self.maximized.and_then(|m| self.root.as_ref().and_then(|r| r.group(m)));
+        root = match (&self.root, maximized) {
+            (_, Some(g)) => root.child(ctx.group(g).grow(1.0)),
+            (Some(r), None) => root.child(ctx.node(r).grow(1.0)),
+            (None, None) => root,
         };
         // Drag ghost following the pointer.
         if let Some(d) = &self.drag {
@@ -463,7 +570,9 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
         match n {
             DockNode::Split { axis, children } => {
                 let panes = children.iter().map(|(w, c)| Pane::flex(*w, self.node(c)).min(90.0)).collect();
-                split(&format!("{}/split/{}/{:?}", self.id, n.first_group(), axis), *axis, panes)
+                let (m, g, ax) = (self.map.clone(), n.first_group(), *axis);
+                split(&format!("{}/split/{}/{:?}", self.id, g, axis), *axis, panes)
+                    .on_resize(move |w| m(DockMsg::Resized(g, ax, w)))
             }
             DockNode::Group(g) => self.group(g),
         }
@@ -475,7 +584,11 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
         let gid = g.id;
         let drag = self.dock.drag.as_ref().filter(|d| d.pos != Point::ZERO);
         let tab_h = if self.dock.tab_height > 0.0 { self.dock.tab_height } else { th.tab_height };
-        let mut strip = row().h(tab_h).shrink(0.0).bg(c.panel).border_b(1.0, c.border).scroll_x().items(Align::Stretch);
+        let mut strip = row().h(tab_h).grow(1.0).min_w(0.0).scroll_x().items(Align::Stretch);
+        let insert_at = match drag.and_then(|d| d.over) {
+            Some((og, DropZone::Insert(k))) if og == gid => Some(k),
+            _ => None,
+        };
         for (i, t) in g.tabs.iter().enumerate() {
             let active = i == g.active;
             let dragged = drag.is_some_and(|d| d.from == (gid, i));
@@ -491,8 +604,21 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
                 .color(if active { c.text } else { c.text_muted })
                 .transition(0.1)
                 .on_click((self.map)(DockMsg::Activate(gid, i)))
+                .on_double_click((self.map)(DockMsg::ToggleMaximize(gid)))
                 .on_drag(move |ev| m(DockMsg::Drag(gid, i, ev)))
                 .cursor(Cursor::Default);
+            let m2 = self.map.clone();
+            tab = tab.on_drop_target(move |ev| m2(DockMsg::TabTarget(gid, i, ev)));
+            // Insertion marker while reordering.
+            if insert_at == Some(i) {
+                tab = tab.child(
+                    div().absolute().top(4.0).bottom(4.0).left(-1.0).w(2.0).rounded(1.0).bg(c.accent).z_index(1),
+                );
+            } else if insert_at == Some(i + 1) && i + 1 == g.tabs.len() {
+                tab = tab.child(
+                    div().absolute().top(4.0).bottom(4.0).right(-1.0).w(2.0).rounded(1.0).bg(c.accent).z_index(1),
+                );
+            }
             if active {
                 tab = tab.bg(c.surface).child(div().absolute().top(0.0).left(0.0).right(0.0).h(2.0).bg(c.accent));
                 tab = tab.child(div().absolute().bottom(-1.0).left(0.0).right(0.0).h(1.0).bg(c.surface));
@@ -530,6 +656,22 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
                 .child(icon(Icon::Layers).font_size(40.0).weight(Weight(300)))
                 .child(text("Drop a tab here")),
         };
+        let is_max = self.dock.maximized == Some(gid);
+        let header =
+            row().h(tab_h).shrink(0.0).bg(c.panel).border_b(1.0, c.border).items(Align::Stretch).child(strip).child(
+                row().items_center().px(4.0).child(
+                    div()
+                        .center()
+                        .square(24.0)
+                        .rounded(th.radius_sm)
+                        .color(c.text_faint)
+                        .transition(0.1)
+                        .hover(|s| s.bg(c.hover).color(c.text))
+                        .tooltip(if is_max { "Restore panel" } else { "Maximize panel" })
+                        .on_click((self.map)(DockMsg::ToggleMaximize(gid)))
+                        .child(icon(if is_max { Icon::Restore } else { Icon::Maximize }).font_size(13.0)),
+                ),
+            );
         let m = self.map.clone();
         let mut group = col()
             .key(("dock-group", gid))
@@ -538,7 +680,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
             .min_h(0.0)
             .clip()
             .on_drop_target(move |ev| m(DockMsg::Target(gid, ev)))
-            .child(strip)
+            .child(header)
             .child(col().grow(1.0).min_h(0.0).min_w(0.0).child(body.grow(1.0).min_h(0.0)));
         // Drop preview
         if let Some((_, zone)) = drag.and_then(|d| d.over).filter(|o| o.0 == gid) {
@@ -549,6 +691,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
                 .bg(c.accent.with_alpha(0.16))
                 .border(2.0, c.accent.with_alpha(0.8))
                 .rounded(th.radius)
+                .animate_layout(0.12)
                 .top(th_ + 4.0)
                 .left(4.0)
                 .right(4.0)
@@ -559,6 +702,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
                 DropZone::Right => ov.left(pct(50.0)),
                 DropZone::Top => ov.bottom(pct(50.0)),
                 DropZone::Bottom => ov.top(pct(50.0)),
+                DropZone::Insert(_) => ov.opacity(0.0),
             };
             group = group.child(ov);
         }

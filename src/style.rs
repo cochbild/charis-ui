@@ -305,6 +305,9 @@ pub struct Style {
     pub transition: f32,
     /// Timing function for transitions (defaults to the web's standard curve).
     pub easing: crate::anim::Easing,
+    /// Animate changes of the element's laid-out position and size over this
+    /// many seconds (FLIP-style). 0 disables.
+    pub layout_transition: f32,
 
     // ---- text (inherited when `None`) ----
     pub color: Option<Color>,
@@ -360,6 +363,7 @@ impl Default for Style {
             cursor: None,
             transition: 0.0,
             easing: crate::anim::Easing::Standard,
+            layout_transition: 0.0,
             color: None,
             font_size: None,
             font_weight: None,

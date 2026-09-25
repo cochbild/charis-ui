@@ -892,6 +892,12 @@ impl<M: 'static> Element<M> {
         self
     }
 
+    /// Smoothly animate changes to this element's position and size (for
+    /// indicators, drop previews, reordering). Children move along with it.
+    pub fn animate_layout(mut self, secs: f32) -> Self {
+        self.style.layout_transition = secs;
+        self
+    }
     /// Timing function used by [`Element::transition`].
     pub fn easing(mut self, e: crate::anim::Easing) -> Self {
         self.style.easing = e;

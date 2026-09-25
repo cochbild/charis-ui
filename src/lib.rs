@@ -39,9 +39,12 @@
 //!     }
 //! }
 //!
+//! # #[cfg(feature = "window")]
 //! fn main() {
 //!     rust_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
 //! }
+//! # #[cfg(not(feature = "window"))]
+//! # fn main() {}
 //! ```
 
 pub mod anim;

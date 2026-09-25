@@ -12,11 +12,13 @@ use tiny_skia::Pixmap;
 
 use crate::anim::Anim;
 use crate::color::{Color, Fill};
+use crate::cpu::PaintCache;
 use crate::edit::{self, Selection};
 use crate::element::*;
 use crate::geometry::{Axis, Point, Rect, Size};
 use crate::icons::Icon;
-use crate::paint::{Canvas, PaintCache};
+use crate::paint::Canvas;
+use crate::scene::Scene;
 use crate::style::*;
 use crate::text::{TextStyle, TextSystem};
 use crate::theme::{self, Theme};
@@ -374,6 +376,7 @@ pub struct Runtime<A: App> {
     frame_no: u64,
     cursor: Cursor,
     pixmap: Option<Pixmap>,
+    scene: Option<Scene>,
     /// Window chrome is drawn by the app (no OS decorations).
     pub frameless: bool,
     pub maximized: bool,
@@ -419,6 +422,7 @@ impl<A: App> Runtime<A> {
             frame_no: 0,
             cursor: Cursor::Default,
             pixmap: None,
+            scene: None,
             frameless: false,
             maximized: false,
             window_focused: true,
@@ -529,6 +533,16 @@ impl<A: App> Runtime<A> {
         self.next_frame().is_some_and(|t| t <= self.now)
     }
 
+    /// Mutable access to the text system (for GPU backends that rasterize glyphs).
+    pub fn text_system(&mut self) -> &mut TextSystem {
+        &mut self.text
+    }
+
+    /// The last recorded display list.
+    pub fn scene(&self) -> Option<&Scene> {
+        self.scene.as_ref()
+    }
+
     /// The last rendered image.
     pub fn pixmap(&self) -> Option<&Pixmap> {
         self.pixmap.as_ref()
@@ -536,11 +550,20 @@ impl<A: App> Runtime<A> {
 
     // ------------------------------------------------------------ rendering
 
-    /// Rebuild, lay out and paint a frame. Returns the rendered pixmap.
+    /// Rebuild, lay out and paint a frame on the CPU. Returns the rendered pixmap.
     pub fn render(&mut self) -> &Pixmap {
+        self.render_scene();
+        let scene = self.scene.as_ref().unwrap();
+        let pm = crate::cpu::render_cpu(scene, self.pixmap.take(), &mut self.text, &mut self.paint_cache);
+        self.pixmap = Some(pm);
+        self.pixmap.as_ref().unwrap()
+    }
+
+    /// Rebuild, lay out and record a frame's display list without rasterizing
+    /// it (for GPU backends).
+    pub fn render_scene(&mut self) -> &Scene {
         self.frame_no += 1;
         self.text.begin_frame();
-        self.paint_cache.begin_frame();
         let t0 = std::time::Instant::now();
         self.build();
         let t1 = t0.elapsed();
@@ -557,9 +580,9 @@ impl<A: App> Runtime<A> {
         let t2 = std::time::Instant::now();
         self.paint();
         if std::env::var("RUI_PROFILE").is_ok() {
-            eprintln!("build {:?} paint {:?} nodes {}", t1, t2.elapsed(), self.frame.nodes.len());
+            eprintln!("build {:?} record {:?} nodes {}", t1, t2.elapsed(), self.frame.nodes.len());
         }
-        self.pixmap.as_ref().unwrap()
+        self.scene.as_ref().unwrap()
     }
 
     /// Keep each text input's caret visible by adjusting its horizontal scroll.
@@ -1030,14 +1053,10 @@ impl<A: App> Runtime<A> {
     fn paint(&mut self) {
         let pw = (self.size.w * self.scale).round().max(1.0) as u32;
         let ph = (self.size.h * self.scale).round().max(1.0) as u32;
-        let mut pixmap = match self.pixmap.take() {
-            Some(p) if p.width() == pw && p.height() == ph => p,
-            _ => Pixmap::new(pw, ph).expect("pixmap"),
-        };
-        pixmap.fill(self.theme.colors.background.to_skia());
         let mut order = Vec::new();
         let th = self.theme.clone();
-        let mut canvas = Canvas::new(pixmap, self.scale, &mut self.text, &mut self.paint_cache);
+        let scene = Scene::new(pw, ph, self.scale, th.colors.background);
+        let mut canvas = Canvas::new(scene, &mut self.text);
         let ctx = PaintCtx {
             nodes: &self.frame.nodes,
             now: self.now,
@@ -1072,7 +1091,7 @@ impl<A: App> Runtime<A> {
                 }
             }
         }
-        self.pixmap = Some(canvas.finish());
+        self.scene = Some(canvas.finish());
     }
 
     // ---------------------------------------------------------- hit testing

@@ -46,6 +46,7 @@
 
 pub mod anim;
 pub mod color;
+pub mod cpu;
 pub mod dock;
 pub mod edit;
 pub mod element;
@@ -54,6 +55,7 @@ pub mod headless;
 pub mod icons;
 pub mod paint;
 pub mod runtime;
+pub mod scene;
 pub mod style;
 pub mod text;
 pub mod theme;

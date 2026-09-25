@@ -8,6 +8,14 @@ use crate::color::Color;
 use crate::geometry::{Rect, Size};
 use crate::style::FontFamily;
 
+/// A positioned glyph in physical window pixels (baseline origin).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GlyphInst {
+    pub key: cosmic_text::CacheKey,
+    pub x: i32,
+    pub y: i32,
+}
+
 /// Resolved text properties used for shaping.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextStyle {
@@ -52,6 +60,8 @@ pub struct TextSystem {
     cache: HashMap<Key, Entry>,
     frame: u64,
     ui_family: Option<String>,
+    /// Apply DirectWrite-style contrast/gamma correction to glyph coverage.
+    pub text_correction: bool,
 }
 
 impl Default for TextSystem {
@@ -109,7 +119,7 @@ impl TextSystem {
             }
         }
         let fs = FontSystem::new_with_locale_and_db("en-US".into(), db);
-        Self { fs, swash: SwashCache::new(), cache: HashMap::new(), frame: 0, ui_family }
+        Self { fs, swash: SwashCache::new(), cache: HashMap::new(), frame: 0, ui_family, text_correction: true }
     }
 
     /// Register an additional font (TTF/OTF bytes). Use its family name with
@@ -211,37 +221,26 @@ impl TextSystem {
         stops
     }
 
-    /// Draw text with its top-left at `rect.x, rect.y` (logical px).
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw(
+    /// Lay out text into positioned glyphs (physical window pixels), with its
+    /// top-left at `rect.x, rect.y` (logical px). Handles wrapping, pixel
+    /// snapping and "…" truncation.
+    pub(crate) fn glyphs(
         &mut self,
-        pixmap: &mut tiny_skia::Pixmap,
         text: &str,
         st: &TextStyle,
         rect: Rect,
         wrap_width: Option<f32>,
-        color: Color,
         scale: f32,
-        clip: Option<Rect>,
         ellipsis: bool,
-        origin: (f32, f32),
-    ) {
-        if text.is_empty() || color.a <= 0.0 {
-            return;
+    ) -> Vec<GlyphInst> {
+        let mut out = Vec::new();
+        if text.is_empty() {
+            return out;
         }
         let avail = rect.w * scale;
         let ell_w = if ellipsis { self.entry("…", st, None, scale).size.0 * scale } else { 0.0 };
-        let clip_px = clip.map(|c| {
-            (
-                (c.x * scale - origin.0).floor() as i32,
-                (c.y * scale - origin.1).floor() as i32,
-                (c.right() * scale - origin.0).ceil() as i32,
-                (c.bottom() * scale - origin.1).ceil() as i32,
-            )
-        });
-        let ox = (rect.x * scale).round() - origin.0;
-        let oy = (rect.y * scale).round() - origin.1;
-        let mut glyphs = Vec::new();
+        let ox = (rect.x * scale).round();
+        let oy = (rect.y * scale).round();
         let mut ell_at = None;
         {
             let e = self.entry(text, st, wrap_width, scale);
@@ -249,36 +248,55 @@ impl TextSystem {
             for run in e.buffer.layout_runs() {
                 for g in run.glyphs {
                     if truncate && g.x + g.w > avail - ell_w {
-                        ell_at = Some((g.x, run.line_y));
+                        ell_at = Some(g.x);
                         break;
                     }
-                    let pg = g.physical((ox, oy + run.line_y), 1.0);
-                    glyphs.push(pg);
+                    // Snap each baseline to the pixel grid: fractional baselines blur text.
+                    let pg = g.physical((ox, (oy + run.line_y).round()), 1.0);
+                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y });
                 }
                 if truncate {
                     if ell_at.is_none() {
-                        ell_at = Some((run.line_w, run.line_y));
+                        ell_at = Some(run.line_w);
                     }
                     break;
                 }
             }
         }
-        for pg in glyphs {
-            self.blit_glyph(pixmap, pg.cache_key, pg.x, pg.y, color, clip_px);
-        }
-        if let Some((x, _)) = ell_at {
-            let mut ell = Vec::new();
-            {
-                let e = self.entry("…", st, None, scale);
-                for run in e.buffer.layout_runs() {
-                    for g in run.glyphs {
-                        ell.push(g.physical((ox + x, oy + run.line_y), 1.0));
-                    }
+        if let Some(x) = ell_at {
+            let e = self.entry("…", st, None, scale);
+            for run in e.buffer.layout_runs() {
+                for g in run.glyphs {
+                    let pg = g.physical((ox + x, (oy + run.line_y).round()), 1.0);
+                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y });
                 }
             }
-            for pg in ell {
-                self.blit_glyph(pixmap, pg.cache_key, pg.x, pg.y, color, clip_px);
-            }
+        }
+        out
+    }
+
+    /// Rasterized glyph image (cached).
+    #[allow(dead_code)]
+    pub(crate) fn glyph_image(&mut self, key: cosmic_text::CacheKey) -> Option<&cosmic_text::SwashImage> {
+        self.swash.get_image(&mut self.fs, key).as_ref()
+    }
+
+    /// Blit positioned glyphs into a pixmap whose top-left sits at `origin`
+    /// (physical window px). `clip` is in physical window px.
+    pub(crate) fn blit(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        glyphs: &[GlyphInst],
+        color: Color,
+        clip: Option<(i32, i32, i32, i32)>,
+        origin: (i32, i32),
+    ) {
+        if color.a <= 0.0 {
+            return;
+        }
+        let clip = clip.map(|(a, b, c, d)| (a - origin.0, b - origin.1, c - origin.0, d - origin.1));
+        for g in glyphs {
+            self.blit_glyph(pixmap, g.key, g.x - origin.0, g.y - origin.1, color, clip);
         }
     }
 
@@ -300,6 +318,7 @@ impl TextSystem {
         let y0 = gy - img.placement.top;
         let w = img.placement.width as i32;
         let h = img.placement.height as i32;
+        let lut = if self.text_correction { text_alpha_lut(color) } else { IDENTITY_LUT };
         let data = pixmap.data_mut();
         let ca = (color.a.clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
         let (cr, cg, cb) = (
@@ -325,6 +344,7 @@ impl TextSystem {
                         if m == 0 {
                             continue;
                         }
+                        let m = lut[m as usize] as u32;
                         let a = (m * ca + 127) / 255;
                         ((cr * a + 127) / 255, (cg * a + 127) / 255, (cb * a + 127) / 255, a)
                     }
@@ -349,5 +369,63 @@ impl TextSystem {
                 data[di + 3] = (sa + (data[di + 3] as u32 * inv + 127) / 255).min(255) as u8;
             }
         }
+    }
+}
+
+const IDENTITY_LUT: [u8; 256] = {
+    let mut t = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = i as u8;
+        i += 1;
+    }
+    t
+};
+
+/// DirectWrite gamma-correction ratios for gamma 1.8 (the Windows default),
+/// as used by Windows Terminal's and Zed's text shaders.
+pub(crate) const GAMMA_RATIOS: [f32; 4] = [0.1469 / 4.0, -0.8911 / 4.0, 1.4644 / 4.0, -0.3234 / 4.0];
+
+/// Grayscale "enhanced contrast" amount (DirectWrite default).
+pub(crate) const ENHANCED_CONTRAST: f32 = 1.0;
+
+/// Map raw glyph coverage to perceptually corrected coverage for `color`.
+///
+/// Browsers and DirectWrite don't blend glyph edges naively: they boost
+/// contrast (less for light-on-dark text) and apply gamma-aware alpha
+/// correction. Without this, dark text looks heavy and light text on dark
+/// backgrounds looks thin and washed out.
+pub(crate) fn correct_alpha(a: f32, color: Color) -> f32 {
+    let luma = 0.25 * color.r + 0.5 * color.g + 0.25 * color.b;
+    let k = ENHANCED_CONTRAST * (luma * -4.0 + 3.0).clamp(0.0, 1.0);
+    let contrasted = a * (k + 1.0) / (a * k + 1.0);
+    let f = 0.30 * color.r + 0.59 * color.g + 0.11 * color.b;
+    let g = GAMMA_RATIOS;
+    let c = contrasted + contrasted * (1.0 - contrasted) * ((g[0] * f + g[1]) * contrasted + (g[2] * f + g[3]));
+    c.clamp(0.0, 1.0)
+}
+
+pub(crate) fn text_alpha_lut(color: Color) -> [u8; 256] {
+    let mut t = [0u8; 256];
+    for (i, v) in t.iter_mut().enumerate() {
+        *v = (correct_alpha(i as f32 / 255.0, color) * 255.0 + 0.5) as u8;
+    }
+    t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alpha_correction_endpoints_and_direction() {
+        for c in [Color::WHITE, Color::BLACK, Color::hex("#5b8cff")] {
+            assert_eq!(correct_alpha(0.0, c), 0.0);
+            assert!((correct_alpha(1.0, c) - 1.0).abs() < 1e-5);
+        }
+        // Light text on dark gets slightly heavier edges than naive blending.
+        assert!(correct_alpha(0.5, Color::WHITE) > 0.5);
+        // Dark text keeps full contrast enhancement.
+        assert!(correct_alpha(0.5, Color::BLACK) > 0.5);
     }
 }

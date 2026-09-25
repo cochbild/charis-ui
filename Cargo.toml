@@ -22,5 +22,3 @@ winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
 arboard = { version = "3", optional = true, default-features = false }
 
-[profile.release]
-debug = "line-tables-only"

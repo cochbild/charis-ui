@@ -144,6 +144,7 @@ pub struct GpuRenderer {
     paths: HashMap<u64, (Option<Slot>, u64)>,
     frame: u64,
     format: wgpu::TextureFormat,
+    healthy: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Name of the GPU adapter in use.
     pub adapter_name: String,
 }
@@ -169,6 +170,19 @@ impl GpuRenderer {
     }
 
     fn new(device: wgpu::Device, queue: wgpu::Queue, format: wgpu::TextureFormat, adapter_name: String) -> Self {
+        // wgpu panics on uncaught errors by default; record them instead so the
+        // app can fall back to the CPU renderer.
+        let healthy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let h = healthy.clone();
+        device.on_uncaptured_error(std::sync::Arc::new(move |e: wgpu::Error| {
+            eprintln!("rust-ui: GPU error, falling back to CPU rendering: {e}");
+            h.store(false, std::sync::atomic::Ordering::Relaxed);
+        }));
+        let h = healthy.clone();
+        device.set_device_lost_callback(move |reason, msg| {
+            eprintln!("rust-ui: GPU device lost ({reason:?}): {msg}");
+            h.store(false, std::sync::atomic::Ordering::Relaxed);
+        });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rust-ui shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("gpu.wgsl").into()),
@@ -282,6 +296,7 @@ impl GpuRenderer {
             paths: HashMap::new(),
             frame: 0,
             format,
+            healthy,
             adapter_name,
         }
     }
@@ -311,7 +326,7 @@ impl GpuRenderer {
                 mapped_at_creation: false,
             }));
         }
-        let buf = self.instances.as_ref().unwrap();
+        let Some(buf) = self.instances.as_ref() else { return };
         if !inst.is_empty() {
             self.queue.write_buffer(buf, 0, as_bytes(&inst));
         }
@@ -355,7 +370,8 @@ impl GpuRenderer {
     }
 
     /// Render a scene offscreen and read it back (for tests and screenshots).
-    pub fn render_to_pixmap(&mut self, scene: &Scene, text: &mut TextSystem) -> Pixmap {
+    /// Returns `None` if the GPU failed.
+    pub fn render_to_pixmap(&mut self, scene: &Scene, text: &mut TextSystem) -> Option<Pixmap> {
         let (w, h) = (scene.width.max(1), scene.height.max(1));
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rust-ui offscreen"),
@@ -393,8 +409,8 @@ impl GpuRenderer {
         self.queue.submit([enc.finish()]);
         buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        let data = buf.slice(..).get_mapped_range().expect("mapped");
-        let mut pm = Pixmap::new(w, h).expect("pixmap");
+        let data = buf.slice(..).get_mapped_range().ok()?;
+        let mut pm = Pixmap::new(w, h)?;
         let bgra = matches!(self.format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
         for y in 0..h as usize {
             let src = &data[y * row as usize..y * row as usize + w as usize * 4];
@@ -408,7 +424,13 @@ impl GpuRenderer {
         }
         drop(data);
         buf.unmap();
-        pm
+        self.is_healthy().then_some(pm)
+    }
+
+    /// False after a device loss or an uncaught GPU error; callers should
+    /// switch to the CPU renderer.
+    pub fn is_healthy(&self) -> bool {
+        self.healthy.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn reset_atlases(&mut self) {
@@ -433,7 +455,7 @@ impl GpuRenderer {
                 Some((r, c)) => (phys(*r), rad(*c)),
                 None => (full, [0.0; 4]),
             };
-            let op = *opacity.last().unwrap();
+            let op = opacity.last().copied().unwrap_or(1.0);
             let col = |c: Color| [c.r, c.g, c.b, c.a * op];
             let base = Instance { clip, clip_radii, ..Default::default() };
             match cmd {
@@ -533,7 +555,7 @@ impl GpuRenderer {
                 }
                 Cmd::SetClips(c) => clips = c.clone(),
                 Cmd::PushLayer { opacity: o, .. } => {
-                    let cur = *opacity.last().unwrap();
+                    let cur = opacity.last().copied().unwrap_or(1.0);
                     opacity.push(cur * o);
                 }
                 Cmd::PopLayer => {

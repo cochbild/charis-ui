@@ -38,6 +38,11 @@ pub fn next_char(s: &str, i: usize) -> usize {
     s[i..].chars().next().map(|c| i + c.len_utf8()).unwrap_or(s.len())
 }
 
+/// The char starting at byte `i` (a space past the end, which is never a word char).
+fn char_at(s: &str, i: usize) -> char {
+    s.get(i..).and_then(|t| t.chars().next()).unwrap_or(' ')
+}
+
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -47,14 +52,14 @@ pub fn prev_word(s: &str, i: usize) -> usize {
     // skip whitespace/punctuation, then word chars
     while j > 0 {
         let p = prev_char(s, j);
-        if is_word(s[p..].chars().next().unwrap()) {
+        if is_word(char_at(s, p)) {
             break;
         }
         j = p;
     }
     while j > 0 {
         let p = prev_char(s, j);
-        if !is_word(s[p..].chars().next().unwrap()) {
+        if !is_word(char_at(s, p)) {
             break;
         }
         j = p;
@@ -64,10 +69,10 @@ pub fn prev_word(s: &str, i: usize) -> usize {
 
 pub fn next_word(s: &str, i: usize) -> usize {
     let mut j = i;
-    while j < s.len() && !is_word(s[j..].chars().next().unwrap()) {
+    while j < s.len() && !is_word(char_at(s, j)) {
         j = next_char(s, j);
     }
-    while j < s.len() && is_word(s[j..].chars().next().unwrap()) {
+    while j < s.len() && is_word(char_at(s, j)) {
         j = next_char(s, j);
     }
     j
@@ -79,13 +84,13 @@ pub fn word_at(s: &str, i: usize) -> (usize, usize) {
     let mut a = i;
     while a > 0 {
         let p = prev_char(s, a);
-        if !is_word(s[p..].chars().next().unwrap()) {
+        if !is_word(char_at(s, p)) {
             break;
         }
         a = p;
     }
     let mut b = i;
-    while b < s.len() && is_word(s[b..].chars().next().unwrap()) {
+    while b < s.len() && is_word(char_at(s, b)) {
         b = next_char(s, b);
     }
     (a, b)

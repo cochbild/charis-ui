@@ -583,10 +583,11 @@ impl<A: App> Runtime<A> {
     /// Rebuild, lay out and paint a frame on the CPU. Returns the rendered pixmap.
     pub fn render(&mut self) -> &Pixmap {
         self.render_scene();
-        let scene = self.scene.as_ref().unwrap();
-        let pm = crate::cpu::render_cpu(scene, self.pixmap.take(), &mut self.text, &mut self.paint_cache);
-        self.pixmap = Some(pm);
-        self.pixmap.as_ref().unwrap()
+        let pm = match &self.scene {
+            Some(scene) => crate::cpu::render_cpu(scene, self.pixmap.take(), &mut self.text, &mut self.paint_cache),
+            None => Pixmap::new(1, 1).unwrap_or_else(|| unreachable!()),
+        };
+        self.pixmap.insert(pm)
     }
 
     /// Rebuild, lay out and record a frame's display list without rasterizing
@@ -612,7 +613,7 @@ impl<A: App> Runtime<A> {
         if std::env::var("RUI_PROFILE").is_ok() {
             eprintln!("build {:?} record {:?} nodes {}", t1, t2.elapsed(), self.frame.nodes.len());
         }
-        self.scene.as_ref().unwrap()
+        self.scene.get_or_insert_with(|| Scene::new(1, 1, 1.0, Color::TRANSPARENT))
     }
 
     /// Keep each text input's caret visible by adjusting its horizontal scroll.
@@ -963,10 +964,11 @@ impl<A: App> Runtime<A> {
                 ts.flex_shrink = 0.0;
             }
             let kids: Vec<tf::NodeId> = n.children.iter().map(|&c| frame.nodes[c].tnode).collect();
-            let t = if is_leaf {
-                tree.new_leaf_with_context(ts, i).expect("taffy")
-            } else {
-                tree.new_with_children(ts, &kids).expect("taffy")
+            // Taffy only errors on unknown child ids, which this bottom-up build never produces.
+            let t = if is_leaf { tree.new_leaf_with_context(ts, i) } else { tree.new_with_children(ts, &kids) };
+            let Ok(t) = t else {
+                debug_assert!(false, "taffy node creation failed");
+                return;
             };
             frame.nodes[i].tnode = t;
         }
@@ -975,7 +977,7 @@ impl<A: App> Runtime<A> {
         {
             let text = &mut self.text;
             let nodes = &frame.nodes;
-            tree.compute_layout_with_measure(
+            let computed = tree.compute_layout_with_measure(
                 root,
                 tf::Size {
                     width: tf::AvailableSpace::Definite(self.size.w),
@@ -993,14 +995,17 @@ impl<A: App> Runtime<A> {
                         |known, avail| measure_node(text, node, known, avail, scale),
                     )
                 },
-            )
-            .expect("layout");
+            );
+            if computed.is_err() {
+                debug_assert!(false, "taffy layout failed");
+                return;
+            }
         }
 
         // Absolute rects, clips and scroll offsets (pre-order: parents first).
         let now = self.now;
         for i in 0..frame.nodes.len() {
-            let l = *tree.layout(frame.nodes[i].tnode).expect("layout");
+            let l = tree.layout(frame.nodes[i].tnode).copied().unwrap_or_default();
             let (origin, clip, portal) = match frame.nodes[i].parent {
                 None => (Point::ZERO, None, false),
                 Some(p) => {
@@ -1053,8 +1058,7 @@ impl<A: App> Runtime<A> {
                 let mut cw: f32 = 0.0;
                 let mut ch: f32 = 0.0;
                 if let Ok(kids) = tree.children(n.tnode) {
-                    for k in kids {
-                        let kl = tree.layout(k).expect("layout");
+                    for kl in kids.iter().filter_map(|&k| tree.layout(k).ok()) {
                         cw = cw.max(kl.location.x + kl.size.width + kl.margin.right);
                         ch = ch.max(kl.location.y + kl.size.height + kl.margin.bottom);
                     }
@@ -1462,19 +1466,18 @@ impl<A: App> Runtime<A> {
         let tid = target.map(|i| self.frame.nodes[i].id);
         if self.drop_target != tid {
             if let Some(old) = self.drop_target.and_then(|o| self.node_by_id(o)) {
-                let h = old.handlers.drop_target.clone().unwrap();
-                self.queue.push(h(DropEvent { phase: DropPhase::Leave, pos: p, rect: old.rect }));
+                if let Some(h) = old.handlers.drop_target.clone() {
+                    self.queue.push(h(DropEvent { phase: DropPhase::Leave, pos: p, rect: old.rect }));
+                }
             }
         }
         self.drop_target = if drop { None } else { tid };
         if let Some(i) = target {
             let n = &self.frame.nodes[i];
-            let h = n.handlers.drop_target.clone().unwrap();
-            self.queue.push(h(DropEvent {
-                phase: if drop { DropPhase::Drop } else { DropPhase::Over },
-                pos: p,
-                rect: n.rect,
-            }));
+            if let Some(h) = n.handlers.drop_target.clone() {
+                let phase = if drop { DropPhase::Drop } else { DropPhase::Over };
+                self.queue.push(h(DropEvent { phase, pos: p, rect: n.rect }));
+            }
         }
     }
 
@@ -1626,9 +1629,12 @@ impl<A: App> Runtime<A> {
                 if dragging {
                     self.update_drop_target(p, true);
                     if let Some(d) = self.find_up(node, |n| n.handlers.drag.is_some()) {
-                        let n = self.node_by_id(d).unwrap();
-                        let h = n.handlers.drag.clone().unwrap();
-                        self.queue.push(h(DragEvent { phase: DragPhase::End, pos: p, delta: p - start, rect: n.rect }));
+                        if let Some(n) = self.node_by_id(d) {
+                            if let Some(h) = n.handlers.drag.clone() {
+                                let ev = DragEvent { phase: DragPhase::End, pos: p, delta: p - start, rect: n.rect };
+                                self.queue.push(h(ev));
+                            }
+                        }
                     }
                 } else {
                     // Click: the pointer must still be over the element that has the handler.

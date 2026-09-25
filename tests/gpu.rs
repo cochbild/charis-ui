@@ -59,7 +59,7 @@ fn gpu_matches_cpu() {
     h.settle();
     let cpu = h.rt.render().clone();
     h.rt.render_scene();
-    let g = h.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).unwrap();
+    let g = h.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).flatten().expect("gpu render");
     assert_eq!((cpu.width(), cpu.height()), (g.width(), g.height()));
     let (mut sum, mut big) = (0u64, 0usize);
     for (a, b) in cpu.data().chunks_exact(4).zip(g.data().chunks_exact(4)) {

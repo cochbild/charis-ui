@@ -1,3 +1,5 @@
 /target
 *.png
+!tests/golden/*.png
 !docs/*.png
+/tests/golden/*.actual.png

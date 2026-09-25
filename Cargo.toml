@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "A web-inspired, highly customizable retained/declarative UI framework for Rust desktop apps"
 license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+readme = "README.md"
+keywords = ["gui", "ui", "desktop", "docking", "widgets"]
+categories = ["gui"]
+exclude = ["docs/*.png", "tests/golden/*"]
 
 [lib]
 name = "rust_ui"
@@ -29,6 +34,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 
 
 [dev-dependencies]
+tiny-skia = "0.12"
 serde_json = "1"
 
 [[example]]

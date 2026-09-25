@@ -204,7 +204,7 @@ impl<'a> Raster<'a> {
                 || cr.right().fract() != 0.0
                 || cr.bottom().fract() != 0.0;
             if needs {
-                let mut m = Mask::new(w, h).expect("mask");
+                let Some(mut m) = Mask::new(w, h) else { return };
                 if let Some(p) = rrect_path(cr, scale_corners(clip.radius, s)) {
                     m.fill_path(&p, FillRule::Winding, true, t);
                 }
@@ -234,7 +234,8 @@ impl<'a> Raster<'a> {
             }
             None => (self.origin.0, self.origin.1, self.pixmap.width(), self.pixmap.height()),
         };
-        let fresh = Pixmap::new(w, h).expect("layer");
+        // An unallocatable layer (absurd bounds) degrades to drawing without the group.
+        let fresh = Pixmap::new(w, h).unwrap_or_else(|| Pixmap::new(1, 1).unwrap_or_else(|| unreachable!()));
         let prev = std::mem::replace(&mut self.pixmap, fresh);
         let prev_origin = std::mem::replace(&mut self.origin, (ox, oy));
         self.layers.push(Layer { prev, prev_origin, opacity });
@@ -611,12 +612,17 @@ fn blend_alpha(
     }
 }
 
+/// Largest pixmap side we allocate (guards against absurd window sizes).
+const MAX_DIM: u32 = 16384;
+
 /// Rasterize a scene on the CPU.
 pub fn render_cpu(scene: &Scene, pixmap: Option<Pixmap>, text: &mut TextSystem, cache: &mut PaintCache) -> Pixmap {
     cache.begin_frame();
     let mut pm = match pixmap {
         Some(p) if p.width() == scene.width && p.height() == scene.height => p,
-        _ => Pixmap::new(scene.width.max(1), scene.height.max(1)).expect("pixmap"),
+        _ => Pixmap::new(scene.width.clamp(1, MAX_DIM), scene.height.clamp(1, MAX_DIM))
+            .or_else(|| Pixmap::new(1, 1))
+            .unwrap_or_else(|| unreachable!("a 1x1 pixmap always allocates")),
     };
     pm.fill(scene.background.to_skia());
     let mut r = Raster::new(pm, scene.scale, text, cache);

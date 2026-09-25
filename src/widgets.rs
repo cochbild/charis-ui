@@ -524,7 +524,14 @@ pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
 pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
-    let mut r = row().p(3.0).gap(2.0).rounded(th.radius + 2.0).bg(c.input).border(1.0, c.border).shrink(0.0);
+    let mut r = row()
+        .p(3.0)
+        .gap(2.0)
+        .rounded(th.radius + 2.0)
+        .bg(c.input)
+        .border(1.0, c.border)
+        .shrink(0.0)
+        .self_align(Align::Start);
     for (label, active, msg) in items {
         let mut b = row()
             .items_center()

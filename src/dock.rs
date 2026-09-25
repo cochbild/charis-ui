@@ -146,7 +146,7 @@ impl<T> DockNode<T> {
                 }
                 match kept.len() {
                     0 => None,
-                    1 => Some(kept.pop().unwrap().1),
+                    1 => kept.pop().map(|k| k.1),
                     _ => Some(DockNode::Split { axis, children: kept }),
                 }
             }
@@ -420,7 +420,7 @@ impl<T> Dock<T> {
         }
         if let DropZone::Insert(k) = zone {
             if from == to {
-                let g = root.group_mut(from).unwrap();
+                let Some(g) = root.group_mut(from) else { return };
                 let k = k.min(g.tabs.len());
                 if k == index || k == index + 1 {
                     g.active = index;
@@ -440,7 +440,7 @@ impl<T> Dock<T> {
             return;
         }
         let tab = {
-            let g = root.group_mut(from).unwrap();
+            let Some(g) = root.group_mut(from) else { return };
             let t = g.tabs.remove(index);
             if g.active >= g.tabs.len() {
                 g.active = g.tabs.len().saturating_sub(1);

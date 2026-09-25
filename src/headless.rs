@@ -76,11 +76,15 @@ impl<A: App> Headless<A> {
     pub fn save_png_gpu(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         let mut gpu = crate::gpu::GpuRenderer::headless().ok_or("no GPU adapter available")?;
         self.rt.render_scene();
-        let pm = self.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).ok_or("no frame")?;
+        let pm = self.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).flatten().ok_or("GPU render failed")?;
         pm.save_png(path).map_err(|e| e.to_string())
     }
 
     /// RGBA pixel at logical coordinates (for assertions).
+    ///
+    /// # Panics
+    /// If nothing was rendered yet or the point is outside the window; this is
+    /// a test helper, so failing loudly is intended.
     pub fn pixel(&self, x: f32, y: f32) -> [u8; 4] {
         let pm = self.rt.pixmap().expect("frame");
         let s = pm.width() as f32 / self.rt_size().w;

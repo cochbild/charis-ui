@@ -88,6 +88,7 @@ struct Shell<A: App> {
     #[cfg(feature = "clipboard")]
     clipboard: Option<arboard::Clipboard>,
     error: Option<String>,
+    gpu_failed: bool,
 }
 
 /// Open a window and run the app until it is closed.
@@ -105,6 +106,7 @@ pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error
         #[cfg(feature = "clipboard")]
         clipboard: arboard::Clipboard::new().ok(),
         error: None,
+        gpu_failed: false,
     };
     event_loop.run_app(&mut shell)?;
     match shell.error {
@@ -226,6 +228,11 @@ impl<A: App> Shell<A> {
             Presenter::Gpu(gs) => {
                 self.rt.render_scene();
                 self.rt.with_scene(|scene, text| gs.present(scene, text));
+                if !gs.renderer.is_healthy() {
+                    // Device lost or GPU error: continue on the CPU renderer.
+                    self.gpu_failed = true;
+                    self.rt.invalidate();
+                }
             }
             Presenter::Cpu { surface, .. } => {
                 let pm = self.rt.render();
@@ -249,13 +256,23 @@ impl<A: App> Shell<A> {
         }
         g.window.set_cursor(map_cursor(self.rt.cursor()));
         self.last_frame = Instant::now();
+        if self.gpu_failed {
+            self.gpu_failed = false;
+            if let Some(g) = &mut self.gfx {
+                if let Ok(p) = Self::create_presenter(&g.window, false) {
+                    g.presenter = p;
+                    g.window.request_redraw();
+                }
+            }
+        }
     }
 
     /// GPU by default; falls back to the CPU renderer when no adapter is
     /// available or `RUI_RENDERER=cpu` is set.
-    fn create_presenter(window: &Arc<Window>) -> Result<Presenter, String> {
+    #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
+    fn create_presenter(window: &Arc<Window>, allow_gpu: bool) -> Result<Presenter, String> {
         #[cfg(feature = "gpu")]
-        if std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
+        if allow_gpu && std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
             let size = window.inner_size();
             if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height) {
                 if std::env::var("RUI_PROFILE").is_ok() {
@@ -302,7 +319,7 @@ impl<A: App> ApplicationHandler for Shell<A> {
             }
         };
         window.set_ime_allowed(true);
-        let presenter = match Self::create_presenter(&window) {
+        let presenter = match Self::create_presenter(&window, true) {
             Ok(p) => p,
             Err(e) => {
                 self.error = Some(e);

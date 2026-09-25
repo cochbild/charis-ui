@@ -1,0 +1,170 @@
+# Road to a production-grade 1.0
+
+The goal is a framework you can use in all of your own Rust projects, and one the public can adopt
+for production desktop apps. It should offer windowing and panel features that other Rust UI
+frameworks don't provide.
+
+"Production grade" here means five concrete things:
+1. It runs correctly on Windows, macOS and Linux (X11 and Wayland), on real GPUs and without one.
+2. It is accessible (screen readers, keyboard navigation) and handles international text input
+   (IME).
+3. It stays fast with large UIs (thousands of rows, 4K displays, 120Hz or more).
+4. It has a stable, documented API with semver guarantees.
+5. Every release is verified automatically on every platform.
+
+## Where we are (v0.1, September 2026)
+
+**Done:**
+- Declarative element tree with CSS-like styling and transitions.
+- Taffy flexbox and grid layout.
+- OKLCH design tokens.
+- GPU renderer (wgpu), with a CPU fallback.
+- Text correction (contrast and gamma).
+- Resizable, collapsible and proportional splits.
+- Docking: move tabs, split groups, reorder tabs, maximize, and save/restore layouts (serde).
+- Frameless window chrome.
+- Menus, context menus, modals, tooltips.
+- About 20 widgets.
+- Headless test harness, and 41 tests including a GPU-vs-CPU parity test.
+
+**Missing for production:**
+- Platforms other than Linux have never been tested.
+- No accessibility.
+- Text input is single-line only, and IME composition (pre-edit) isn't shown.
+- Only one window per app.
+- No virtualized lists.
+- Layout is fully rebuilt every frame.
+- 34 `unwrap`/`expect` calls in library code.
+- The crate name is taken.
+- No CI, no LICENSE files, no API docs site.
+
+## Decisions (September 2026)
+
+- **Name:** to be decided before the first public release; *Prism* (`prism-ui`) and *Lumen*
+  (`lumen-ui`) are the leading candidates.
+- **License:** MIT OR Apache-2.0.
+- **Platform priority:** Windows is hardened first.
+- **CI comes last** because CI minutes are limited. Until then, the full test suite (including
+  golden screenshots and GPU parity) runs locally with `cargo test`.
+
+## Milestones
+
+Each milestone ends with a tagged release, and each has exit criteria that can be verified.
+
+### M0: Release engineering
+
+- [ ] Final crate name, reserved on crates.io. `rust-ui`, `rui` and `rustui` are taken.
+- [ ] `LICENSE-MIT` and `LICENSE-APACHE` files, `CONTRIBUTING.md`, `CHANGELOG.md`, code of conduct.
+- [ ] CI with GitHub Actions (**deferred to the end**):
+  - fmt, clippy (`-D warnings`), and tests on Linux, Windows and macOS;
+  - a feature matrix: `--no-default-features`, `gpu`, `serde`;
+  - a minimum supported Rust version (MSRV) job;
+  - `cargo doc` with `-D warnings`.
+- [ ] GPU parity test in CI using lavapipe (Linux) and WARP (Windows) (deferred along with CI).
+- [ ] Visual regression tests: golden PNG screenshots per theme, with a tolerance.
+- [ ] No panics in library code on user input: remove or justify every `unwrap`/`expect`, and
+      handle GPU errors (device lost, surface lost) by recovering or falling back to the CPU.
+
+**Exit:** green CI on 3 operating systems × the feature matrix, and a published 0.2 under the
+final name.
+
+### M1: Platform correctness
+
+- [ ] Windows:
+  - DWM frameless window with snap layouts and Aero shake;
+  - hit testing for the custom title bar (maximize-button hover shows the Snap Layouts flyout);
+  - rounded corners and shadow on Windows 11;
+  - Mica/Acrylic backdrop (optional).
+- [ ] macOS:
+  - transparent title bar with traffic lights positioned by the app;
+  - native full-screen;
+  - Cmd shortcuts;
+  - Retina scaling.
+- [ ] Linux:
+  - Wayland client-side decorations with xdg-decoration negotiation;
+  - fractional scaling;
+  - X11 edge resize.
+- [ ] Per-monitor DPI changes: re-layout and a crisp re-raster of glyphs and icons.
+- [ ] A system font per platform (Segoe UI Variable, SF Pro, Cantarell/Inter) as an option.
+
+**Exit:** a manual QA checklist signed off on Windows 11, macOS 15 and Ubuntu (GNOME Wayland plus
+X11). Screenshots go in the docs.
+
+### M2: Text and input
+
+- [ ] Multi-line text editor widget:
+  - selection, undo/redo, word wrap, scrolling;
+  - large documents (100k lines) that only shape what is visible.
+- [ ] IME: show pre-edit (the text being composed) with its underline, and position the candidate
+      window.
+- [ ] Rich text spans (bold, color, links) and selectable read-only text.
+- [ ] System clipboard on all platforms, including images (optional).
+- [ ] Keyboard shortcut and command system: an app-level keymap, rebindable, shown in menus.
+
+**Exit:** type Chinese, Japanese and Korean through the system IME in the editor on all 3 operating
+systems; a 100k-line file scrolls at 120fps.
+
+### M3: Accessibility
+
+- [ ] AccessKit integration:
+  - roles, names, states and actions for every widget;
+  - a tree kept in sync with the element tree;
+  - focus following keyboard focus.
+- [ ] High-contrast theme generated from the token system; respect the OS reduced-motion setting.
+- [ ] Headless tests assert on the accessibility tree (as GPUI Kit's tests do).
+
+**Exit:** the showcase is usable with NVDA (Windows), VoiceOver (macOS) and Orca (Linux).
+
+### M4: Scale and performance
+
+- [ ] Incremental layout: keep the taffy tree between frames and re-lay out only changed nodes.
+- [ ] Virtualized list, table and tree (render only visible rows).
+- [ ] Damage tracking on the CPU backend (repaint only dirty regions).
+- [ ] Frame budget targets:
+  - under 4 ms of CPU per frame for the showcase;
+  - a 100k-row table at 120fps;
+  - benchmarks tracked in CI.
+
+**Exit:** benchmark suite published; no frame over 8 ms in the showcase on mid-range hardware.
+
+### M5: Windowing and panels beyond other frameworks
+
+- [ ] Multiple windows.
+- [ ] Drag a dock tab out into a floating OS window, and dock it back.
+- [ ] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
+      style).
+- [ ] Panel commands:
+  - move a panel to the left, right, top or bottom;
+  - hide all panels;
+  - focus panel N;
+  - keyboard resizing of splitters.
+- [ ] Split resize priorities (VS Code's Low/Normal/High) and "remember last size" for every pane.
+- [ ] Drop-target styles: edge zones (default) or compass (Visual Studio style).
+- [ ] Workspaces: named, saved layouts ("perspectives").
+
+**Exit:** a demo IDE with floating panels across two monitors that restores its exact layout after
+a restart.
+
+### M6: Developer experience and 1.0
+
+- [ ] API review:
+  - consistent naming;
+  - `#[non_exhaustive]` where needed;
+  - private internals;
+  - a documented semver policy.
+- [ ] A docs site with a book (guide, theming, layout, panels, testing) plus rustdoc with examples
+      on every public item.
+- [ ] Optional hot-reloadable stylesheet layer and an element inspector overlay.
+- [ ] Widget gallery app and templates: a `cargo generate` starter for "IDE shell" and
+      "settings app".
+- [ ] Two real applications built on it: your projects are the proving ground.
+
+**Exit:** 1.0 with a semver guarantee.
+
+## Working agreements
+
+- **Every feature ships with:** a headless test, an entry in the showcase or gallery, and docs.
+- **Fidelity:** CPU and GPU output must stay within the parity tolerance, and golden screenshots
+  change only on purpose.
+- **Platform bugs:** found through QA on real hardware; this repo's container only covers Linux
+  (with a software GPU driver).

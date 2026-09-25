@@ -110,18 +110,39 @@ Use `.apply(fn)` and `.when(cond, fn)` for reusable style mixins.
 
 ### Themes
 
+Themes are organized like modern web design systems (Radix Colors / shadcn/ui):
+
+1. **Primitive scales**: 12-step OKLCH color scales generated from a seed color.
+   Steps 1–2 are app backgrounds, 3–5 component states, 6–8 borders, 9–10 solid fills,
+   and 11–12 text.
+2. **Semantic roles**: `theme().colors.surface`, `.border`, `.text_muted`, `.accent`,
+   `.focus_ring` and so on, derived from the scales. Widgets only use these roles.
+3. **A few global knobs** that regenerate everything consistently:
+
 ```rust
 fn theme(&self) -> Theme {
-    let base = if self.dark { Theme::dark() } else { Theme::light() };
-    let mut t = base.with_accent(hex("#a371f7"));
-    t.radius = 8.0;
-    t.font_size = 14.0;
-    t.colors.panel = hex("#101114");
-    t
+    Theme::from_config(ThemeConfig {
+        accent: hex("#a371f7"),
+        gray: GrayTint::Mauve,        // Zinc, Slate, Sand, Sage, Accent, Custom { hue, chroma }…
+        radius: 8.0,                  // sm = ×0.6, lg = ×1.6
+        scaling: 1.0,                 // text and control size multiplier
+        density: Density::Compact,    // control, row and tab heights
+        ..ThemeConfig::dark()
+    })
 }
 ```
 
-Widgets call `theme()` to pick up tokens, and so can your own components.
+Every token on the resulting `Theme` is public, so you can still override single values.
+The raw scales are there for your own components: `theme().scales.accent.step(3)`.
+
+Defaults follow web conventions:
+- 13px UI text and a 4px spacing rhythm.
+- Transitions of 150ms using the standard curve `cubic-bezier(.4,0,.2,1)`. Use
+  `.easing(..)` for any CSS curve.
+- Two-layer soft shadows.
+- Translucent borders in dark mode.
+- Focus rings shown only for keyboard focus (3px ring, like `:focus-visible`).
+- Splitters highlight after a 300ms hover delay, as in VS Code.
 
 ### Split panes
 
@@ -215,7 +236,12 @@ This is an early but working foundation. Known gaps and planned work:
 - Virtualized lists for very large data sets
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs
-- Serializable dock layouts and tab reordering within a group
+- Serializable dock layouts, tab reordering within a group, maximize/auto-hide panels,
+  floating tabs in OS windows
+- Hot-reloadable stylesheet layer
+
+See [`docs/LANDSCAPE.md`](docs/LANDSCAPE.md) for the survey of existing Rust UI frameworks and
+the design research behind these choices.
 
 ## License
 

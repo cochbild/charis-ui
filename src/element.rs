@@ -892,6 +892,11 @@ impl<M: 'static> Element<M> {
         self
     }
 
+    /// Timing function used by [`Element::transition`].
+    pub fn easing(mut self, e: crate::anim::Easing) -> Self {
+        self.style.easing = e;
+        self
+    }
     /// Style applied while hovered.
     pub fn hover(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
         self.hover = Some(f(self.hover.take().unwrap_or_default()));

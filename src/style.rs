@@ -303,6 +303,8 @@ pub struct Style {
     pub cursor: Option<Cursor>,
     /// Duration (seconds) used to animate between interaction states.
     pub transition: f32,
+    /// Timing function for transitions (defaults to the web's standard curve).
+    pub easing: crate::anim::Easing,
 
     // ---- text (inherited when `None`) ----
     pub color: Option<Color>,
@@ -357,6 +359,7 @@ impl Default for Style {
             translate: (0.0, 0.0),
             cursor: None,
             transition: 0.0,
+            easing: crate::anim::Easing::Standard,
             color: None,
             font_size: None,
             font_weight: None,

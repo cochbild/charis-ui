@@ -366,6 +366,7 @@ pub struct Runtime<A: App> {
     scrolls: HashMap<u64, ScrollState>,
     inputs: HashMap<u64, InputState>,
     tooltip: Option<(u64, f64, Point)>,
+    splitter_hover: Option<(u64, f64)>,
     drop_target: Option<u64>,
     queue: Vec<A::Msg>,
     requests: Vec<WindowRequest>,
@@ -410,6 +411,7 @@ impl<A: App> Runtime<A> {
             scrolls: HashMap::new(),
             inputs: HashMap::new(),
             tooltip: None,
+            splitter_hover: None,
             drop_target: None,
             queue: Vec::new(),
             requests: Vec::new(),
@@ -498,6 +500,14 @@ impl<A: App> Runtime<A> {
             return Some(0.0);
         }
         let mut next: Option<f64> = None;
+        if let Some((_, since)) = self.splitter_hover {
+            let d = self.theme.splitter_hover_delay as f64;
+            if now - since < d {
+                next = Some(since + d);
+            } else if now - since < d + 0.12 {
+                return Some(0.0);
+            }
+        }
         if let Some((_, since, _)) = self.tooltip {
             if now - since < TOOLTIP_DELAY {
                 next = Some(since + TOOLTIP_DELAY);
@@ -677,14 +687,14 @@ impl<A: App> Runtime<A> {
             tr.seen = fno;
             if tr.to != target {
                 let t = if tr.dur > 0.0 { ((now - tr.start) as f32 / tr.dur).clamp(0.0, 1.0) } else { 1.0 };
-                let cur = tr.from.lerp(&tr.to, crate::anim::Easing::EaseOutCubic.apply(t));
+                let cur = tr.from.lerp(&tr.to, st.easing.apply(t));
                 tr.from = cur;
                 tr.to = target;
                 tr.start = now;
                 tr.dur = st.transition;
             }
             let t = if tr.dur > 0.0 { ((now - tr.start) as f32 / tr.dur).clamp(0.0, 1.0) } else { 1.0 };
-            let v = tr.from.lerp(&tr.to, crate::anim::Easing::EaseOutCubic.apply(t));
+            let v = tr.from.lerp(&tr.to, st.easing.apply(t));
             v.write(&mut st);
         }
 
@@ -1037,6 +1047,7 @@ impl<A: App> Runtime<A> {
             scrolls: &self.scrolls,
             inputs: &self.inputs,
             drag: &self.drag,
+            splitter_hover: self.splitter_hover,
             theme: &th,
             window_focused: self.window_focused,
         };
@@ -1125,6 +1136,15 @@ impl<A: App> Runtime<A> {
             cursor = edge_cursor(edge);
         }
         self.cursor = cursor;
+        // Splitter hover-highlight delay tracking
+        let sp = hit
+            .filter(|&i| matches!(self.frame.nodes[i].behavior, Behavior::Splitter { .. }))
+            .map(|i| self.frame.nodes[i].id);
+        match (sp, self.splitter_hover) {
+            (Some(a), Some((b, _))) if a == b => {}
+            (Some(a), _) => self.splitter_hover = Some((a, self.now)),
+            (None, _) => self.splitter_hover = None,
+        }
         // Tooltip tracking
         let tip = hit.and_then(|i| self.chain(i).into_iter().find(|&j| self.frame.nodes[j].tooltip.is_some()));
         match (tip, self.tooltip) {
@@ -2219,6 +2239,7 @@ struct PaintCtx<'a, M> {
     scrolls: &'a HashMap<u64, ScrollState>,
     inputs: &'a HashMap<u64, InputState>,
     drag: &'a Drag,
+    splitter_hover: Option<(u64, f64)>,
     theme: &'a Theme,
     window_focused: bool,
 }
@@ -2280,13 +2301,21 @@ fn paint_node<M>(
     // Splitter highlight
     if let Behavior::Splitter { split, index, axis } = n.behavior {
         let dragging = matches!(ctx.drag, Drag::Splitter { split: sp, index: ix, .. } if *sp == split && *ix == index);
-        if dragging || ctx.hovered.contains(&n.id) {
+        // Like VS Code: highlight after a short hover delay, then fade in.
+        let hover_t = match ctx.splitter_hover {
+            Some((id, since)) if id == n.id => {
+                ((ctx.now - since - ctx.theme.splitter_hover_delay as f64) / 0.12).clamp(0.0, 1.0) as f32
+            }
+            _ => 0.0,
+        };
+        let alpha = if dragging { 1.0 } else { hover_t };
+        if alpha > 0.0 {
             let hr = match axis {
                 Axis::Horizontal => Rect::new(r.center().x - 1.5, r.y, 3.0, r.h),
                 Axis::Vertical => Rect::new(r.x, r.center().y - 1.5, r.w, 3.0),
             };
             let saved = c.take_clips();
-            c.fill_rect(hr, ctx.theme.colors.accent);
+            c.fill_rect(hr, ctx.theme.colors.accent.fade(alpha));
             c.restore_clips(saved);
         }
     }
@@ -2372,8 +2401,9 @@ fn paint_node<M>(
         let or = r.outset(o.offset + o.width / 2.0);
         c.stroke_rrect(or, s.radius.grow(o.offset + o.width / 2.0), o.width, o.color);
     } else if show_ring {
-        let or = r.outset(2.0);
-        c.stroke_rrect(or, s.radius.grow(2.0), 2.0, ctx.theme.colors.focus_ring);
+        // shadcn-style ring: a soft band just outside the border box, keyboard focus only.
+        let w = ctx.theme.focus_ring_width;
+        c.stroke_rrect(r.outset(w / 2.0), s.radius.grow(w / 2.0), w, ctx.theme.colors.focus_ring);
     }
     if layer {
         c.pop_layer();

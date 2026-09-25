@@ -252,3 +252,16 @@ fn menu_item_hover_highlights() {
         "hovered item color {px:?}"
     );
 }
+
+#[test]
+fn splitter_highlight_waits_for_hover_delay() {
+    let mut h = harness();
+    let accent = Theme::dark().colors.accent;
+    let is_accent =
+        |p: [u8; 4]| (p[2] as f32 - accent.b * 255.0).abs() < 25.0 && (p[0] as f32 - accent.r * 255.0).abs() < 25.0;
+    h.move_to(250.5, 300.0);
+    h.advance(0.1);
+    assert!(!is_accent(h.pixel(250.5, 300.0)), "highlighted too early");
+    h.advance(0.4);
+    assert!(is_accent(h.pixel(250.5, 300.0)), "not highlighted after delay: {:?}", h.pixel(250.5, 300.0));
+}

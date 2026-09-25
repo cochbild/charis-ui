@@ -35,6 +35,8 @@ struct Nebula {
     minimap: bool,
     telemetry: bool,
     density: usize,
+    gray: usize,
+    radius: f32,
     panel_tab: usize,
     context_menu: Option<Point>,
     show_modal: bool,
@@ -62,6 +64,8 @@ enum Msg {
     Minimap,
     Telemetry,
     Density(usize),
+    Gray(usize),
+    Radius(f32),
     Accent(usize),
     ToggleTheme,
     PanelTab(usize),
@@ -71,6 +75,9 @@ enum Msg {
     ClearNotifications,
     Noop,
 }
+
+const GRAYS: [(&str, GrayTint); 4] =
+    [("Zinc", GrayTint::Zinc), ("Slate", GrayTint::Slate), ("Mauve", GrayTint::Mauve), ("Sand", GrayTint::Sand)];
 
 const ACCENTS: [&str; 6] = ["#5b8cff", "#a371f7", "#3ecf8e", "#f5a524", "#f0616d", "#22d3ee"];
 
@@ -95,6 +102,8 @@ impl Nebula {
             minimap: false,
             telemetry: true,
             density: 1,
+            gray: 0,
+            radius: 6.0,
             panel_tab: 0,
             context_menu: None,
             show_modal: false,
@@ -107,8 +116,14 @@ impl App for Nebula {
     type Msg = Msg;
 
     fn theme(&self) -> Theme {
-        let base = if self.dark { Theme::dark() } else { Theme::light() };
-        base.with_accent(hex(ACCENTS[self.accent]))
+        let base = if self.dark { ThemeConfig::dark() } else { ThemeConfig::light() };
+        Theme::from_config(ThemeConfig {
+            accent: hex(ACCENTS[self.accent]),
+            gray: GRAYS[self.gray].1,
+            radius: self.radius,
+            density: [Density::Compact, Density::Default, Density::Comfortable][self.density],
+            ..base
+        })
     }
 
     fn on_key(&self, e: &KeyEvent) -> Option<Msg> {
@@ -174,6 +189,8 @@ impl App for Nebula {
             Msg::Minimap => self.minimap = !self.minimap,
             Msg::Telemetry => self.telemetry = !self.telemetry,
             Msg::Density(d) => self.density = d,
+            Msg::Gray(g) => self.gray = g,
+            Msg::Radius(r) => self.radius = r,
             Msg::Accent(a) => self.accent = a,
             Msg::ToggleTheme => {
                 self.dark = !self.dark;
@@ -719,6 +736,31 @@ impl Nebula {
                                 ]),
                             ))
                             .child(field(
+                                "Gray tint",
+                                segmented(
+                                    GRAYS
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, g)| (g.0.to_string(), self.gray == i, Msg::Gray(i)))
+                                        .collect(),
+                                ),
+                            ))
+                            .child(field(
+                                "Corner radius",
+                                row()
+                                    .items_center()
+                                    .gap(12.0)
+                                    .child(slider(self.radius, 0.0, 12.0).step(1.0).on_change(Msg::Radius).grow(1.0))
+                                    .child(
+                                        text(format!("{}px", self.radius as i32))
+                                            .nowrap()
+                                            .mono()
+                                            .font_size(12.0)
+                                            .w(40.0)
+                                            .text_align(TextAlign::Right),
+                                    ),
+                            ))
+                            .child(field(
                                 "Editor font size",
                                 row()
                                     .items_center()
@@ -1010,6 +1052,12 @@ fn main() {
             Some("collapsed") => {
                 app.sidebar_open = false;
                 app.inspector_open = false;
+            }
+            Some("knobs") => {
+                app.density = 0;
+                app.gray = 2;
+                app.radius = 12.0;
+                app.accent = 1;
             }
             Some("search") => {
                 app.activity = Activity::Search;

@@ -411,7 +411,7 @@ pub fn tree_row<M: 'static>(
     let c = &th.colors;
     let mut r = row()
         .items_center()
-        .h(26.0)
+        .h(th.row_height)
         .pl(8.0 + depth as f32 * 14.0)
         .pr(8.0)
         .gap(6.0)
@@ -472,7 +472,8 @@ impl<M> Tab<M> {
 pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
-    let mut bar = row().h(36.0).shrink(0.0).bg(c.panel).border_b(1.0, c.border).scroll_x().items(Align::Stretch);
+    let mut bar =
+        row().h(th.tab_height).shrink(0.0).bg(c.panel).border_b(1.0, c.border).scroll_x().items(Align::Stretch);
     for (i, t) in tabs.into_iter().enumerate() {
         let mut tab = row()
             .key(("tab", i, t.label.clone()))
@@ -655,7 +656,7 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
     let item_row = |label: String, lead: Element<M>, trail: Option<Element<M>>, msg: M, disabled: bool| {
         let mut r = row()
             .items_center()
-            .h(28.0)
+            .h(th.row_height + 2.0)
             .px(8.0)
             .gap(8.0)
             .rounded(th.radius_sm)
@@ -752,7 +753,7 @@ pub fn menu_bar<M: Clone + 'static>(
         let o = on_open.clone();
         let mut btn = row()
             .items_center()
-            .h(26.0)
+            .h(th.row_height)
             .px(9.0)
             .rounded(th.radius_sm)
             .font_size(12.5)

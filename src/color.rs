@@ -100,6 +100,58 @@ impl Color {
         Color { r: c(self.r, top.r), g: c(self.g, top.g), b: c(self.b, top.b), a }
     }
 
+    /// Build from OKLCH: perceptual lightness `l` (0..=1), chroma `c`
+    /// (0..≈0.37) and hue `h` in degrees — the color space used by modern CSS
+    /// design systems (Tailwind v4, shadcn). Out-of-gamut colors are brought
+    /// into sRGB by reducing chroma, which preserves lightness and hue.
+    pub fn oklch(l: f32, c: f32, h: f32) -> Self {
+        let to_rgb = |c: f32| {
+            let (a, b) = (c * h.to_radians().cos(), c * h.to_radians().sin());
+            oklab_to_linear_srgb(l, a, b)
+        };
+        let in_gamut = |(r, g, b): (f32, f32, f32)| {
+            let e = 1e-4;
+            (-e..=1.0 + e).contains(&r) && (-e..=1.0 + e).contains(&g) && (-e..=1.0 + e).contains(&b)
+        };
+        let mut rgb = to_rgb(c);
+        if !in_gamut(rgb) {
+            let (mut lo, mut hi) = (0.0f32, c);
+            for _ in 0..24 {
+                let mid = (lo + hi) / 2.0;
+                if in_gamut(to_rgb(mid)) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            rgb = to_rgb(lo);
+        }
+        let enc = |x: f32| {
+            let x = x.clamp(0.0, 1.0);
+            if x <= 0.003_130_8 {
+                12.92 * x
+            } else {
+                1.055 * x.powf(1.0 / 2.4) - 0.055
+            }
+        };
+        Color { r: enc(rgb.0), g: enc(rgb.1), b: enc(rgb.2), a: 1.0 }
+    }
+
+    /// Convert to OKLCH `(lightness, chroma, hue_degrees)`.
+    pub fn to_oklch(&self) -> (f32, f32, f32) {
+        let lin = |x: f32| if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+        let (r, g, b) = (lin(self.r), lin(self.g), lin(self.b));
+        let l = (0.412_221_46 * r + 0.536_332_55 * g + 0.051_445_995 * b).cbrt();
+        let m = (0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b).cbrt();
+        let s = (0.088_302_46 * r + 0.281_718_85 * g + 0.629_978_7 * b).cbrt();
+        let ll = 0.210_454_26 * l + 0.793_617_8 * m - 0.004_072_047 * s;
+        let a = 1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_7 * s;
+        let bb = 0.025_904_037 * l + 0.782_771_77 * m - 0.808_675_77 * s;
+        let c = (a * a + bb * bb).sqrt();
+        let h = bb.atan2(a).to_degrees().rem_euclid(360.0);
+        (ll, c, h)
+    }
+
     /// Relative luminance, useful for picking readable foreground colors.
     pub fn luminance(&self) -> f32 {
         0.2126 * self.r + 0.7152 * self.g + 0.0722 * self.b
@@ -114,6 +166,23 @@ impl Color {
         )
         .unwrap_or(tiny_skia::Color::TRANSPARENT)
     }
+}
+
+fn oklab_to_linear_srgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
+    let l_ = l + 0.396_337_78 * a + 0.215_803_76 * b;
+    let m_ = l - 0.105_561_346 * a - 0.063_854_17 * b;
+    let s_ = l - 0.089_484_18 * a - 1.291_485_5 * b;
+    let (l3, m3, s3) = (l_ * l_ * l_, m_ * m_ * m_, s_ * s_ * s_);
+    (
+        4.076_741_7 * l3 - 3.307_711_6 * m3 + 0.230_969_94 * s3,
+        -1.268_438 * l3 + 2.609_757_4 * m3 - 0.341_319_38 * s3,
+        -0.004_196_086_3 * l3 - 0.703_418_6 * m3 + 1.707_614_7 * s3,
+    )
+}
+
+/// Shorthand for [`Color::oklch`].
+pub fn oklch(l: f32, c: f32, h: f32) -> Color {
+    Color::oklch(l, c, h)
 }
 
 /// Shorthand for [`Color::hex`].
@@ -181,5 +250,33 @@ impl Fill {
 impl From<Color> for Fill {
     fn from(c: Color) -> Self {
         Fill::Solid(c)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oklch_roundtrip() {
+        for hexs in ["#5b8cff", "#f0616d", "#3ecf8e", "#121316", "#ffffff", "#808080"] {
+            let c = Color::hex(hexs);
+            let (l, ch, h) = c.to_oklch();
+            let back = Color::oklch(l, ch, h);
+            for (x, y) in [(c.r, back.r), (c.g, back.g), (c.b, back.b)] {
+                assert!((x - y).abs() < 0.004, "{hexs}: {c:?} vs {back:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn oklch_known_value() {
+        // Tailwind v4 zinc-900 = oklch(21% 0.006 285.885) ≈ #18181b
+        let c = Color::oklch(0.21, 0.006, 285.885);
+        let e = Color::hex("#18181b");
+        assert!((c.r - e.r).abs() < 0.01 && (c.g - e.g).abs() < 0.01 && (c.b - e.b).abs() < 0.01, "{c:?}");
+        // Out of gamut chroma is clamped, not garbage.
+        let v = Color::oklch(0.7, 0.5, 150.0);
+        assert!(v.r >= 0.0 && v.g <= 1.0);
     }
 }

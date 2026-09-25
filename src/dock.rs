@@ -211,7 +211,7 @@ pub struct Dock<T> {
     root: Option<DockNode<T>>,
     next_id: GroupId,
     drag: Option<DockDrag>,
-    /// Height of each group's tab strip.
+    /// Height of each group's tab strip (0 = use the theme's `tab_height`).
     pub tab_height: f32,
     /// Show close buttons on tabs.
     pub closable: bool,
@@ -221,7 +221,7 @@ impl<T> Dock<T> {
     pub fn new(mut root: DockNode<T>) -> Self {
         let mut next = 0;
         root.assign_ids(&mut next);
-        Self { root: Some(root), next_id: next, drag: None, tab_height: 34.0, closable: true }
+        Self { root: Some(root), next_id: next, drag: None, tab_height: 0.0, closable: true }
     }
 
     /// The layout tree (for persistence or inspection).
@@ -305,7 +305,7 @@ impl<T> Dock<T> {
                 }
             },
             DockMsg::Target(g, ev) => {
-                let tab_h = self.tab_height;
+                let tab_h = if self.tab_height > 0.0 { self.tab_height } else { theme().tab_height };
                 if let Some(d) = &mut self.drag {
                     match ev.phase {
                         DropPhase::Over | DropPhase::Drop => d.over = Some((g, zone_for(ev.pos, ev.rect, tab_h))),
@@ -474,13 +474,8 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
         let c = th.colors.clone();
         let gid = g.id;
         let drag = self.dock.drag.as_ref().filter(|d| d.pos != Point::ZERO);
-        let mut strip = row()
-            .h(self.dock.tab_height)
-            .shrink(0.0)
-            .bg(c.panel)
-            .border_b(1.0, c.border)
-            .scroll_x()
-            .items(Align::Stretch);
+        let tab_h = if self.dock.tab_height > 0.0 { self.dock.tab_height } else { th.tab_height };
+        let mut strip = row().h(tab_h).shrink(0.0).bg(c.panel).border_b(1.0, c.border).scroll_x().items(Align::Stretch);
         for (i, t) in g.tabs.iter().enumerate() {
             let active = i == g.active;
             let dragged = drag.is_some_and(|d| d.from == (gid, i));
@@ -547,7 +542,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
             .child(col().grow(1.0).min_h(0.0).min_w(0.0).child(body.grow(1.0).min_h(0.0)));
         // Drop preview
         if let Some((_, zone)) = drag.and_then(|d| d.over).filter(|o| o.0 == gid) {
-            let th_ = self.dock.tab_height;
+            let th_ = tab_h;
             let mut ov = div()
                 .absolute()
                 .pointer_events(false)

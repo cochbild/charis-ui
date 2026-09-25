@@ -61,21 +61,23 @@ pub mod widgets;
 #[cfg(feature = "window")]
 pub mod window;
 
-pub use color::{hex, rgb, rgba, Color, Fill};
+pub use anim::Easing;
+pub use color::{hex, oklch, rgb, rgba, Color, Fill};
 pub use element::*;
 pub use geometry::{Axis, Point, Rect, Size};
 pub use icons::Icon;
 pub use paint::Canvas;
 pub use runtime::{window_info, App, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
-pub use theme::{theme, Palette, Theme};
+pub use theme::{theme, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;
 #[cfg(feature = "window")]
 pub use window::{run, WindowOptions};
 
 /// Everything needed to build an app.
 pub mod prelude {
-    pub use crate::color::{hex, rgb, rgba, Color, Fill};
+    pub use crate::anim::Easing;
+    pub use crate::color::{hex, oklch, rgb, rgba, Color, Fill};
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};
     pub use crate::element::{
         canvas, col, div, hsplit, icon, row, spacer, split, text, vsplit, DragEvent, DragPhase, DropEvent, DropPhase,
@@ -90,7 +92,7 @@ pub mod prelude {
         pct, Align, Corners, Cursor, Direction, Edges, FontFamily, Justify, Length, Overflow, Shadow, StylePatch,
         TextAlign, Track, Weight,
     };
-    pub use crate::theme::{theme, Theme};
+    pub use crate::theme::{theme, Density, GrayTint, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]
     pub use crate::window::{run, WindowOptions};

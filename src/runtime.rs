@@ -357,6 +357,8 @@ impl ScrollState {
 struct InputState {
     sel: Selection,
     scroll: f32,
+    /// Vertical scroll of multi-line inputs.
+    scroll_y: f32,
     blink_start: f64,
 }
 
@@ -806,6 +808,21 @@ impl<A: App> Runtime<A> {
             let NodeContent::Input(spec) = &n.content else { continue };
             let Some(st) = self.inputs.get_mut(&n.id) else { continue };
             let cr = content_rect(n);
+            if spec.multiline {
+                st.sel.clamp(&spec.value);
+                let w = Some(cr.w.max(1.0));
+                let caret = self.text.caret_rect(&spec.value, &n.text, w, self.scale, st.sel.cursor);
+                let total = self.text.measure(&spec.value, &n.text, w, self.scale).h;
+                let mut sy = st.scroll_y;
+                if caret.bottom() - sy > cr.h {
+                    sy = caret.bottom() - cr.h;
+                }
+                if caret.y - sy < 0.0 {
+                    sy = caret.y;
+                }
+                st.scroll_y = sy.clamp(0.0, (total - cr.h).max(0.0));
+                continue;
+            }
             let shown = display_value(spec);
             let stops = self.text.caret_stops(&shown, &n.text, self.scale);
             st.sel.clamp(&spec.value);
@@ -2008,6 +2025,26 @@ impl<A: App> Runtime<A> {
     fn wheel(&mut self, p: Point, d: Point) {
         let Some(hit) = self.hit(p) else { return };
         let now = self.now;
+        // Multi-line inputs scroll their own content first.
+        let ml = self
+            .chain(hit)
+            .into_iter()
+            .find(|&i| matches!(&self.frame.nodes[i].content, NodeContent::Input(s) if s.multiline));
+        if let Some(i) = ml {
+            let n = &self.frame.nodes[i];
+            if let NodeContent::Input(spec) = &n.content {
+                let cr = content_rect(n);
+                let total = self.text.measure(&spec.value, &n.text, Some(cr.w.max(1.0)), self.scale).h;
+                let max = (total - cr.h).max(0.0);
+                let st = self.inputs.entry(n.id).or_default();
+                let before = st.scroll_y;
+                st.scroll_y = (st.scroll_y + d.y).clamp(0.0, max);
+                if st.scroll_y != before {
+                    self.dirty = true;
+                    return;
+                }
+            }
+        }
         for i in self.chain(hit) {
             let n = &self.frame.nodes[i];
             if let Behavior::Scroll { x, y } = n.behavior {
@@ -2083,8 +2120,13 @@ impl<A: App> Runtime<A> {
         let &i = self.frame.by_id.get(&id)?;
         let n = &self.frame.nodes[i];
         let NodeContent::Input(spec) = &n.content else { return None };
-        let shown = display_value(spec);
         let inner = content_rect(n);
+        if spec.multiline {
+            let sy = self.inputs.get(&id).map(|s| s.scroll_y).unwrap_or(0.0);
+            let (x, y) = (p.x - inner.x, p.y - inner.y + sy);
+            return Some(self.text.hit_byte(&spec.value, None, &n.text, Some(inner.w.max(1.0)), self.scale, x, y));
+        }
+        let shown = display_value(spec);
         let scroll = self.inputs.get(&id).map(|s| s.scroll).unwrap_or(0.0);
         let x = p.x - inner.x + scroll;
         let stops = self.text.caret_stops(&shown, &n.text, self.scale);
@@ -2211,6 +2253,10 @@ impl<A: App> Runtime<A> {
         let id = n.id;
         let value = spec.value.clone();
         let password = spec.password;
+        let multiline = spec.multiline;
+        let submit_on_enter = spec.submit_on_enter;
+        let wrap_w = content_rect(n).w.max(1.0);
+        let tstyle = n.text.clone();
         let on_input = n.handlers.input.clone();
         let on_submit = n.handlers.submit.clone();
         let st = self.inputs.entry(id).or_default();
@@ -2247,8 +2293,37 @@ impl<A: App> Runtime<A> {
                 };
                 mv(&mut sel, to, k.mods.shift);
             }
+            Key::Up | Key::Down if multiline => {
+                let scale = self.scale;
+                let r = self.text.caret_rect(&value, &tstyle, Some(wrap_w), scale, sel.cursor);
+                let y = if k.key == Key::Up { r.y - 1.0 } else { r.bottom() + 1.0 };
+                let to = if y < 0.0 {
+                    0
+                } else {
+                    let total = self.text.measure(&value, &tstyle, Some(wrap_w), scale).h;
+                    if y >= total {
+                        value.len()
+                    } else {
+                        self.text.hit_byte(&value, None, &tstyle, Some(wrap_w), scale, r.x, y)
+                    }
+                };
+                mv(&mut sel, to, k.mods.shift);
+            }
+            Key::Home if multiline && !cmd => {
+                let to = value[..sel.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                mv(&mut sel, to, k.mods.shift);
+            }
+            Key::End if multiline && !cmd => {
+                let to = value[sel.cursor..].find('\n').map(|i| sel.cursor + i).unwrap_or(value.len());
+                mv(&mut sel, to, k.mods.shift);
+            }
             Key::Home | Key::Up => mv(&mut sel, 0, k.mods.shift),
             Key::End | Key::Down => mv(&mut sel, value.len(), k.mods.shift),
+            Key::Enter if multiline && !(submit_on_enter && !k.mods.shift) => {
+                let (v, s) = edit::replace(&value, sel, "\n");
+                sel = s;
+                new_value = Some(v);
+            }
             Key::Backspace => {
                 if sel.is_empty() {
                     sel.anchor =
@@ -2328,6 +2403,16 @@ impl<A: App> Runtime<A> {
 
     fn paste(&mut self, t: &str) {
         self.clipboard = t.to_string();
+        let multiline = self
+            .focused
+            .and_then(|f| self.node_by_id(f))
+            .is_some_and(|n| matches!(&n.content, NodeContent::Input(s) if s.multiline));
+        if multiline {
+            let t: String =
+                t.replace("\r\n", "\n").chars().filter(|c| *c == '\n' || *c == '\t' || !c.is_control()).collect();
+            self.insert_text(&t);
+            return;
+        }
         let t: String =
             t.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).filter(|c| !c.is_control()).collect();
         self.insert_text(&t);
@@ -2544,6 +2629,17 @@ fn measure_node<M>(
                 }
             }
             tf::Size { width: known.width.unwrap_or(w.ceil()), height: known.height.unwrap_or(s.h) }
+        }
+        NodeContent::Input(spec) if spec.multiline => {
+            let lh = node.text.size * node.text.line_height;
+            let w = match (known.width, avail.width) {
+                (Some(w), _) | (None, tf::AvailableSpace::Definite(w)) => Some(w.max(1.0)),
+                _ => None,
+            };
+            let content = if spec.value.is_empty() { " " } else { spec.value.as_str() };
+            let h = text.measure(content, &node.text, w, scale).h;
+            let rows = (h / lh).round().clamp(spec.rows.0 as f32, spec.rows.1 as f32);
+            tf::Size { width: known.width.unwrap_or(0.0), height: known.height.unwrap_or((rows * lh).ceil()) }
         }
         NodeContent::Input(_) => {
             let h = (node.text.size * node.text.line_height).ceil();
@@ -2931,6 +3027,35 @@ fn paint_input<M>(ctx: &PaintCtx<M>, n: &Node<M>, spec: &InputSpec, cr: Rect, c:
     let th = ctx.theme;
     let focused = ctx.focused == Some(n.id);
     let st = ctx.inputs.get(&n.id).copied().unwrap_or_default();
+    if spec.multiline {
+        let scale = c.scale;
+        let wrap = Some(cr.w.max(1.0));
+        c.push_clip(cr.outset(1.0), Corners::ZERO);
+        let origin = Rect::new(cr.x, cr.y - st.scroll_y, cr.w, cr.h + st.scroll_y);
+        if spec.value.is_empty() && !spec.placeholder.is_empty() {
+            c.text_block(&spec.placeholder, &n.text, origin, wrap, th.colors.text_faint, false);
+        }
+        let mut sel = st.sel;
+        sel.clamp(&spec.value);
+        if focused && !sel.is_empty() {
+            let (a, b) = sel.range();
+            for r in c.text.selection_rects(&spec.value, None, &n.text, wrap, scale, a, b) {
+                c.fill_rect(r.translate(origin.x, origin.y), th.colors.selection);
+            }
+        }
+        if !spec.value.is_empty() {
+            c.text_block(&spec.value, &n.text, origin, wrap, n.color, false);
+        }
+        if focused && ctx.window_focused && ((ctx.now - st.blink_start) / 0.53).floor() as i64 % 2 == 0 {
+            let r = c.text.caret_rect(&spec.value, &n.text, wrap, scale, sel.cursor);
+            c.fill_rect(
+                Rect::new((origin.x + r.x).round() - 0.5, origin.y + r.y + 2.0, 1.5, r.h - 4.0),
+                th.colors.accent,
+            );
+        }
+        c.pop_clip();
+        return;
+    }
     let shown = display_value(spec);
     let scale = c.scale;
     c.push_clip(cr.outset(1.0), Corners::ZERO);

@@ -127,8 +127,14 @@ impl<M: 'static> Element<M> {
 pub fn text_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
     let th = theme();
     let c = &th.colors;
-    let mut e =
-        Element::new(Content::Input(InputSpec { value: value.into(), placeholder: String::new(), password: false }));
+    let mut e = Element::new(Content::Input(InputSpec {
+        value: value.into(),
+        placeholder: String::new(),
+        password: false,
+        multiline: false,
+        submit_on_enter: false,
+        rows: (1, 1),
+    }));
     e.handlers.input = Some(Rc::new(on_input));
     e.focusable = true;
     e.h(th.control_height)
@@ -167,6 +173,40 @@ impl<M: 'static> Element<M> {
     /// Message sent with the new value of a slider.
     pub fn on_change(mut self, f: impl Fn(f32) -> M + 'static) -> Self {
         self.handlers.value = Some(Rc::new(f));
+        self
+    }
+}
+
+/// A multi-line text editor that grows with its content (1–8 rows by
+/// default; see [`Element::rows`]). Enter inserts a newline unless
+/// [`Element::submit_on_enter`] is set.
+pub fn text_area<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
+    let th = theme();
+    let mut e = text_input(value, on_input).h(Length::Auto).py(7.0).line_height(1.5);
+    if let Content::Input(spec) = &mut e.content {
+        spec.multiline = true;
+        spec.rows = (1, 8);
+    }
+    e.min_h(th.control_height)
+}
+
+impl<M: 'static> Element<M> {
+    /// Visible row range of a [`text_area`]: it grows from `min` to `max`
+    /// rows, then scrolls.
+    pub fn rows(mut self, min: u32, max: u32) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.rows = (min.max(1), max.max(min.max(1)));
+        }
+        self
+    }
+
+    /// For a [`text_area`]: Enter sends `msg`, Shift+Enter inserts a newline
+    /// (chat composer behaviour).
+    pub fn submit_on_enter(mut self, msg: M) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.submit_on_enter = true;
+        }
+        self.handlers.submit = Some(msg);
         self
     }
 }

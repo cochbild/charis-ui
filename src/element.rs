@@ -223,6 +223,12 @@ pub(crate) struct InputSpec {
     pub value: String,
     pub placeholder: String,
     pub password: bool,
+    /// Multi-line editing (text area).
+    pub multiline: bool,
+    /// For multi-line inputs: Enter submits, Shift+Enter inserts a newline.
+    pub submit_on_enter: bool,
+    /// Visible rows (min, max) for multi-line inputs; the box grows with its content.
+    pub rows: (u32, u32),
 }
 
 /// A pane inside a [`split`](crate::split) container.

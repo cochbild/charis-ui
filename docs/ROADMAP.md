@@ -118,7 +118,9 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
       composing.
 - [x] Rich text spans (bold, color, links) and selectable read-only text.
 - [ ] System clipboard on all platforms, including images (optional).
-- [ ] Keyboard shortcut and command system: an app-level keymap, rebindable, shown in menus.
+- [x] Keyboard shortcut and command system: `App::commands()` with default keys and chords,
+      a rebindable `Keymap` (serde), menus built from commands, a command palette, a Keyboard
+      Shortcuts editor with a recorder and conflict warnings, `on_key_capture`.
 
 **Exit:** type Chinese, Japanese and Korean through the system IME in the editor on all 3 operating
 systems; a 100k-line file scrolls at 120fps.
@@ -177,8 +179,9 @@ systems; a 100k-line file scrolls at 120fps.
       maximize; tool window menu (move to an edge, pinned / auto-hide, hide); hide all auto-hide
       tool windows (Escape); keyboard resizing of splitters (arrows, Shift, Home / End).
       Menus are keyboard accessible (autofocus, arrows, Enter, Escape).
-- [ ] Focus panel N (a keymap command).
-- [ ] Split resize priorities (VS Code's Low/Normal/High) and "remember last size" for every pane.
+- [x] Focus panel N (a keymap command): `Dock::focus_id` / `DockSpace::focus_id` with `cx.focus`.
+- [x] Split resize priorities (`Pane::priority`, Low/Normal/High) and remembered sizes for panes
+      that come and go (`Pane::key`); squeezed panes resize from their size on screen.
 - [x] Drop targets: edge zones plus a Visual Studio-style compass in the hovered group and
       guides at the dock's outer edges (`Dock::compass`, on by default).
 - [x] Workspaces: named, saved layouts (`Layouts<S>`) with menu commands, a Save As dialog, and

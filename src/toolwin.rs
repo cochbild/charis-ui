@@ -425,18 +425,21 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
         let mut main = center.grow(1.0).min_w(0.0).min_h(0.0);
         if let Some(w) = pinned_open(Side::Bottom) {
             let m = map.clone();
-            main = vsplit("tool/split-v", vec![Pane::fill(main), Pane::fixed(w.size, panel(w, true)).min(80.0)])
-                .on_resize(move |s| m(ToolMsg::Resized(Side::Bottom, s.last().copied().unwrap_or(0.0))));
+            main = vsplit(
+                "tool/split-v",
+                vec![Pane::fill(main), Pane::fixed(w.size, panel(w, true)).min(80.0).priority(Priority::Low)],
+            )
+            .on_resize(move |s| m(ToolMsg::Resized(Side::Bottom, s.last().copied().unwrap_or(0.0))));
         }
         let (l, r) = (pinned_open(Side::Left), pinned_open(Side::Right));
         if l.is_some() || r.is_some() {
             let mut panes = Vec::new();
             if let Some(w) = l {
-                panes.push(Pane::fixed(w.size, panel(w, true)).min(80.0));
+                panes.push(Pane::fixed(w.size, panel(w, true)).min(80.0).priority(Priority::Low));
             }
             panes.push(Pane::fill(main));
             if let Some(w) = r {
-                panes.push(Pane::fixed(w.size, panel(w, true)).min(80.0));
+                panes.push(Pane::fixed(w.size, panel(w, true)).min(80.0).priority(Priority::Low));
             }
             let (m, has_l, has_r) = (map.clone(), l.is_some(), r.is_some());
             main = hsplit(&format!("tool/split-h/{}{}", has_l as u8, has_r as u8), panes).on_resize(move |s| {

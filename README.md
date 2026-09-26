@@ -228,6 +228,18 @@ hsplit("main", vec![
 .on_resize(Msg::SaveLayout)                                      // persist sizes
 ```
 
+- **Priorities** (VS Code's `LayoutPriority`): when the window gets too small for every pane,
+  fixed panes shrink (down to their minimum) `Priority::High` first and `Priority::Low` last;
+  with no flex pane to fill extra room, it goes to the highest priority. Each pane keeps its own
+  size and returns to it when there's room again.
+
+  ```rust
+  Pane::fixed(260.0, sidebar).priority(Priority::Low)   // keeps its width longest
+  ```
+- **Remembered sizes:** `Pane::key("terminal")` gives a pane that comes and goes (a toggled
+  panel) its last size back, and keeps its content's state while other panes change.
+- **Keyboard:** Tab to a splitter, then the arrow keys (Shift for bigger steps), Home and End.
+
 ### Docking
 
 ```rust
@@ -414,6 +426,38 @@ fn menu(&self) -> Vec<Menu<Msg>> {
 - **Native menu bar:** on macOS the same menus become the global menu bar, with the standard app
   menu and native key equivalents, and `menubar()` then renders nothing. Windows can opt into a
   native menu bar with `WindowOptions::native_menu(true)`.
+
+### Commands and key bindings
+
+For an app with many actions, declare them as **commands**: an id, a title, a message and default
+keys. Users can then search them, run them, and rebind them.
+
+```rust
+fn commands(&self) -> Commands<Msg> {
+    Commands::new(vec![
+        Command::new("file.save", "Save", Msg::Save).category("File").key("Mod+S"),
+        Command::new("prefs.keys", "Keyboard Shortcuts", Msg::ShowKeys).key("Mod+K Mod+S"), // a chord
+        Command::new("view.wrap", "Word Wrap", Msg::ToggleWrap).key("Alt+Z").checked(self.wrap),
+    ])
+    .with_keymap(&self.keymap) // the user's overrides
+}
+fn menu(&self) -> Vec<Menu<Msg>> {
+    let c = self.commands();
+    vec![Menu::new("File", vec![c.menu_item("file.save")])] // title, key and state from the command
+}
+```
+
+- **Keys** work in every window, like menu shortcuts. Two-stroke chords such as `Ctrl+K Ctrl+S`
+  are supported; `commands::pending_chord()` says when the first stroke is waiting, for a status
+  bar hint.
+- **`CommandPalette`** lists every command with its key (VS Code's Ctrl+Shift+P): type to
+  filter, ↑/↓ and Enter to run.
+- **`KeymapEditor`** is a Keyboard Shortcuts screen: search, record a new binding (chords too),
+  reset or remove one. It warns about conflicts. It edits a `Keymap`, which serializes with the
+  `serde` feature.
+- **Focus panel N:** `dock.focus_id(n)` gives the element to pass to `cx.focus()`.
+
+![The command palette](docs/command-palette.png)
 
 ### File dialogs
 

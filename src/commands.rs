@@ -10,7 +10,7 @@
 //!   the palette always agree;
 //! - users can search and run them from a [`CommandPalette`], and rebind
 //!   them with a [`Keymap`] (a list of overrides, serializable with the
-//!   `serde` feature) edited in a [`keymap_editor`].
+//!   `serde` feature) edited in a [`KeymapEditor`].
 //!
 //! ```no_run
 //! use rust_ui::prelude::*;

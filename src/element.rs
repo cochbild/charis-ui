@@ -312,11 +312,41 @@ pub(crate) struct InputSpec {
     pub rows: (u32, u32),
 }
 
+/// Which fixed-size panes give up or take space first when a split's
+/// container changes size (VS Code's `LayoutPriority`).
+///
+/// When the window is too small for every pane, fixed panes shrink (down
+/// to their minimum) highest priority first; when a split has no flex pane
+/// to absorb extra space, it goes to the highest priority fixed panes.
+/// Each pane keeps its own size, so it returns to it when there's room
+/// again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Priority {
+    /// Keeps its size the longest (a sidebar).
+    Low,
+    #[default]
+    Normal,
+    /// Absorbs size changes first (the main content).
+    High,
+}
+
+impl Priority {
+    /// Flex factor tiers: each tier outweighs the one below ~1000 to 1.
+    pub(crate) fn factor(self) -> f32 {
+        match self {
+            Priority::Low => 1.0,
+            Priority::Normal => 1e3,
+            Priority::High => 1e6,
+        }
+    }
+}
+
 /// A pane inside a [`split`](crate::split) container.
 ///
 /// Panes are either *fixed* (a pixel size the user can drag) or *flex*
 /// (a share of the remaining space, like CSS `flex-grow`). Splitters between
-/// two flex panes redistribute their shares.
+/// two flex panes redistribute their shares. See [`Priority`] for fixed
+/// panes when space runs out, and [`Pane::key`] for panes that come and go.
 pub struct Pane<M> {
     pub(crate) content: Element<M>,
     /// Fixed size in px, or `None` for a flex pane.
@@ -327,6 +357,8 @@ pub struct Pane<M> {
     pub(crate) max: f32,
     pub(crate) collapsed: bool,
     pub(crate) collapsible: bool,
+    pub(crate) priority: Priority,
+    pub(crate) key: Option<u64>,
 }
 
 impl<M> Pane<M> {
@@ -340,6 +372,8 @@ impl<M> Pane<M> {
             max: f32::INFINITY,
             collapsed: false,
             collapsible: false,
+            priority: Priority::Normal,
+            key: None,
         }
     }
     /// A pane that fills the remaining space (flex weight 1).
@@ -356,6 +390,8 @@ impl<M> Pane<M> {
             max: f32::INFINITY,
             collapsed: false,
             collapsible: false,
+            priority: Priority::Normal,
+            key: None,
         }
     }
     pub fn min(mut self, v: f32) -> Self {
@@ -369,6 +405,22 @@ impl<M> Pane<M> {
     /// Collapse (slide closed) or expand the pane. Changes are animated.
     pub fn collapsed(mut self, c: bool) -> Self {
         self.collapsed = c;
+        self
+    }
+    /// Which fixed panes shrink or grow first when space changes; see
+    /// [`Priority`].
+    pub fn priority(mut self, p: Priority) -> Self {
+        self.priority = p;
+        self
+    }
+    /// A stable identity for a pane that can be removed and added back
+    /// (e.g. a toggled sidebar): it gets back the size the user gave it,
+    /// and keeps its content's state when other panes come and go.
+    pub fn key(mut self, k: impl std::hash::Hash) -> Self {
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        k.hash(&mut h);
+        self.key = Some(h.finish());
         self
     }
     /// Allow the user to collapse the pane by dragging its splitter past half
@@ -807,6 +859,8 @@ impl<M: 'static> Element<M> {
                         max: p.max,
                         collapsed: p.collapsed,
                         collapsible: p.collapsible,
+                        priority: p.priority,
+                        key: p.key,
                     })
                     .collect(),
             }),

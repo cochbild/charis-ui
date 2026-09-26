@@ -98,6 +98,17 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
       "Save Layout As…" opens a dialog with the name selected for typing, Enter saves, Escape
       cancels.
 
+**Commands and key bindings** (dock example)
+- [ ] Ctrl+Shift+P (or F1) opens the command palette; typing filters, ↑/↓ select, Enter runs,
+      Escape closes.
+- [ ] Ctrl+K, then Ctrl+S: the status bar says it's waiting after Ctrl+K, then the Keyboard
+      Shortcuts dialog opens. "Change" on a command, press a key, Enter: the new key works and
+      the View menu shows it.
+- [ ] Ctrl+1 … Ctrl+6 move focus to the dock's panels; Alt+2/4/6/9 toggle tool windows.
+- [ ] Open the pinned Todo tool window (Alt+6), then make the window very narrow: Todo shrinks
+      only after the dock's panels reached their minimum, and gets its width back when the
+      window is wide again.
+
 **File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
 - [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
       "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.

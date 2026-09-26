@@ -406,11 +406,29 @@ struct SplitState {
     container: f32,
     /// Laid-out main-axis size of each pane (last frame).
     pane_px: Vec<f32>,
+    /// Each pane's `Pane::key`.
+    keys: Vec<Option<u64>>,
+    /// Last size of each keyed pane, kept while it's gone.
+    memory: HashMap<u64, f32>,
 }
 
 impl SplitState {
     fn report(&self) -> Vec<f32> {
         self.sizes.clone()
+    }
+
+    /// Sizes to start a resize from: a fixed pane squeezed or stretched by
+    /// its priority starts from its size on screen.
+    fn drag_sizes(&self) -> Vec<f32> {
+        let mut s = self.sizes.clone();
+        for (i, v) in s.iter_mut().enumerate() {
+            let px = self.pane_px.get(i).copied().unwrap_or(0.0);
+            let open = self.collapse.get(i).is_none_or(|a| a.target() > 0.5);
+            if self.fixed[i] && open && px > 0.0 {
+                *v = px;
+            }
+        }
+        s
     }
 }
 
@@ -1558,6 +1576,7 @@ impl<A: App> Runtime<A> {
         let n = spec.panes.len();
         let init: Vec<f32> = spec.panes.iter().map(|p| p.fixed.unwrap_or(p.weight)).collect();
         let fixed: Vec<bool> = spec.panes.iter().map(|p| p.fixed.is_some()).collect();
+        let keys: Vec<Option<u64>> = spec.panes.iter().map(|p| p.key).collect();
         let st = self.splits.entry(id).or_insert_with(|| SplitState {
             axis,
             sizes: init.clone(),
@@ -1566,21 +1585,34 @@ impl<A: App> Runtime<A> {
             collapse: spec.panes.iter().map(|p| Anim::new(if p.collapsed { 0.0 } else { 1.0 })).collect(),
             container: 0.0,
             pane_px: vec![0.0; n],
+            keys: keys.clone(),
+            memory: HashMap::default(),
         });
-        if st.sizes.len() != n || st.fixed != fixed || st.axis != axis {
+        if st.sizes.len() != n || st.fixed != fixed || st.axis != axis || st.keys != keys {
+            // The panes changed: keyed panes get back their last size.
+            let memory = std::mem::take(&mut st.memory);
+            let sizes =
+                init.iter().zip(&keys).map(|(v, k)| k.and_then(|k| memory.get(&k).copied()).unwrap_or(*v)).collect();
             *st = SplitState {
                 axis,
-                sizes: init.clone(),
+                sizes,
                 fixed: fixed.clone(),
                 initial: init.clone(),
                 collapse: spec.panes.iter().map(|p| Anim::new(if p.collapsed { 0.0 } else { 1.0 })).collect(),
                 container: 0.0,
                 pane_px: vec![0.0; n],
+                keys: keys.clone(),
+                memory,
             };
         } else if st.initial != init {
             // The app changed the requested sizes: adopt them.
             st.sizes = init.clone();
             st.initial = init.clone();
+        }
+        for (k, v) in keys.iter().zip(&st.sizes) {
+            if let Some(k) = k {
+                st.memory.insert(*k, *v);
+            }
         }
         for (i, p) in spec.panes.iter().enumerate() {
             st.collapse[i].set(if p.collapsed { 0.0 } else { 1.0 }, now, 0.22);
@@ -1592,6 +1624,9 @@ impl<A: App> Runtime<A> {
         for (i, pane) in spec.panes.iter().enumerate() {
             self.pane_meta.insert((id, i), (pane.min, pane.max, pane.collapsible));
         }
+        // A flex pane that's open absorbs size changes; without one, fixed
+        // panes grow by priority.
+        let any_flex = spec.panes.iter().any(|p| p.fixed.is_none() && !p.collapsed);
         for (i, pane) in spec.panes.into_iter().enumerate() {
             if i > 0 {
                 // Splitter between pane i-1 and i. Hidden when a neighbour is collapsed.
@@ -1618,7 +1653,24 @@ impl<A: App> Runtime<A> {
             let t = factors[i];
             let mut wrapper = div::<A::Msg>().clip();
             let mut inner = div::<A::Msg>().flex_col().shrink(0.0);
-            if fixed[i] {
+            if fixed[i] && t >= 0.999 {
+                // Settled fixed pane: its size is the flex basis, and its
+                // priority decides how much it gives or takes when the
+                // container can't fit every pane's size (or has room left
+                // and no flex pane to fill it).
+                let sz = sizes[i].clamp(pane.min, pane.max);
+                let f = pane.priority.factor();
+                wrapper = wrapper.basis(sz).grow(if any_flex { 0.0 } else { f }).shrink(f);
+                wrapper = match axis {
+                    Axis::Horizontal => wrapper.min_w(pane.min).max_w(pane.max),
+                    Axis::Vertical => wrapper.min_h(pane.min).max_h(pane.max),
+                };
+                inner = inner.grow(1.0).shrink(1.0).basis(0.0);
+                inner = match axis {
+                    Axis::Horizontal => inner.h_full().min_w(0.0),
+                    Axis::Vertical => inner.w_full().min_h(0.0),
+                };
+            } else if fixed[i] {
                 let sz = sizes[i].clamp(pane.min, pane.max);
                 wrapper = wrapper.basis(sz * t).grow(0.0).shrink(0.0);
                 // Panes before a flex pane slide toward the start edge, others toward the end.
@@ -1661,7 +1713,10 @@ impl<A: App> Runtime<A> {
             if content.style.min_width == Length::Auto {
                 content.style.min_width = Length::Px(0.0);
             }
-            let wrapper = wrapper.child(inner.child(content)).key(("pane", i));
+            let wrapper = match pane.key {
+                Some(k) => wrapper.child(inner.child(content)).key(("pane-key", k)),
+                None => wrapper.child(inner.child(content)).key(("pane", i)),
+            };
             let w = self.flatten(wrapper, Some(idx), id, child_i, text, color, pointer, frame);
             frame.nodes[w].pane = Some((id, i));
             child_i += 1;
@@ -2781,7 +2836,7 @@ impl<A: App> Runtime<A> {
                         split,
                         index,
                         start: p,
-                        start_sizes: st.sizes.clone(),
+                        start_sizes: st.drag_sizes(),
                         start_px: st.pane_px.clone(),
                         collapsed_emitted: false,
                     };
@@ -3268,7 +3323,7 @@ impl<A: App> Runtime<A> {
                         _ => None,
                     };
                     if let (Some(d), Some(st)) = (delta, self.splits.get(&split)) {
-                        let (sizes, px) = (st.sizes.clone(), st.pane_px.clone());
+                        let (sizes, px) = (st.drag_sizes(), st.pane_px.clone());
                         // A collapsed fixed pane re-expands when moved outward.
                         let target = if st.fixed.get(index).copied().unwrap_or(false) { index } else { index + 1 };
                         let mut collapsed = st.collapse.get(target).is_some_and(|a| a.value(self.now) < 0.5);

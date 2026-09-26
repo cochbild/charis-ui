@@ -437,6 +437,27 @@ struct DropdownState {
     searchable: bool,
 }
 
+/// Kinds of edits, for grouping undo steps.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum EditKind {
+    Insert,
+    Delete,
+    /// Paste, cut, newline: always its own undo step.
+    Other,
+}
+
+/// Undo/redo history of one text input.
+#[derive(Default)]
+struct History {
+    undo: Vec<(String, Selection)>,
+    redo: Vec<(String, Selection)>,
+    /// The value after our last edit; if the app changes it, the history resets.
+    known: Option<String>,
+    last: Option<(EditKind, f64)>,
+}
+
+const UNDO_LIMIT: usize = 200;
+
 /// An IME composition shown inside the focused input.
 struct Preedit {
     node: u64,
@@ -614,6 +635,7 @@ pub struct Runtime<A: App> {
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
     preedit: Option<Preedit>,
+    history: HashMap<u64, History>,
     /// User-resized table column widths, by table id.
     tables: HashMap<u64, Vec<Option<f32>>>,
     tooltip: Option<(u64, f64, Point)>,
@@ -676,6 +698,7 @@ impl<A: App> Runtime<A> {
             dropdowns: HashMap::new(),
             virt: HashMap::new(),
             preedit: None,
+            history: HashMap::new(),
             tables: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
@@ -1011,6 +1034,9 @@ impl<A: App> Runtime<A> {
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.virt.retain(|_, v| v.seen + 120 >= self.frame_no);
+        // Like the web: an input that leaves the UI takes its undo history with it.
+        let by_id = &self.frame.by_id;
+        self.history.retain(|id, _| by_id.contains_key(id));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2824,9 +2850,12 @@ impl<A: App> Runtime<A> {
         st.sel.clamp(&value);
         st.blink_start = self.now;
         let mut sel = st.sel;
+        let before = sel;
         let cmd = k.mods.command();
         let word = if cfg!(target_os = "macos") { k.mods.alt } else { k.mods.ctrl };
         let mut new_value: Option<String> = None;
+        // How the edit is recorded for undo (None = undo/redo itself).
+        let mut kind = Some(EditKind::Other);
         let mv = |sel: &mut Selection, to: usize, extend: bool| {
             sel.cursor = to;
             if !extend {
@@ -2886,6 +2915,7 @@ impl<A: App> Runtime<A> {
                 new_value = Some(v);
             }
             Key::Backspace => {
+                kind = Some(if sel.is_empty() && !word { EditKind::Delete } else { EditKind::Other });
                 if sel.is_empty() {
                     sel.anchor =
                         if word { edit::prev_word(&value, sel.cursor) } else { edit::prev_char(&value, sel.cursor) };
@@ -2895,6 +2925,7 @@ impl<A: App> Runtime<A> {
                 new_value = Some(v);
             }
             Key::Delete => {
+                kind = Some(if sel.is_empty() && !word { EditKind::Delete } else { EditKind::Other });
                 if sel.is_empty() {
                     sel.anchor =
                         if word { edit::next_word(&value, sel.cursor) } else { edit::next_char(&value, sel.cursor) };
@@ -2914,6 +2945,20 @@ impl<A: App> Runtime<A> {
             }
             Key::Char(c) if cmd => match c.to_ascii_lowercase() {
                 'a' => sel = Selection { anchor: 0, cursor: value.len() },
+                'z' | 'y' => {
+                    let redo = c.eq_ignore_ascii_case(&'y') || k.mods.shift;
+                    kind = None;
+                    if let Some(h) = self.history.get_mut(&id).filter(|h| h.known.as_deref() == Some(value.as_str())) {
+                        let (from, to) = if redo { (&mut h.redo, &mut h.undo) } else { (&mut h.undo, &mut h.redo) };
+                        if let Some((v, s)) = from.pop() {
+                            to.push((value.clone(), sel));
+                            h.known = Some(v.clone());
+                            h.last = None;
+                            sel = s;
+                            new_value = Some(v);
+                        }
+                    }
+                }
                 'c' | 'x' => {
                     let (a, b) = sel.range();
                     if a != b && !password {
@@ -2948,11 +2993,36 @@ impl<A: App> Runtime<A> {
         }
         if let (Some(v), Some(h)) = (new_value, on_input) {
             if v != value {
+                if let Some(kind) = kind {
+                    self.record_edit(id, &value, before, &v, kind, false);
+                }
                 self.pending_values.insert(id, v.clone());
                 self.queue.push(h(v));
             }
         }
         true
+    }
+
+    /// Push the state before an edit onto the input's undo stack. Consecutive
+    /// typing (or deleting) within a second is one step; whitespace starts a
+    /// new step, like editors group by word.
+    fn record_edit(&mut self, id: u64, before: &str, sel: Selection, after: &str, kind: EditKind, boundary: bool) {
+        let now = self.now;
+        let h = self.history.entry(id).or_default();
+        if h.known.as_deref() != Some(before) {
+            // The app changed the value itself (e.g. cleared it after sending).
+            *h = History::default();
+        }
+        let group = kind != EditKind::Other && !boundary && h.last.is_some_and(|(k, t)| k == kind && now - t < 1.0);
+        if !group {
+            h.undo.push((before.to_string(), sel));
+            if h.undo.len() > UNDO_LIMIT {
+                h.undo.remove(0);
+            }
+        }
+        h.redo.clear();
+        h.last = Some((kind, now));
+        h.known = Some(after.to_string());
     }
 
     fn text_input(&mut self, t: &str) {
@@ -2993,15 +3063,19 @@ impl<A: App> Runtime<A> {
         if multiline {
             let t: String =
                 t.replace("\r\n", "\n").chars().filter(|c| *c == '\n' || *c == '\t' || !c.is_control()).collect();
-            self.insert_text(&t);
+            self.insert_text_as(&t, EditKind::Other);
             return;
         }
         let t: String =
             t.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).filter(|c| !c.is_control()).collect();
-        self.insert_text(&t);
+        self.insert_text_as(&t, EditKind::Other);
     }
 
     fn insert_text(&mut self, t: &str) {
+        self.insert_text_as(t, EditKind::Insert);
+    }
+
+    fn insert_text_as(&mut self, t: &str, kind: EditKind) {
         let Some(fid) = self.focused else { return };
         let Some(&i) = self.frame.by_id.get(&fid) else { return };
         let n = &self.frame.nodes[i];
@@ -3013,10 +3087,14 @@ impl<A: App> Runtime<A> {
         let h = n.handlers.input.clone();
         let st = self.inputs.entry(fid).or_default();
         st.sel.clamp(&value);
+        let before = st.sel;
         let (v, s) = edit::replace(&value, st.sel, t);
         st.sel = s;
         st.blink_start = self.now;
         if let Some(h) = h {
+            // Replacing a selection is its own step; so is text containing whitespace.
+            let boundary = !before.is_empty() || t.chars().any(char::is_whitespace);
+            self.record_edit(fid, &value, before, &v, kind, boundary);
             self.pending_values.insert(fid, v.clone());
             self.queue.push(h(v));
         }

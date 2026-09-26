@@ -104,7 +104,8 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
 
 ### M2: Text and input
 
-- [~] Multi-line text editor widget (`text_area`; still to do: undo/redo, 100k-line documents):
+- [~] Multi-line text editor widget (`text_area`, with undo/redo; still to do: 100k-line
+  documents):
   - selection, undo/redo, word wrap, scrolling;
   - large documents (100k lines) that only shape what is visible.
 - [x] IME: show pre-edit (the text being composed) with its underline, and position the candidate

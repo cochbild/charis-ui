@@ -203,7 +203,7 @@ useful for indicators, previews and reordering.
 ### Widgets
 
 `button`, `primary_button`, `ghost_button`, `danger_button`, `icon_button`, `text_input`
-(selection, word navigation, clipboard, password mode), `search_input`, `checkbox`, `switch`,
+(selection, word navigation, clipboard, undo/redo, IME composition, password mode), `text_area`, `search_input`, `checkbox`, `switch`,
 `slider`, `progress`, `segmented`, `tab_bar`, `tree_row`/`list_item`, `menu_bar`, `menu_panel`,
 `context_menu`, `modal`, `backdrop`, `titlebar`, `window_controls`, `status_bar`/`status_item`,
 `card`, `badge`, `tag`, `kbd`, `avatar`, `section_header`, `separator`, and `.tooltip(..)` on any
@@ -281,7 +281,6 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
   CPU backend
-- Undo/redo in text inputs
 - Virtualized trees (lists and tables are done)
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs

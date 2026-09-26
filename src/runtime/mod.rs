@@ -11,6 +11,7 @@ use taffy as tf;
 
 #[cfg(feature = "accessibility")]
 mod a11y;
+mod inspector;
 pub(crate) mod memo;
 mod shared;
 pub(crate) use shared::route_drag;
@@ -807,6 +808,8 @@ pub(crate) struct Node<M> {
     pub virt_item: Option<(u64, usize)>,
     #[cfg_attr(not(feature = "accessibility"), allow(dead_code))]
     pub sem: Option<Box<crate::semantics::Semantics>>,
+    /// Inspector info (id string, classes).
+    pub debug: Option<Box<crate::element::DebugInfo>>,
     /// The element's own `pointer_events` (`None`: inherited).
     pub own_pointer: Option<bool>,
     /// `text_align` was inherited from the parent.
@@ -907,6 +910,11 @@ pub struct Runtime<A: App> {
     chord: Vec<KeyEvent>,
     /// Time of the last frame built (see `next_frame`).
     built_at: f64,
+    /// The element inspector, when open, and whether it can be opened.
+    inspector: Option<inspector::Inspector>,
+    inspector_enabled: bool,
+    /// Restyles the app's theme (see [`Runtime::set_stylesheet`]).
+    stylesheet: Option<Rc<crate::stylesheet::Stylesheet>>,
     /// Damage tracking: last frame's command fingerprints, and what the
     /// last render redrew.
     damage_items: Vec<Option<crate::damage::Item>>,
@@ -1004,6 +1012,9 @@ impl<A: App> Runtime<A> {
             native_menu: false,
             chord: Vec::new(),
             built_at: f64::NEG_INFINITY,
+            stylesheet: None,
+            inspector: None,
+            inspector_enabled: cfg!(debug_assertions),
             damage_items: Vec::new(),
             damage_key: None,
             last_damage: crate::damage::Damage::Full,
@@ -1290,6 +1301,14 @@ impl<A: App> Runtime<A> {
         self.pixmap.insert(pm)
     }
 
+    /// Restyle the app with a [`Stylesheet`](crate::stylesheet::Stylesheet)
+    /// on top of its theme (`None` removes it). The window shell calls
+    /// this when a watched stylesheet file changes.
+    pub fn set_stylesheet(&mut self, sheet: Option<crate::stylesheet::Stylesheet>) {
+        self.stylesheet = sheet.map(Rc::new);
+        self.invalidate();
+    }
+
     /// What the last [`render`](Self::render) redrew: everything, nothing,
     /// or an area (logical px). The window shell presents just that area.
     pub fn last_damage(&self) -> crate::damage::Damage {
@@ -1378,11 +1397,16 @@ impl<A: App> Runtime<A> {
         // The app has seen every emitted value by now; the view is authoritative again.
         self.pending_values.clear();
         set_window_info(self.window_info());
-        let prev_theme = std::mem::replace(&mut self.theme, Rc::new(self.app.theme()));
+        let mut th = self.app.theme();
+        if let Some(sheet) = &self.stylesheet {
+            th = sheet.apply(th);
+        }
+        let prev_theme = std::mem::replace(&mut self.theme, Rc::new(th));
         theme::set_theme(self.theme.clone());
         self.memo_begin(&prev_theme, self.built_scale);
         self.built_scale = self.scale;
         let t0 = std::time::Instant::now();
+        crate::element::RECORD_DEBUG.with(|r| r.set(self.inspector_enabled));
         let view = self.app.view();
         let t_view = t0.elapsed();
         let th = self.theme.clone();
@@ -1397,7 +1421,8 @@ impl<A: App> Runtime<A> {
             .font_size(th.font_size)
             .font(th.font.clone())
             .line_height(th.line_height)
-            .child(view.grow(1.0).min_h(0.0).min_w(0.0));
+            .child(view.grow(1.0).min_h(0.0).min_w(0.0))
+            .children(self.inspector_overlay());
         let mut frame = Frame::default();
         let base = TextStyle::default();
         let t1 = std::time::Instant::now();
@@ -1472,6 +1497,7 @@ impl<A: App> Runtime<A> {
             tooltip,
             follow_end,
             sem,
+            debug,
             ..
         } = el;
 
@@ -1612,6 +1638,7 @@ impl<A: App> Runtime<A> {
             pane: None,
             virt_item: None,
             sem,
+            debug,
             own_pointer: pointer_events,
             inherit_align,
             reused: false,
@@ -2574,6 +2601,10 @@ impl<A: App> Runtime<A> {
             self.render();
         }
         let focus_before = self.focused;
+        if self.inspector.is_some() && self.inspector_event(&ev) {
+            self.dirty = true;
+            return;
+        }
         match ev {
             Event::PointerMove(p) => self.pointer_move(p),
             Event::PointerDown(p, b) => self.pointer_down(p, b),
@@ -3490,6 +3521,11 @@ impl<A: App> Runtime<A> {
         self.dirty = true;
         // While composing, editing keys belong to the IME (like the web's `isComposing`).
         if self.preedit.as_ref().is_some_and(|p| Some(p.node) == self.focused) {
+            return;
+        }
+        if self.inspector_enabled && Self::inspector_toggle_key(&k) {
+            let open = self.inspector.is_none();
+            self.set_inspector_open(open);
             return;
         }
         // Widgets that own the keyboard (`on_key_capture`) come first.

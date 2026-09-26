@@ -9,7 +9,9 @@
 //! folder). F11 (⌃⌘F on macOS) toggles full screen.
 //!
 //! Options: `--mica` (Windows 11 Mica backdrop), `--system-font` (the
-//! platform's UI font instead of Inter).
+//! platform's UI font instead of Inter), `--stylesheet examples/dock.css`
+//! (restyle it; edit the file while it runs). F12 opens the inspector in
+//! debug builds.
 //!
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
@@ -751,6 +753,21 @@ fn main() {
             println!("saved {out}");
             return;
         }
+        if state.as_deref() == Some("inspect") {
+            h.rt.set_inspector_enabled(true);
+            h.rt.set_inspector_open(true);
+            h.settle();
+            // Pin a tab, then hover a tree row.
+            let t = Point::new(421.0, 56.0);
+            h.move_to(t.x, t.y);
+            h.event(rust_ui::Event::PointerDown(t, rust_ui::MouseButton::Left));
+            h.event(rust_ui::Event::PointerUp(t, rust_ui::MouseButton::Left));
+            h.move_to(60.0, 145.0);
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
         if state.as_deref() == Some("maximize") {
             let t = h.rt.rect_of_text("Terminal").unwrap().center();
             h.click(t.x, t.y);
@@ -785,6 +802,9 @@ fn main() {
     }
     if args.iter().any(|a| a == "--system-font") {
         opts = opts.system_font(true);
+    }
+    if let Some(i) = args.iter().position(|a| a == "--stylesheet") {
+        opts = opts.stylesheet(args.get(i + 1).cloned().unwrap_or_else(|| "examples/dock.css".into()));
     }
     rust_ui::run(DockDemo::new(), opts).expect("run");
 }

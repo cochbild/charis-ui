@@ -165,6 +165,7 @@ fn take_node<M>(n: &mut Node<M>) -> Node<M> {
         pane: n.pane,
         virt_item: n.virt_item,
         sem: n.sem.take(),
+        debug: n.debug.take(),
         own_pointer: n.own_pointer,
         inherit_align: n.inherit_align,
         reused: n.reused,

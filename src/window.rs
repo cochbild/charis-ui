@@ -49,6 +49,10 @@ pub struct WindowOptions {
     /// Use the platform's UI font (Segoe UI Variable, SF Pro, the desktop's
     /// font on Linux) instead of the bundled Inter, when installed.
     pub system_font: bool,
+    /// A [`Stylesheet`](crate::stylesheet::Stylesheet) file restyling the
+    /// app, reloaded whenever it's saved (errors are printed; the last good
+    /// version stays).
+    pub stylesheet: Option<std::path::PathBuf>,
 }
 
 /// A system backdrop material shown behind a window, where the app paints
@@ -87,6 +91,7 @@ impl Default for WindowOptions {
             backdrop: Backdrop::None,
             traffic_lights: None,
             system_font: false,
+            stylesheet: None,
         }
     }
 }
@@ -154,6 +159,13 @@ impl WindowOptions {
     /// (x, y), logical px from the window's top-left.
     pub fn traffic_lights(mut self, x: f32, y: f32) -> Self {
         self.traffic_lights = Some((x, y));
+        self
+    }
+
+    /// Restyle the app from a stylesheet file, reloaded on every save; see
+    /// [`stylesheet`](crate::stylesheet).
+    pub fn stylesheet(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.stylesheet = Some(path.into());
         self
     }
 
@@ -226,6 +238,9 @@ struct Shell<A: App> {
     #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
     menu: Option<crate::native_menu::NativeMenu<A::Msg>>,
     native_menu: bool,
+    /// A watched stylesheet: its path, last modification time and when it
+    /// was last checked.
+    stylesheet: Option<(std::path::PathBuf, Option<std::time::SystemTime>, Instant)>,
 }
 
 /// Open a window and run the app until it is closed. Extra windows declared
@@ -248,6 +263,7 @@ pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::e
         #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
         menu: None,
         native_menu,
+        stylesheet: opts.stylesheet.clone().map(|p| (p, None, Instant::now())),
     };
     let main = shell.new_win(None, opts, None, None);
     shell.wins.push(main);
@@ -588,6 +604,31 @@ impl<A: App> Shell<A> {
         } else if let Some(m) = self.wins[i].on_close.clone() {
             self.wins[i].rt.send(m);
             self.wins[i].rt.poll();
+        }
+    }
+
+    /// Reload the watched stylesheet if its file changed.
+    fn poll_stylesheet(&mut self) {
+        let Some((path, seen, checked)) = &mut self.stylesheet else { return };
+        *checked = Instant::now();
+        let modified = std::fs::metadata(&*path).and_then(|m| m.modified()).ok();
+        if modified == *seen {
+            return;
+        }
+        *seen = modified;
+        match crate::stylesheet::Stylesheet::load(&*path) {
+            Ok((sheet, errors)) => {
+                for e in &errors {
+                    eprintln!("rust-ui: {}:{}: {}", path.display(), e.line, e.message);
+                }
+                for w in &mut self.wins {
+                    w.rt.set_stylesheet(Some(sheet.clone()));
+                    if let Some(g) = &w.gfx {
+                        g.window.request_redraw();
+                    }
+                }
+            }
+            Err(e) => eprintln!("rust-ui: can't read stylesheet {}: {e}", path.display()),
         }
     }
 
@@ -1133,6 +1174,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
         if self.exiting {
             return;
         }
+        // Watched stylesheet: check about three times a second.
+        if self.stylesheet.as_ref().is_some_and(|s| s.2.elapsed() >= Duration::from_millis(300) || s.1.is_none()) {
+            self.poll_stylesheet();
+        }
         let now = self.now();
         // Deliver background messages and due timers.
         for w in &mut self.wins {
@@ -1157,6 +1202,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 Some(t) => soonest(self.start + Duration::from_secs_f64(t)),
                 None => {}
             }
+        }
+        if let Some((_, _, checked)) = &self.stylesheet {
+            let next = *checked + Duration::from_millis(300);
+            wait = Some(wait.map_or(next, |w: Instant| w.min(next)));
         }
         el.set_control_flow(match wait {
             Some(t) => ControlFlow::WaitUntil(t),

@@ -204,7 +204,10 @@ a restart.
   - a documented semver policy.
 - [ ] A docs site with a book (guide, theming, layout, panels, testing) plus rustdoc with examples
       on every public item.
-- [ ] Optional hot-reloadable stylesheet layer and an element inspector overlay.
+- [x] Optional hot-reloadable stylesheet layer (`stylesheet` module: CSS-like rules on style
+      classes and states, theme colors by name, line-numbered errors;
+      `WindowOptions::stylesheet(path)` reloads on save) and an element inspector overlay (F12 /
+      Ctrl+Shift+I in debug builds: box and content outlines, a label, a pinned details panel).
 - [ ] Widget gallery app and templates: a `cargo generate` starter for "IDE shell" and
       "settings app".
 - [ ] Two real applications built on it: your projects are the proving ground.

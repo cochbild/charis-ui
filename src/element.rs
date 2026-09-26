@@ -559,6 +559,25 @@ pub struct Element<M> {
     pub(crate) tooltip: Option<String>,
     pub(crate) follow_end: bool,
     pub(crate) sem: Option<Box<Semantics>>,
+    /// For the inspector: the string id and style classes (recorded only
+    /// while it's enabled).
+    pub(crate) debug: Option<Box<DebugInfo>>,
+}
+
+/// What the inspector shows about an element beyond its style.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DebugInfo {
+    pub id: Option<String>,
+    pub classes: Vec<String>,
+}
+
+thread_local! {
+    /// Record [`DebugInfo`] (the runtime turns it on with the inspector).
+    pub(crate) static RECORD_DEBUG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn recording() -> bool {
+    RECORD_DEBUG.with(|r| r.get())
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -600,6 +619,7 @@ impl<M> Element<M> {
             tooltip: None,
             follow_end: false,
             sem: None,
+            debug: None,
         }
     }
 
@@ -804,6 +824,9 @@ impl<M: 'static> Element<M> {
     /// Like [`Element::key`] but for string ids.
     pub fn id(mut self, id: &str) -> Self {
         self.key = Some(hash_str(id));
+        if recording() {
+            self.debug.get_or_insert_with(Default::default).id = Some(id.to_string());
+        }
         self
     }
 
@@ -902,6 +925,7 @@ impl<M: 'static> Element<M> {
             tooltip: self.tooltip,
             follow_end: self.follow_end,
             sem: self.sem,
+            debug: self.debug,
         }
     }
 
@@ -1526,6 +1550,9 @@ impl<M: 'static> Element<M> {
     /// [`Theme::style_class`](crate::Theme::style_class)). Unknown names do
     /// nothing, so widgets and apps can tag elements freely.
     pub fn class(mut self, name: &str) -> Self {
+        if recording() {
+            self.debug.get_or_insert_with(Default::default).classes.push(name.to_string());
+        }
         let th = crate::theme::theme();
         let Some(fns) = th.classes.get(name) else { return self };
         for f in fns {

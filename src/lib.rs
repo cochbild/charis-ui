@@ -78,6 +78,7 @@ pub mod runtime;
 pub mod scene;
 pub mod semantics;
 pub mod style;
+pub mod stylesheet;
 pub mod subscription;
 pub mod system;
 pub mod table;

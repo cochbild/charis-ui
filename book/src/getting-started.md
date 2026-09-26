@@ -93,6 +93,21 @@ Everything is on by default except `serde` and `tokio`:
 | `serde` | Serialize docks, tool windows, workspaces and keymaps. |
 | `tokio` | Run `cx.spawn` futures on tokio, for tokio-based crates such as reqwest. |
 
+## Starting from a template
+
+Two [cargo-generate](https://github.com/cargo-generate/cargo-generate) templates give you a
+working app to change:
+
+```sh
+cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
+cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
+```
+
+- **ide-shell:** a frameless window with menus, a dock of editor tabs, tool windows, a file
+  tree, a command palette, rebindable shortcuts, named layouts and a status bar.
+- **settings-app:** a searchable sidebar of sections, forms, a live theme, and settings saved to
+  the user's config directory.
+
 ## The examples
 
 The repository has examples that show most features:

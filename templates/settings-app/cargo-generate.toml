@@ -1,0 +1,4 @@
+[template]
+cargo_generate_version = ">=0.18.0"
+# Only the manifest and readme have placeholders; the Rust sources are copied as they are.
+include = ["Cargo.toml", "README.md"]

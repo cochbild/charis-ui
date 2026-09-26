@@ -8,7 +8,7 @@ rust-version = "1.89"
 readme = "README.md"
 keywords = ["gui", "ui", "desktop", "docking", "widgets"]
 categories = ["gui"]
-exclude = ["docs/*.png", "tests/golden/*"]
+exclude = ["docs/*.png", "tests/golden/*", "templates/*", "book/book"]
 
 [lib]
 name = "rust_ui"

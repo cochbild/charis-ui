@@ -48,6 +48,8 @@ impl<'a> P<'a> {
         let mut out = Vec::new();
         let mut loose: Vec<Span> = Vec::new(); // inline content outside a paragraph (tight lists)
         let mut task: Option<bool> = None;
+        // Bold, italic and links of the loose inline content, across events.
+        let mut loose_style = InlineStyle::default();
         while let Some(ev) = self.events.next() {
             match ev {
                 Event::End(e) if Some(e) == until => break,
@@ -134,7 +136,7 @@ impl<'a> P<'a> {
                     if let Some(done) = task.take() {
                         loose.push(span(if done { "\u{1}x" } else { "\u{1} " }));
                     }
-                    self.inline_event(other, &mut InlineStyle::default(), &mut loose);
+                    self.inline_event(other, &mut loose_style, &mut loose);
                 }
             }
         }
@@ -369,6 +371,19 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn tight_list_items_keep_emphasis() {
+        let b = parse("- **Faster** layout with *incremental* [updates](u)\n- plain\n");
+        let Block::List(None, items) = &b[0] else { panic!("{b:?}") };
+        let Block::Para(s) = &items[0].1[0] else { panic!("{:?}", items[0]) };
+        assert!(s.iter().any(|x| x.text == "Faster" && x.weight == Some(700)), "{s:?}");
+        assert!(s.iter().any(|x| x.text == " layout with " && x.weight.is_none() && !x.italic), "{s:?}");
+        assert!(s.iter().any(|x| x.text == "incremental" && x.italic), "{s:?}");
+        assert!(s.iter().any(|x| x.text == "updates" && x.link.as_deref() == Some("u")), "{s:?}");
+        let Block::Para(s) = &items[1].1[0] else { panic!("{:?}", items[1]) };
+        assert!(s.iter().all(|x| x.weight.is_none() && !x.italic), "style leaks into the next item: {s:?}");
     }
 
     #[test]

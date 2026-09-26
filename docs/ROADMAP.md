@@ -14,27 +14,24 @@ frameworks don't provide.
 
 ## Where we are (v0.1, September 2026)
 
-**Done:**
-- Declarative element tree with CSS-like styling and transitions.
-- Taffy flexbox and grid layout.
-- OKLCH design tokens.
-- GPU renderer (wgpu), with a CPU fallback.
-- Text correction (contrast and gamma).
-- Resizable, collapsible and proportional splits.
-- Docking: move tabs, split groups, reorder tabs, maximize, and save/restore layouts (serde).
-- Frameless window chrome.
-- Menus, context menus, modals, tooltips.
-- About 20 widgets.
-- Headless test harness, and 41 tests including a GPU-vs-CPU parity test.
+**Done:** everything below that is checked. In short:
+- the element tree, CSS-like styling, flexbox and grid, OKLCH themes, style classes and
+  stylesheets;
+- GPU (wgpu) and CPU renderers that match, with damage tracking on the CPU;
+- about 30 widgets, including virtualized lists, tables and trees;
+- docking with tear-out windows, tool windows, workspaces, commands and a keymap;
+- native window chrome on Windows, macOS and Linux, menus, file dialogs, the clipboard;
+- accessibility (AccessKit), IME, high contrast and reduced motion;
+- a headless test harness and about 280 tests (golden screenshots, GPU parity, the book's
+  examples, the templates), frame budget benchmarks, the book and full API docs.
 
 **Missing for production:**
-- Platforms other than Linux have never been tested.
+- Windows and macOS have been implemented but not yet tested on real hardware (checklists in
+  `docs/WINDOWS_QA.md` and `docs/MAC_LINUX_QA.md`).
 - Accessibility has not been tried with a real screen reader yet.
 - IME composition has only been tested by simulating the events (no real IME on Linux CI).
-- Layout is fully rebuilt every frame.
-- 34 `unwrap`/`expect` calls in library code.
-- The crate name is taken.
-- No CI and no API docs site.
+- The crate name is taken, so the final name must be chosen before publishing.
+- No CI yet, so the book and API docs aren't published as a site.
 
 ## Decisions (September 2026)
 
@@ -208,8 +205,9 @@ a restart.
       classes and states, theme colors by name, line-numbered errors;
       `WindowOptions::stylesheet(path)` reloads on save) and an element inspector overlay (F12 /
       Ctrl+Shift+I in debug builds: box and content outlines, a label, a pinned details panel).
-- [ ] Widget gallery app and templates: a `cargo generate` starter for "IDE shell" and
-      "settings app".
+- [x] Widget gallery app (`examples/gallery.rs`: every widget on its own page, live theme
+      knobs) and `cargo generate` templates for an IDE shell and a settings app
+      (`templates/`), both compiled and tested with the crate.
 - [ ] Two real applications built on it: your projects are the proving ground.
 
 **Exit:** 1.0 with a semver guarantee.

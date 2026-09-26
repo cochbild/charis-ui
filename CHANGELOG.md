@@ -22,6 +22,12 @@ All notable changes to rust-ui are listed here. The format follows
   conduct.
 - The book (`book/`), whose examples run as doc tests, and docs on every public item
   (`#![warn(missing_docs)]`).
+- A widget gallery (`cargo run --example gallery`) and `cargo generate` templates for an IDE
+  shell and a settings app (`templates/`).
+
+### Fixed
+
+- Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
 
 ## [0.1.0] - unreleased snapshot
 

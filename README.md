@@ -65,12 +65,20 @@ fn main() {
 ```
 
 ```sh
+cargo run --release --example gallery    # every widget, one page each
 cargo run --release --example showcase   # the IDE shell in the screenshots
 cargo run --release --example dock       # drag-and-drop docking
 cargo run --release --example counter    # the minimal app above
 ```
 
 On Linux you need the usual X11/Wayland runtime libraries (e.g. `libxkbcommon-x11`).
+
+To start a new app from a template (see [`templates/`](templates/README.md)):
+
+```sh
+cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
+cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
+```
 
 ## Documentation
 

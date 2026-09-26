@@ -1,11 +1,22 @@
 //! Time-based animation helpers.
 
 /// Easing curves.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// assert_eq!(Easing::Linear.apply(0.25), 0.25);
+/// let e = Easing::CubicBezier(0.4, 0.0, 0.2, 1.0);
+/// assert!(e.apply(0.5) > 0.5);
+/// assert_eq!(e.apply(2.0), 1.0); // progress is clamped
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[non_exhaustive]
 pub enum Easing {
+    /// Constant speed.
     Linear,
+    /// Fast start, slow end (cubic).
     EaseOutCubic,
+    /// Slow start and end, fast middle (cubic).
     EaseInOutCubic,
     /// CSS `cubic-bezier(x1, y1, x2, y2)`.
     CubicBezier(f32, f32, f32, f32),
@@ -17,6 +28,7 @@ pub enum Easing {
 }
 
 impl Easing {
+    /// Map linear progress `t` (clamped to 0..=1) to eased progress.
     pub fn apply(&self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
         match self {
@@ -101,14 +113,17 @@ pub struct Anim {
     to: f32,
     start: f64,
     dur: f32,
+    /// Curve used for transitions (default [`Easing::EaseOutCubic`]).
     pub easing: Easing,
 }
 
 impl Anim {
+    /// A resting animation at value `v`.
     pub fn new(v: f32) -> Self {
         Self { from: v, to: v, start: 0.0, dur: 0.0, easing: Easing::EaseOutCubic }
     }
 
+    /// The animated value at time `now` (seconds, same clock as [`Anim::set`]).
     pub fn value(&self, now: f64) -> f32 {
         if self.dur <= 0.0 {
             return self.to;
@@ -117,6 +132,7 @@ impl Anim {
         self.from + (self.to - self.from) * self.easing.apply(t)
     }
 
+    /// The value being animated toward.
     pub fn target(&self) -> f32 {
         self.to
     }
@@ -150,6 +166,7 @@ impl Anim {
         self.dur = 0.0;
     }
 
+    /// Whether a transition is still running at time `now`.
     pub fn is_animating(&self, now: f64) -> bool {
         self.dur > 0.0 && ((now - self.start) as f32) < self.dur
     }

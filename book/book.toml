@@ -1,0 +1,11 @@
+[book]
+title = "The rust-ui Book"
+authors = ["The rust-ui contributors"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/cochbild/rust-ui"
+
+[rust]
+edition = "2021"

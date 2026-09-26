@@ -103,7 +103,12 @@ pub enum GrayTint {
     /// Tinted with the accent hue.
     Accent,
     /// Any hue (degrees) and chroma.
-    Custom { hue: f32, chroma: f32 },
+    Custom {
+        /// OKLCH hue in degrees.
+        hue: f32,
+        /// OKLCH chroma (neutral grays use about 0.01–0.03).
+        chroma: f32,
+    },
 }
 
 impl GrayTint {
@@ -130,20 +135,35 @@ impl GrayTint {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Accent {
+    /// Blue (`#3b82f6`).
     Blue,
+    /// Indigo (`#6366f1`).
     Indigo,
+    /// Violet (`#8b5cf6`).
     Violet,
+    /// Purple (`#a855f7`).
     Purple,
+    /// Pink (`#ec4899`).
     Pink,
+    /// Rose (`#f43f5e`).
     Rose,
+    /// Red (`#e5484d`).
     Red,
+    /// Orange (`#f76b15`).
     Orange,
+    /// Amber (`#ffb000`).
     Amber,
+    /// Lime (`#84cc16`).
     Lime,
+    /// Green (`#22c55e`).
     Green,
+    /// Emerald (`#10b981`).
     Emerald,
+    /// Teal (`#14b8a6`).
     Teal,
+    /// Cyan (`#06b6d4`).
     Cyan,
+    /// Sky (`#0ea5e9`).
     Sky,
     /// Neutral (gray-on-gray, like Vercel/Linear monochrome UIs).
     Mono,
@@ -219,15 +239,19 @@ impl Accent {
 /// How much space controls take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Density {
+    /// Smaller controls and rows (26px controls at 1× scaling).
     Compact,
+    /// Standard sizing (30px controls at 1× scaling).
     #[default]
     Default,
+    /// Roomier controls and rows (34px controls at 1× scaling).
     Comfortable,
 }
 
 /// How strongly colors are separated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Contrast {
+    /// The standard palette.
     #[default]
     Normal,
     /// For low vision and bright environments (like Windows contrast
@@ -238,23 +262,37 @@ pub enum Contrast {
 }
 
 /// The global knobs a theme is generated from.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let t = ThemeConfig { accent: Accent::Teal.color(false), radius: 10.0, ..ThemeConfig::light() }.build();
+/// assert!(!t.dark);
+/// assert_eq!(t.radius_lg, 16.0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeConfig {
+    /// Dark mode if true, light mode otherwise.
     pub dark: bool,
     /// Brand/accent color (becomes step 9 of the accent scale).
     pub accent: Color,
+    /// Tint of the neutral gray scale.
     pub gray: GrayTint,
     /// Base corner radius in px (small = ×0.6, large = ×1.6, like shadcn).
     pub radius: f32,
     /// Overall size multiplier for text and controls (1.0 = 13px UI text).
     pub scaling: f32,
+    /// Control and row sizing.
     pub density: Density,
+    /// UI text font.
     pub font: FontFamily,
+    /// Monospace font (code, editors).
     pub mono_font: FontFamily,
+    /// Normal or high contrast.
     pub contrast: Contrast,
 }
 
 impl ThemeConfig {
+    /// Default dark-mode knobs (blue accent, zinc grays, 6px radius).
     pub fn dark() -> Self {
         Self {
             dark: true,
@@ -268,9 +306,11 @@ impl ThemeConfig {
             contrast: Contrast::Normal,
         }
     }
+    /// Default light-mode knobs; like [`ThemeConfig::dark`] with a slightly deeper accent.
     pub fn light() -> Self {
         Self { dark: false, accent: hex("#3867f5"), ..Self::dark() }
     }
+    /// Generate the theme; same as [`Theme::from_config`].
     pub fn build(self) -> Theme {
         Theme::from_config(self)
     }
@@ -285,10 +325,15 @@ impl Default for ThemeConfig {
 /// The primitive color scales a theme was generated from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scales {
+    /// Neutral scale, seeded from [`ThemeConfig::gray`].
     pub gray: Scale,
+    /// Accent scale, seeded from [`ThemeConfig::accent`].
     pub accent: Scale,
+    /// Red scale (source of `danger`).
     pub red: Scale,
+    /// Green scale (source of `success`).
     pub green: Scale,
+    /// Amber scale (source of `warning`).
     pub amber: Scale,
 }
 
@@ -307,27 +352,45 @@ pub struct Palette {
     pub elevated: Color,
     /// Input field backgrounds.
     pub input: Color,
+    /// Default border and divider color (also splitters).
     pub border: Color,
+    /// Higher-contrast border, e.g. for checkboxes.
     pub border_strong: Color,
+    /// Primary text.
     pub text: Color,
+    /// Secondary text (descriptions, labels).
     pub text_muted: Color,
+    /// Tertiary text: placeholders, hints, disabled labels.
     pub text_faint: Color,
+    /// Accent fill, e.g. primary buttons and active indicators.
     pub accent: Color,
+    /// Accent fill on hover.
     pub accent_hover: Color,
+    /// Text and icons on `accent` backgrounds.
     pub accent_text: Color,
+    /// Translucent accent background for selected or highlighted rows.
     pub accent_soft: Color,
+    /// Destructive actions and errors.
     pub danger: Color,
+    /// Success states.
     pub success: Color,
+    /// Warnings.
     pub warning: Color,
     /// Translucent overlay used for hover states on neutral elements.
     pub hover: Color,
     /// Translucent overlay used for pressed states on neutral elements.
     pub pressed: Color,
+    /// Text selection highlight.
     pub selection: Color,
+    /// Keyboard focus ring.
     pub focus_ring: Color,
+    /// Scrollbar thumb.
     pub scrollbar: Color,
+    /// Scrollbar thumb while hovered or dragged.
     pub scrollbar_hover: Color,
+    /// Status bar background.
     pub status_bar: Color,
+    /// Status bar text.
     pub status_text: Color,
     /// Inline code and other "literal" text (accent-tinted, readable on surfaces).
     pub code_text: Color,
@@ -382,22 +445,42 @@ fn high_contrast(base: &Palette, dark: bool, gray: &Scale, accent: &Scale) -> Pa
 }
 
 /// A complete theme: palette plus shape, typography and motion tokens.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let t = Theme::light().with_accent_preset(Accent::Violet).with_density(Density::Compact);
+/// assert_eq!(t.config.density, Density::Compact);
+/// assert!(t.colors.text.contrast(t.colors.background) >= 7.0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Theme {
+    /// Display name, e.g. "Dark" or "High Contrast Light".
     pub name: String,
+    /// Whether this is a dark theme.
     pub dark: bool,
     /// The knobs this theme was generated from.
     pub config: ThemeConfig,
+    /// Primitive color scales.
     pub scales: Scales,
+    /// Semantic colors used by widgets.
     pub colors: Palette,
+    /// Small corner radius (0.6× base), for small elements like checkboxes and list rows.
     pub radius_sm: f32,
+    /// Base corner radius, used by most controls.
     pub radius: f32,
+    /// Large corner radius (1.6× base), for cards, dialogs and popovers.
     pub radius_lg: f32,
+    /// UI text font.
     pub font: FontFamily,
+    /// Monospace font.
     pub mono_font: FontFamily,
+    /// Default UI text size in px.
     pub font_size: f32,
+    /// Small text size (captions, hints).
     pub font_size_sm: f32,
+    /// Large text size (dialog titles).
     pub font_size_lg: f32,
+    /// Default line height, as a multiple of font size.
     pub line_height: f32,
     /// Standard control height (buttons, inputs).
     pub control_height: f32,
@@ -407,6 +490,7 @@ pub struct Theme {
     pub tab_height: f32,
     /// Standard interaction transition, in seconds.
     pub transition: f32,
+    /// Easing curve for standard transitions.
     pub easing: Easing,
     /// Width of keyboard focus rings.
     pub focus_ring_width: f32,
@@ -414,7 +498,9 @@ pub struct Theme {
     pub shadow_popover: Vec<Shadow>,
     /// Shadow used for small raised controls.
     pub shadow_sm: Vec<Shadow>,
+    /// Height of the custom window title bar.
     pub titlebar_height: f32,
+    /// Extra hit area in px on each side of a pane splitter.
     pub splitter_hit: f32,
     /// Delay before a hovered splitter highlights (VS Code uses 300ms).
     pub splitter_hover_delay: f32,
@@ -433,12 +519,15 @@ pub type ClassFn = Rc<dyn Fn(Element<()>) -> Element<()>>;
 pub struct StyleClasses(Rc<HashMap<String, Vec<ClassFn>>>);
 
 impl StyleClasses {
+    /// The class functions registered under `name`, in registration order.
     pub fn get(&self, name: &str) -> Option<&[ClassFn]> {
         self.0.get(name).map(Vec::as_slice)
     }
+    /// Whether no classes are registered.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+    /// Names of all registered classes, in no particular order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.0.keys().map(String::as_str)
     }
@@ -688,6 +777,12 @@ thread_local! {
 
 /// The theme active for the view currently being built. Widgets call this to
 /// pick up design tokens.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let th = theme();
+/// let label: Element<()> = text("Saved").color(th.colors.success).font_size(th.font_size_sm);
+/// ```
 pub fn theme() -> Rc<Theme> {
     CURRENT.with(|t| t.borrow().clone())
 }

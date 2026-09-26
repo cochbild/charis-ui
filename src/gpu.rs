@@ -739,6 +739,7 @@ impl GpuRenderer {
 pub struct GpuSurface {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// The renderer drawing into this surface.
     pub renderer: GpuRenderer,
 }
 
@@ -803,6 +804,7 @@ impl GpuSurface {
         Some(Self { surface, config, renderer })
     }
 
+    /// Reconfigure the surface for a new physical size (no-op if unchanged or zero).
     pub fn resize(&mut self, width: u32, height: u32) {
         if (width, height) != (self.config.width, self.config.height) && width > 0 && height > 0 {
             self.config.width = width;

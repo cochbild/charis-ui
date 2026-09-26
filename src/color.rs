@@ -1,27 +1,46 @@
 //! Colors and fills (solid colors and CSS-like linear gradients).
 
 /// An sRGB color with straight (non-premultiplied) alpha. Components are 0..=1.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let blue = hex("#3b82f6");
+/// assert_eq!(blue, Color::rgb(0x3b, 0x82, 0xf6));
+/// let muted = blue.with_alpha(0.5).lighten(0.2);
+/// assert_eq!(muted.a, 0.5);
+/// assert!(Color::WHITE.contrast(Color::BLACK) > 20.9);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Color {
+    /// Red, 0..=1.
     pub r: f32,
+    /// Green, 0..=1.
     pub g: f32,
+    /// Blue, 0..=1.
     pub b: f32,
+    /// Alpha (opacity), 0..=1.
     pub a: f32,
 }
 
 impl Color {
+    /// Fully transparent black.
     pub const TRANSPARENT: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    /// Opaque black.
     pub const BLACK: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
+    /// Opaque white.
     pub const WHITE: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 
+    /// Build from float components (0..=1), usable in `const` contexts.
     pub const fn rgba_f(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
 
+    /// Build an opaque color from 8-bit channels.
     pub fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self::rgba(r, g, b, 1.0)
     }
 
+    /// Build from 8-bit channels and a 0..=1 alpha.
     pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Self {
         Self { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0, a }
     }
@@ -32,6 +51,7 @@ impl Color {
         Self::try_hex(s).unwrap_or_else(|| panic!("invalid hex color: {s:?}"))
     }
 
+    /// Like [`Color::hex`], but returns `None` on malformed input.
     pub fn try_hex(s: &str) -> Option<Self> {
         let s = s.trim_start_matches('#');
         let v = |i: usize, n: usize| u8::from_str_radix(&s[i..i + n], 16).ok();
@@ -63,6 +83,7 @@ impl Color {
         Self { r: r + m, g: g + m, b: b + m, a: 1.0 }
     }
 
+    /// The same color with alpha replaced by `a`.
     pub fn with_alpha(self, a: f32) -> Self {
         Self { a, ..self }
     }
@@ -72,6 +93,7 @@ impl Color {
         Self { a: self.a * f, ..self }
     }
 
+    /// Linear interpolation (per sRGB channel and alpha) toward `o`; `t` is clamped to 0..=1.
     pub fn lerp(self, o: Color, t: f32) -> Color {
         let t = t.clamp(0.0, 1.0);
         let l = |a: f32, b: f32| a + (b - a) * t;
@@ -231,6 +253,13 @@ fn oklab_to_linear_srgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
 }
 
 /// Shorthand for [`Color::oklch`].
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// // Tailwind v4 zinc-900: oklch(21% 0.006 285.885) ≈ #18181b
+/// let c = oklch(0.21, 0.006, 285.885);
+/// assert!((c.r - hex("#18181b").r).abs() < 0.01);
+/// ```
 pub fn oklch(l: f32, c: f32, h: f32) -> Color {
     Color::oklch(l, c, h)
 }
@@ -251,22 +280,35 @@ pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color {
 }
 
 /// A background fill, similar to CSS `background`.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let solid: Fill = hex("#5b8cff").into();
+/// let sunset = Fill::linear(90.0, [(0.0, hex("#f97316")), (1.0, hex("#db2777"))]);
+/// assert!(!sunset.is_transparent());
+/// assert!(solid.fade(0.0).is_transparent());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fill {
+    /// A single color.
     Solid(Color),
     /// A linear gradient. `angle` is in degrees using CSS conventions
     /// (0 = bottom to top, 90 = left to right, 180 = top to bottom).
     LinearGradient {
+        /// Direction in degrees (CSS convention).
         angle: f32,
+        /// `(position 0..=1, color)` pairs, in order.
         stops: Vec<(f32, Color)>,
     },
 }
 
 impl Fill {
+    /// A linear gradient at `angle` degrees through `(position, color)` stops.
     pub fn linear(angle: f32, stops: impl IntoIterator<Item = (f32, Color)>) -> Self {
         Fill::LinearGradient { angle, stops: stops.into_iter().collect() }
     }
 
+    /// Interpolate toward `o`. Two solid fills blend; otherwise switches at `t = 0.5`.
     pub fn lerp(&self, o: &Fill, t: f32) -> Fill {
         match (self, o) {
             (Fill::Solid(a), Fill::Solid(b)) => Fill::Solid(a.lerp(*b, t)),
@@ -280,6 +322,7 @@ impl Fill {
         }
     }
 
+    /// Whether nothing would be painted (every color has zero alpha).
     pub fn is_transparent(&self) -> bool {
         match self {
             Fill::Solid(c) => c.a <= 0.0,
@@ -287,6 +330,7 @@ impl Fill {
         }
     }
 
+    /// Multiply the alpha of every color by `f`.
     pub fn fade(&self, f: f32) -> Fill {
         match self {
             Fill::Solid(c) => Fill::Solid(c.fade(f)),

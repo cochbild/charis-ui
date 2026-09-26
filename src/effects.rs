@@ -71,6 +71,7 @@ impl TaskHandle {
         self.abort.abort();
     }
 
+    /// Whether [`TaskHandle::abort`] was called.
     pub fn is_aborted(&self) -> bool {
         self.abort.is_aborted()
     }

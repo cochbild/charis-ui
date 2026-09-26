@@ -68,6 +68,7 @@ impl<A: App> Runtime<A> {
         self.invalidate();
     }
 
+    /// Whether the inspector is open.
     pub fn inspector_open(&self) -> bool {
         self.inspector.is_some()
     }

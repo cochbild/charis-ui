@@ -200,8 +200,10 @@ a restart.
 - [x] API review: consistent naming (`set_*` for runtime changes, `with_*` for theme builders,
       `on_*` for handlers); `#[non_exhaustive]` on the enums that will grow; internal modules
       private or hidden; the semver policy in `docs/SEMVER.md`.
-- [ ] A docs site with a book (guide, theming, layout, panels, testing) plus rustdoc with examples
-      on every public item.
+- [x] A book (`book/`, mdBook: guide, app model, layout, styling, theming, panels, commands,
+      windows, testing, performance; its examples run as doc tests) and rustdoc on every public
+      item (`#![warn(missing_docs)]`, `cargo doc` clean with `-D warnings`), with examples on
+      the main entry points. Publishing it as a site comes with CI.
 - [x] Optional hot-reloadable stylesheet layer (`stylesheet` module: CSS-like rules on style
       classes and states, theme colors by name, line-numbered errors;
       `WindowOptions::stylesheet(path)` reloads on save) and an element inspector overlay (F12 /

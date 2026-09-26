@@ -29,30 +29,50 @@ use crate::style::*;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Key {
+    /// A printable character.
     Char(char),
+    /// Enter / Return.
     Enter,
+    /// Tab.
     Tab,
+    /// Escape.
     Escape,
+    /// Backspace.
     Backspace,
+    /// Forward delete.
     Delete,
+    /// Left arrow.
     Left,
+    /// Right arrow.
     Right,
+    /// Up arrow.
     Up,
+    /// Down arrow.
     Down,
+    /// Home.
     Home,
+    /// End.
     End,
+    /// Page Up.
     PageUp,
+    /// Page Down.
     PageDown,
+    /// Space bar.
     Space,
+    /// Function key `F1`, `F2`, … (the number).
     F(u8),
+    /// Any key not listed above.
     Other,
 }
 
 /// Modifier key state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Modifiers {
+    /// Shift is held.
     pub shift: bool,
+    /// Ctrl is held.
     pub ctrl: bool,
+    /// Alt (Option on macOS) is held.
     pub alt: bool,
     /// Cmd on macOS, Windows key elsewhere.
     pub meta: bool,
@@ -72,14 +92,18 @@ impl Modifiers {
 /// A key press delivered to the app or a focused element.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyEvent {
+    /// The key pressed.
     pub key: Key,
+    /// Modifier keys held during the press.
     pub mods: Modifiers,
+    /// True for auto-repeat presses while the key is held down.
     pub repeat: bool,
 }
 
 /// Information about an in-progress pointer drag on an element with `on_drag`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DragEvent {
+    /// Whether the drag started, moved or ended.
     pub phase: DragPhase,
     /// Pointer position in window coordinates.
     pub pos: Point,
@@ -94,10 +118,14 @@ pub struct DragEvent {
     pub screen: Option<Point>,
 }
 
+/// Stage of a pointer drag, see [`DragEvent`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DragPhase {
+    /// The pointer moved far enough after a press to start a drag.
     Start,
+    /// The pointer moved during the drag.
     Move,
+    /// The pointer was released (or the drag was cancelled).
     End,
 }
 
@@ -115,6 +143,7 @@ pub struct ScrollInfo {
 /// Delivered to drop targets while something is dragged over them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DropEvent {
+    /// Whether the drag is over the target, left it or was dropped on it.
     pub phase: DropPhase,
     /// Pointer position in window coordinates.
     pub pos: Point,
@@ -122,6 +151,7 @@ pub struct DropEvent {
     pub rect: Rect,
 }
 
+/// Stage of a drag over a drop target, see [`DropEvent`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropPhase {
     /// The drag moved over the target.
@@ -136,8 +166,11 @@ pub enum DropPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WindowControl {
+    /// Minimize the window.
     Minimize,
+    /// Maximize the window, or restore it if maximized.
     ToggleMaximize,
+    /// Close the window.
     Close,
 }
 
@@ -334,6 +367,7 @@ pub(crate) struct InputSpec {
 pub enum Priority {
     /// Keeps its size the longest (a sidebar).
     Low,
+    /// The default.
     #[default]
     Normal,
     /// Absorbs size changes first (the main content).
@@ -351,7 +385,7 @@ impl Priority {
     }
 }
 
-/// A pane inside a [`split`](crate::split) container.
+/// A pane inside a [`split`] container.
 ///
 /// Panes are either *fixed* (a pixel size the user can drag) or *flex*
 /// (a share of the remaining space, like CSS `flex-grow`). Splitters between
@@ -404,10 +438,12 @@ impl<M> Pane<M> {
             key: None,
         }
     }
+    /// Minimum size in logical px (default 60).
     pub fn min(mut self, v: f32) -> Self {
         self.min = v;
         self
     }
+    /// Maximum size in logical px (default unbounded).
     pub fn max(mut self, v: f32) -> Self {
         self.max = v;
         self
@@ -539,6 +575,23 @@ pub(crate) enum Behavior {
 /// A node in the UI tree. Build them with [`div`], [`row`], [`col`],
 /// [`text`], [`icon`] and the widget functions, then style with the builder
 /// methods below.
+///
+/// `M` is the app's message type, produced by handlers like
+/// [`on_click`](Self::on_click).
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// #[derive(Clone)]
+/// enum Msg { Inc }
+/// fn view(count: i32) -> Element<Msg> {
+///     col()
+///         .gap(8.0)
+///         .p(16.0)
+///         .child(text(format!("Count: {count}")).font_size(18.0).bold())
+///         .child(button("+1").on_click(Msg::Inc))
+/// }
+/// let _ = view(0);
+/// ```
 pub struct Element<M> {
     pub(crate) key: Option<u64>,
     pub(crate) style: Style,
@@ -641,6 +694,15 @@ pub fn row<M: 'static>() -> Element<M> {
 }
 
 /// A vertical flex container.
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// let sidebar: Element<()> = col()
+///     .w(240.0)
+///     .gap(4.0)
+///     .p(8.0)
+///     .children(["Inbox", "Sent", "Drafts"].map(text));
+/// ```
 pub fn col<M: 'static>() -> Element<M> {
     div().direction(Direction::Column)
 }
@@ -832,11 +894,13 @@ impl<M: 'static> Element<M> {
         self
     }
 
+    /// Append a child element (strings become [`text`]).
     pub fn child(mut self, c: impl Into<Element<M>>) -> Self {
         self.children.push(c.into());
         self
     }
 
+    /// Append the child built by `c` only when `cond` is true.
     pub fn child_if(self, cond: bool, c: impl FnOnce() -> Element<M>) -> Self {
         if cond {
             self.child(c())
@@ -845,6 +909,7 @@ impl<M: 'static> Element<M> {
         }
     }
 
+    /// Append every element from an iterator.
     pub fn children<I, E>(mut self, it: I) -> Self
     where
         I: IntoIterator<Item = E>,
@@ -946,6 +1011,13 @@ impl<M: 'static> Element<M> {
     }
 
     /// Replace the whole style.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// use rust_ui::Style;
+    /// let panel = Style { padding: Edges::all(12.0), opacity: 0.9, ..Default::default() };
+    /// let e: Element<()> = div().style(panel).rounded(6.0);
+    /// ```
     pub fn style(mut self, s: Style) -> Self {
         self.style = s;
         self
@@ -959,20 +1031,37 @@ impl<M: 'static> Element<M> {
 
     // ---------------------------------------------------------------- layout
 
-    setter!(direction, direction, Direction);
-    setter!(display, display, Display);
-    setter!(grow, grow, f32);
-    setter!(shrink, shrink, f32);
-    setter!(position, position, Position);
-    setter!(overflow, overflow, Overflow);
-    setter!(z_index, z_index, i32);
+    setter!(
+        /// Main axis for children (`flex-direction`).
+        direction, direction, Direction);
+    setter!(
+        /// Layout mode (`display`): flex, grid or none.
+        display, display, Display);
+    setter!(
+        /// How much of the free space this element takes (`flex-grow`).
+        grow, grow, f32);
+    setter!(
+        /// How much this element shrinks when space is short (`flex-shrink`).
+        shrink, shrink, f32);
+    setter!(
+        /// Positioning scheme (`position`).
+        position, position, Position);
+    setter!(
+        /// What happens to content that doesn't fit (`overflow`).
+        overflow, overflow, Overflow);
+    setter!(
+        /// Paint order among siblings (`z-index`); higher is drawn on top.
+        z_index, z_index, i32);
 
+    /// Lay out children horizontally (`flex-direction: row`).
     pub fn flex_row(self) -> Self {
         self.direction(Direction::Row)
     }
+    /// Lay out children vertically (`flex-direction: column`).
     pub fn flex_col(self) -> Self {
         self.direction(Direction::Column)
     }
+    /// Wrap children onto new lines when they don't fit (`flex-wrap: wrap`).
     pub fn flex_wrap(mut self) -> Self {
         self.style.wrap = true;
         self
@@ -984,26 +1073,32 @@ impl<M: 'static> Element<M> {
         self.style.basis = Length::Px(0.0);
         self
     }
+    /// Initial main-axis size before growing/shrinking (`flex-basis`).
     pub fn basis(mut self, v: impl Into<Length>) -> Self {
         self.style.basis = v.into();
         self
     }
+    /// Space between children on both axes, in logical px (`gap`).
     pub fn gap(mut self, v: f32) -> Self {
         self.style.gap = (v, v);
         self
     }
+    /// Separate column (`x`) and row (`y`) gaps, in logical px.
     pub fn gap_xy(mut self, x: f32, y: f32) -> Self {
         self.style.gap = (x, y);
         self
     }
+    /// Main-axis distribution of children (`justify-content`).
     pub fn justify(mut self, j: Justify) -> Self {
         self.style.justify = Some(j);
         self
     }
+    /// Cross-axis alignment of children (`align-items`).
     pub fn items(mut self, a: Align) -> Self {
         self.style.align_items = Some(a);
         self
     }
+    /// Cross-axis alignment of this element in its parent (`align-self`).
     pub fn self_align(mut self, a: Align) -> Self {
         self.style.align_self = Some(a);
         self
@@ -1016,18 +1111,22 @@ impl<M: 'static> Element<M> {
     pub fn center(self) -> Self {
         self.justify(Justify::Center).items(Align::Center)
     }
+    /// `justify-content: space-between`.
     pub fn justify_between(self) -> Self {
         self.justify(Justify::SpaceBetween)
     }
 
+    /// Width: a number is logical px; also [`Length`] / [`pct`].
     pub fn w(mut self, v: impl Into<Length>) -> Self {
         self.style.width = v.into();
         self
     }
+    /// Height: a number is logical px; also [`Length`] / [`pct`].
     pub fn h(mut self, v: impl Into<Length>) -> Self {
         self.style.height = v.into();
         self
     }
+    /// Width and height.
     pub fn size(self, w: impl Into<Length>, h: impl Into<Length>) -> Self {
         self.w(w).h(h)
     }
@@ -1035,96 +1134,119 @@ impl<M: 'static> Element<M> {
     pub fn square(self, v: f32) -> Self {
         self.w(v).h(v)
     }
+    /// `width: 100%`.
     pub fn w_full(self) -> Self {
         self.w(Length::Percent(100.0))
     }
+    /// `height: 100%`.
     pub fn h_full(self) -> Self {
         self.h(Length::Percent(100.0))
     }
+    /// `width: 100%; height: 100%`.
     pub fn size_full(self) -> Self {
         self.w_full().h_full()
     }
+    /// Minimum width (`min-width`).
     pub fn min_w(mut self, v: impl Into<Length>) -> Self {
         self.style.min_width = v.into();
         self
     }
+    /// Minimum height (`min-height`).
     pub fn min_h(mut self, v: impl Into<Length>) -> Self {
         self.style.min_height = v.into();
         self
     }
+    /// Maximum width (`max-width`).
     pub fn max_w(mut self, v: impl Into<Length>) -> Self {
         self.style.max_width = v.into();
         self
     }
+    /// Maximum height (`max-height`).
     pub fn max_h(mut self, v: impl Into<Length>) -> Self {
         self.style.max_height = v.into();
         self
     }
+    /// Width / height ratio (`aspect-ratio`).
     pub fn aspect_ratio(mut self, r: f32) -> Self {
         self.style.aspect_ratio = Some(r);
         self
     }
 
+    /// Padding on all sides, in logical px.
     pub fn p(mut self, v: f32) -> Self {
         self.style.padding = Edges::all(v);
         self
     }
+    /// Left and right padding.
     pub fn px(mut self, v: f32) -> Self {
         self.style.padding.left = v;
         self.style.padding.right = v;
         self
     }
+    /// Top and bottom padding.
     pub fn py(mut self, v: f32) -> Self {
         self.style.padding.top = v;
         self.style.padding.bottom = v;
         self
     }
+    /// Top padding.
     pub fn pt(mut self, v: f32) -> Self {
         self.style.padding.top = v;
         self
     }
+    /// Bottom padding.
     pub fn pb(mut self, v: f32) -> Self {
         self.style.padding.bottom = v;
         self
     }
+    /// Left padding.
     pub fn pl(mut self, v: f32) -> Self {
         self.style.padding.left = v;
         self
     }
+    /// Right padding.
     pub fn pr(mut self, v: f32) -> Self {
         self.style.padding.right = v;
         self
     }
+    /// Padding per side.
     pub fn padding(mut self, e: Edges) -> Self {
         self.style.padding = e;
         self
     }
+    /// Margin on all sides, in logical px.
     pub fn m(mut self, v: f32) -> Self {
         self.style.margin = Edges::all(v);
         self
     }
+    /// Left and right margin.
     pub fn mx(mut self, v: f32) -> Self {
         self.style.margin.left = v;
         self.style.margin.right = v;
         self
     }
+    /// Top and bottom margin.
     pub fn my(mut self, v: f32) -> Self {
         self.style.margin.top = v;
         self.style.margin.bottom = v;
         self
     }
+    /// Top margin.
     pub fn mt(mut self, v: f32) -> Self {
         self.style.margin.top = v;
         self
     }
+    /// Bottom margin.
     pub fn mb(mut self, v: f32) -> Self {
         self.style.margin.bottom = v;
         self
     }
+    /// Left margin.
     pub fn ml(mut self, v: f32) -> Self {
         self.style.margin.left = v;
         self
     }
+    /// Right margin.
     pub fn mr(mut self, v: f32) -> Self {
         self.style.margin.right = v;
         self
@@ -1151,18 +1273,22 @@ impl<M: 'static> Element<M> {
         self.style.position = Position::Fixed;
         self
     }
+    /// `top` inset for absolute/fixed positioning.
     pub fn top(mut self, v: impl Into<Length>) -> Self {
         self.style.inset[0] = v.into();
         self
     }
+    /// `right` inset for absolute/fixed positioning.
     pub fn right(mut self, v: impl Into<Length>) -> Self {
         self.style.inset[1] = v.into();
         self
     }
+    /// `bottom` inset for absolute/fixed positioning.
     pub fn bottom(mut self, v: impl Into<Length>) -> Self {
         self.style.inset[2] = v.into();
         self
     }
+    /// `left` inset for absolute/fixed positioning.
     pub fn left(mut self, v: impl Into<Length>) -> Self {
         self.style.inset[3] = v.into();
         self
@@ -1183,18 +1309,22 @@ impl<M: 'static> Element<M> {
         self.style.grid_columns = columns;
         self
     }
+    /// Row tracks for a [`grid`](Self::grid) (`grid-template-rows`).
     pub fn grid_rows(mut self, rows: Vec<Track>) -> Self {
         self.style.grid_rows = rows;
         self
     }
+    /// Number of grid columns this child spans.
     pub fn col_span(mut self, n: u16) -> Self {
         self.style.grid_column_span = n;
         self
     }
+    /// Number of grid rows this child spans.
     pub fn row_span(mut self, n: u16) -> Self {
         self.style.grid_row_span = n;
         self
     }
+    /// `display: none` when `hide` is true: takes no space and isn't drawn.
     pub fn hidden(mut self, hide: bool) -> Self {
         if hide {
             self.style.display = Display::None;
@@ -1204,6 +1334,7 @@ impl<M: 'static> Element<M> {
 
     // --------------------------------------------------------------- visuals
 
+    /// Background color or gradient.
     pub fn bg(mut self, f: impl Into<Fill>) -> Self {
         self.style.background = Some(f.into());
         self
@@ -1212,44 +1343,53 @@ impl<M: 'static> Element<M> {
     pub fn gradient(self, angle: f32, stops: impl IntoIterator<Item = (f32, Color)>) -> Self {
         self.bg(Fill::linear(angle, stops))
     }
+    /// Border of `width` logical px on all sides.
     pub fn border(mut self, width: f32, color: Color) -> Self {
         self.style.border_width = Edges::all(width);
         self.style.border_color = color;
         self
     }
+    /// Border with a width per side.
     pub fn border_widths(mut self, e: Edges, color: Color) -> Self {
         self.style.border_width = e;
         self.style.border_color = color;
         self
     }
+    /// Top border (sets the color of the whole border).
     pub fn border_t(mut self, w: f32, color: Color) -> Self {
         self.style.border_width.top = w;
         self.style.border_color = color;
         self
     }
+    /// Bottom border (sets the color of the whole border).
     pub fn border_b(mut self, w: f32, color: Color) -> Self {
         self.style.border_width.bottom = w;
         self.style.border_color = color;
         self
     }
+    /// Left border (sets the color of the whole border).
     pub fn border_l(mut self, w: f32, color: Color) -> Self {
         self.style.border_width.left = w;
         self.style.border_color = color;
         self
     }
+    /// Right border (sets the color of the whole border).
     pub fn border_r(mut self, w: f32, color: Color) -> Self {
         self.style.border_width.right = w;
         self.style.border_color = color;
         self
     }
+    /// Border color, keeping the widths.
     pub fn border_color(mut self, c: Color) -> Self {
         self.style.border_color = c;
         self
     }
+    /// Corner radius on all corners, in logical px.
     pub fn rounded(mut self, r: f32) -> Self {
         self.style.radius = Corners::all(r);
         self
     }
+    /// Corner radius per corner.
     pub fn radius(mut self, c: Corners) -> Self {
         self.style.radius = c;
         self
@@ -1258,6 +1398,7 @@ impl<M: 'static> Element<M> {
     pub fn pill(self) -> Self {
         self.rounded(9999.0)
     }
+    /// Add a box shadow (`box-shadow`); may be called repeatedly.
     pub fn shadow(mut self, s: Shadow) -> Self {
         self.style.shadows.push(s);
         self
@@ -1267,22 +1408,27 @@ impl<M: 'static> Element<M> {
         self.style.shadows.clear();
         self
     }
+    /// Add several box shadows.
     pub fn shadows(mut self, s: impl IntoIterator<Item = Shadow>) -> Self {
         self.style.shadows.extend(s);
         self
     }
+    /// Opacity of the element and its children, 0.0–1.0.
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
         self
     }
+    /// Outline drawn `offset` px outside the border box (CSS `outline`).
     pub fn outline(mut self, width: f32, offset: f32, color: Color) -> Self {
         self.style.outline = Some(Outline { width, offset, color });
         self
     }
+    /// Paint-time offset in logical px (`transform: translate`); doesn't affect layout.
     pub fn translate(mut self, x: f32, y: f32) -> Self {
         self.style.translate = (x, y);
         self
     }
+    /// Mouse cursor shown while hovering.
     pub fn cursor(mut self, c: Cursor) -> Self {
         self.style.cursor = Some(c);
         self
@@ -1306,6 +1452,16 @@ impl<M: 'static> Element<M> {
         self
     }
     /// Style applied while hovered.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// let item: Element<()> = row()
+    ///     .p(6.0)
+    ///     .rounded(4.0)
+    ///     .transition(0.12)
+    ///     .hover(|s| s.bg(hex("#2a2d2e")))
+    ///     .active(|s| s.bg(hex("#37373d")));
+    /// ```
     pub fn hover(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
         self.hover = Some(Box::new(f(self.hover.take().map(|b| *b).unwrap_or_default())));
         self
@@ -1328,6 +1484,7 @@ impl<M: 'static> Element<M> {
 
     // ------------------------------------------------------------------ text
 
+    /// Text and icon color (inherited by children).
     pub fn color(mut self, c: Color) -> Self {
         self.style.color = Some(c);
         self
@@ -1341,27 +1498,34 @@ impl<M: 'static> Element<M> {
     pub fn text_size(self, s: f32) -> Self {
         self.font_size(s)
     }
+    /// Font weight.
     pub fn weight(mut self, w: Weight) -> Self {
         self.style.font_weight = Some(w);
         self
     }
+    /// Medium (500) font weight.
     pub fn medium(self) -> Self {
         self.weight(Weight::MEDIUM)
     }
+    /// Semibold (600) font weight.
     pub fn semibold(self) -> Self {
         self.weight(Weight::SEMIBOLD)
     }
+    /// Bold (700) font weight.
     pub fn bold(self) -> Self {
         self.weight(Weight::BOLD)
     }
+    /// Italic text.
     pub fn italic(mut self) -> Self {
         self.style.italic = Some(true);
         self
     }
+    /// Monospace font.
     pub fn mono(mut self) -> Self {
         self.style.font_family = Some(FontFamily::Mono);
         self
     }
+    /// Font family.
     pub fn font(mut self, f: FontFamily) -> Self {
         self.style.font_family = Some(f);
         self
@@ -1371,10 +1535,12 @@ impl<M: 'static> Element<M> {
         self.style.line_height = Some(lh);
         self
     }
+    /// Extra space between letters, in logical px.
     pub fn letter_spacing(mut self, v: f32) -> Self {
         self.style.letter_spacing = Some(v);
         self
     }
+    /// Horizontal text alignment (`text-align`).
     pub fn text_align(mut self, a: TextAlign) -> Self {
         self.style.text_align = Some(a);
         self
@@ -1414,6 +1580,16 @@ impl<M: 'static> Element<M> {
 
     // ----------------------------------------------------------- interaction
 
+    /// Send `m` when clicked (or activated with Enter/Space while focused).
+    /// Sets a pointer cursor unless one is set.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// #[derive(Clone)]
+    /// enum Msg { Select(usize) }
+    /// let items: Vec<Element<Msg>> =
+    ///     (0..3).map(|i| row().p(6.0).child(text(format!("Item {i}"))).on_click(Msg::Select(i))).collect();
+    /// ```
     pub fn on_click(mut self, m: M) -> Self {
         self.handlers.click = Some(Out::Msg(m));
         if self.style.cursor.is_none() {
@@ -1421,6 +1597,7 @@ impl<M: 'static> Element<M> {
         }
         self
     }
+    /// Send `m` on double click.
     pub fn on_double_click(mut self, m: M) -> Self {
         self.handlers.double_click = Some(Out::Msg(m));
         self
@@ -1430,17 +1607,40 @@ impl<M: 'static> Element<M> {
         self.handlers.context_menu = Some(cb(f));
         self
     }
+    /// Called with `true` when the pointer enters and `false` when it leaves.
     pub fn on_hover(mut self, f: impl Fn(bool) -> M + 'static) -> Self {
         self.handlers.hover = Some(cb(f));
         self
     }
     /// Receive pointer drag events that start on this element.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// #[derive(Clone)]
+    /// enum Msg { DragStart, DragBy(Point), DragEnd }
+    /// let handle: Element<Msg> = div().square(12.0).on_drag(|e| match e.phase {
+    ///     DragPhase::Start => Msg::DragStart,
+    ///     DragPhase::Move => Msg::DragBy(e.delta),
+    ///     DragPhase::End => Msg::DragEnd,
+    /// });
+    /// ```
     pub fn on_drag(mut self, f: impl Fn(DragEvent) -> M + 'static) -> Self {
         self.handlers.drag = Some(cb(f));
         self
     }
     /// Make this element a drop target for drags started with [`Element::on_drag`].
     /// Receives `Over` while hovered during a drag, `Leave`, and `Drop` on release.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// #[derive(Clone)]
+    /// enum Msg { Highlight(bool), MoveTo(usize) }
+    /// let slot: Element<Msg> = div().h(40.0).on_drop_target(|e| match e.phase {
+    ///     DropPhase::Over => Msg::Highlight(true),
+    ///     DropPhase::Leave => Msg::Highlight(false),
+    ///     DropPhase::Drop => Msg::MoveTo(2),
+    /// });
+    /// ```
     pub fn on_drop_target(mut self, f: impl Fn(DropEvent) -> M + 'static) -> Self {
         self.handlers.drop_target = Some(cb(f));
         self
@@ -1494,6 +1694,7 @@ impl<M: 'static> Element<M> {
         self.autofocus = true;
         self
     }
+    /// Disable interaction: handlers don't fire, it can't be focused, and [`disabled_style`](Self::disabled_style) applies.
     pub fn disabled(mut self, d: bool) -> Self {
         self.disabled = d;
         self
@@ -1551,6 +1752,15 @@ impl<M: 'static> Element<M> {
     /// Apply the current theme's style class `name` (see
     /// [`Theme::style_class`](crate::Theme::style_class)). Unknown names do
     /// nothing, so widgets and apps can tag elements freely.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    /// // Register the class on the app's theme...
+    /// let th = Theme::dark().style_class("toolbar", |e| e.px(8.0).gap(4.0).bg(hex("#252526")));
+    /// // ...then tag elements with it.
+    /// let bar: Element<()> = row().class("toolbar").child(text("File"));
+    /// # let _ = th;
+    /// ```
     pub fn class(mut self, name: &str) -> Self {
         if recording() {
             self.debug.get_or_insert_with(Default::default).classes.push(name.to_string());

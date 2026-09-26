@@ -58,8 +58,11 @@ use crate::widgets::{backdrop, context_menu, menu_panel, tooltip_icon_button, Me
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Side {
+    /// The left edge.
     Left,
+    /// The right edge.
     Right,
+    /// The bottom edge.
     Bottom,
 }
 
@@ -87,8 +90,11 @@ pub enum ToolMode {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolWindow<T> {
+    /// The app's identifier for this tool window.
     pub id: T,
+    /// The edge it is attached to.
     pub side: Side,
+    /// Pinned or auto-hide.
     pub mode: ToolMode,
     /// Width (left/right) or height (bottom) in px.
     pub size: f32,
@@ -99,7 +105,9 @@ pub struct ToolWindow<T> {
 pub enum ToolMsg<T> {
     /// Open the tool window, or hide it if it's open.
     Toggle(T),
+    /// Hide the tool window.
     Hide(T),
+    /// Switch the tool window between pinned and auto-hide.
     SetMode(T, ToolMode),
     /// Move to another edge.
     Move(T, Side),
@@ -112,6 +120,7 @@ pub enum ToolMsg<T> {
     /// Open a tool window's menu (move, view mode, hide), at a window
     /// position or (from the keyboard or its header button) anchored.
     Menu(T, Option<Point>),
+    /// Close the tool window menu.
     CloseMenu,
 }
 
@@ -119,6 +128,7 @@ pub enum ToolMsg<T> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolWindows<T> {
+    /// Every tool window, open or not.
     pub windows: Vec<ToolWindow<T>>,
     /// The open tool window of each side (left, right, bottom).
     open: [Option<T>; 3],
@@ -148,6 +158,7 @@ impl<T: Clone + PartialEq> Default for ToolWindows<T> {
 }
 
 impl<T: Clone + PartialEq> ToolWindows<T> {
+    /// No tool windows.
     pub fn new() -> Self {
         Self::default()
     }
@@ -186,6 +197,7 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
         }
     }
 
+    /// Close a tool window.
     pub fn hide(&mut self, id: &T) {
         for o in &mut self.open {
             if o.as_ref() == Some(id) {
@@ -194,6 +206,7 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
         }
     }
 
+    /// Apply a message from the tool windows' UI.
     pub fn update(&mut self, msg: ToolMsg<T>) {
         if !matches!(msg, ToolMsg::Menu(..)) {
             self.menu = None;

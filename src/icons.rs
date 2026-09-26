@@ -11,46 +11,93 @@ use std::rc::Rc;
 use tiny_skia::{Path, PathBuilder};
 
 /// An icon: either built-in or custom SVG path data in a 24×24 viewbox.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// // Built-in icons render at the current font size.
+/// let close: Element<()> = icon(Icon::Close).font_size(16.0);
+/// // Any SVG path data (e.g. copied from Lucide) works too.
+/// let arrow: Element<()> = icon(Icon::svg("M5 12h14 M12 5l7 7-7 7"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Icon {
+    /// Chevron pointing right.
     ChevronRight,
+    /// Chevron pointing down.
     ChevronDown,
+    /// Chevron pointing left.
     ChevronLeft,
+    /// Chevron pointing up.
     ChevronUp,
+    /// An × (close).
     Close,
+    /// Horizontal line (minus, minimize).
     Minus,
+    /// Plus sign.
     Plus,
+    /// Check mark.
     Check,
+    /// Square outline (maximize window).
     Maximize,
+    /// Two overlapping squares (restore window).
     Restore,
+    /// Three horizontal lines (hamburger menu).
     Menu,
+    /// Magnifying glass.
     Search,
+    /// Document with a folded corner.
     File,
+    /// Two stacked documents.
     Files,
+    /// Folder.
     Folder,
+    /// Git branch: two nodes joined by a branching line.
     GitBranch,
+    /// Three horizontal sliders.
     Settings,
+    /// Prompt chevron with a cursor line.
     Terminal,
+    /// Notification bell.
     Bell,
+    /// Person (head and shoulders).
     User,
+    /// Window with a left sidebar.
     SidebarLeft,
+    /// Window with a right sidebar.
     SidebarRight,
+    /// Window with a bottom panel.
     PanelBottom,
+    /// Filled right-pointing triangle (play).
     Play,
+    /// Angle brackets `< >`.
     Code,
+    /// Three horizontal dots (more actions).
     More,
+    /// 2×2 grid of squares.
     Grid,
+    /// House.
     Home,
+    /// Five-pointed star outline.
     Star,
+    /// Letter i in a circle.
     Info,
+    /// Exclamation mark in a triangle.
     Warning,
+    /// Three stacked sheets.
     Layers,
+    /// Sun with rays (light theme).
     Sun,
+    /// Crescent moon (dark theme).
     Moon,
+    /// Three squares and a plus (add-ons).
     Blocks,
+    /// Small filled circle.
     Dot,
+    /// Circular arrow (reload).
     Refresh,
+    /// Window split into two columns.
     Columns,
     /// Open in a new window.
     PopOut,

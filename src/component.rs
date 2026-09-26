@@ -214,6 +214,7 @@ impl Store {
         self.states.len()
     }
 
+    /// Whether there are no live component states.
     pub fn is_empty(&self) -> bool {
         self.states.is_empty()
     }

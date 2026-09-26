@@ -87,6 +87,17 @@ pub fn button_kind<M: 'static>(kind: ButtonKind, label: impl Into<String>) -> El
 }
 
 /// A neutral (secondary) button.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Save,
+/// }
+///
+/// let save: Element<Msg> = button("Save").on_click(Msg::Save);
+/// ```
 pub fn button<M: 'static>(label: impl Into<String>) -> Element<M> {
     button_kind(ButtonKind::Secondary, label)
 }
@@ -152,6 +163,19 @@ impl<M: 'static> Element<M> {
 
 /// A single-line text input. The value is controlled by the app: handle
 /// `on_input` and store the new value.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Name(String),
+///     Submit,
+/// }
+///
+/// let name = String::from("Ada");
+/// let field: Element<Msg> = text_input(name, Msg::Name).placeholder("Your name").on_submit(Msg::Submit);
+/// ```
 pub fn text_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
     let th = theme();
     let c = &th.colors;
@@ -242,6 +266,17 @@ impl<M: 'static> Element<M> {
 
 /// A dropdown list: shows the selected option and opens a popup to pick one.
 /// Keyboard: Up/Down, Enter, Escape; typing jumps to a matching option.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Theme(usize),
+/// }
+///
+/// let theme: Element<Msg> = pick_list(["Light", "Dark", "System"], Some(2), Msg::Theme);
+/// ```
 pub fn pick_list<M: 'static>(
     options: impl IntoIterator<Item = impl Into<String>>,
     selected: Option<usize>,
@@ -301,6 +336,18 @@ pub fn search_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(Stri
 }
 
 /// A checkbox with a label. Attach `.on_click(...)` to toggle.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Wrap(bool),
+/// }
+///
+/// let wrap = true;
+/// let cb: Element<Msg> = checkbox("Word wrap", wrap).on_click(Msg::Wrap(!wrap));
+/// ```
 pub fn checkbox<M: 'static>(label: impl Into<String>, checked: bool) -> Element<M> {
     let th = theme();
     let c = &th.colors;
@@ -639,6 +686,17 @@ pub fn switch_row<M: 'static>(label: impl Into<String>, on: bool) -> Element<M> 
 }
 
 /// A horizontal slider. Handle `.on_change(|v| ...)`.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Volume(f32),
+/// }
+///
+/// let volume: Element<Msg> = slider(0.5, 0.0, 1.0).on_change(Msg::Volume);
+/// ```
 pub fn slider<M: 'static>(value: f32, min: f32, max: f32) -> Element<M> {
     let th = theme();
     let c = &th.colors;
@@ -881,26 +939,36 @@ pub fn tree_row<M: 'static>(
 
 /// One tab in a [`tab_bar`].
 pub struct Tab<M> {
+    /// Text shown on the tab.
     pub label: String,
+    /// Optional icon before the label.
     pub icon: Option<Icon>,
+    /// Whether this is the selected tab.
     pub active: bool,
+    /// Unsaved changes: an inactive closable tab shows a dot instead of the close icon.
     pub modified: bool,
+    /// Message sent when the tab is clicked.
     pub on_select: M,
+    /// Message sent by the close button; `None` hides the button.
     pub on_close: Option<M>,
 }
 
 impl<M> Tab<M> {
+    /// A tab with a label, its active state and the message sent when clicked.
     pub fn new(label: impl Into<String>, active: bool, on_select: M) -> Self {
         Self { label: label.into(), icon: None, active, modified: false, on_select, on_close: None }
     }
+    /// Show an icon before the label.
     pub fn icon(mut self, i: Icon) -> Self {
         self.icon = Some(i);
         self
     }
+    /// Add a close button that sends `m`.
     pub fn closable(mut self, m: M) -> Self {
         self.on_close = Some(m);
         self
     }
+    /// Mark the tab as having unsaved changes.
     pub fn modified(mut self, m: bool) -> Self {
         self.modified = m;
         self
@@ -908,6 +976,21 @@ impl<M> Tab<M> {
 }
 
 /// Editor-style tabs (VS Code / browser look).
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Show(usize),
+///     Close(usize),
+/// }
+///
+/// let tabs: Element<Msg> = tab_bar(vec![
+///     Tab::new("main.rs", true, Msg::Show(0)).closable(Msg::Close(0)),
+///     Tab::new("lib.rs", false, Msg::Show(1)).closable(Msg::Close(1)).modified(true),
+/// ]);
+/// ```
 pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
@@ -1109,37 +1192,57 @@ pub fn titlebar<M: 'static>(
 /// An entry in a dropdown or context menu.
 #[derive(Clone)]
 pub enum MenuItem<M> {
+    /// A clickable item that sends `msg`.
     Action {
+        /// Text shown for the item.
         label: String,
+        /// Key binding shown at the right (and triggering it in an app menu).
         shortcut: Option<KeyBinding>,
+        /// Optional icon before the label.
         icon: Option<Icon>,
+        /// Message sent when the item is picked.
         msg: M,
+        /// Greys the item out and ignores clicks.
         disabled: bool,
     },
+    /// An item with a check mark that sends `msg` when picked.
     Check {
+        /// Text shown for the item.
         label: String,
+        /// Whether the check mark is shown.
         checked: bool,
+        /// Message sent when the item is picked.
         msg: M,
+        /// Key binding shown at the right (and triggering it in an app menu).
         shortcut: Option<KeyBinding>,
+        /// Greys the item out and ignores clicks.
         disabled: bool,
     },
     /// A nested menu, opened by hovering it.
     Submenu {
+        /// Text shown for the item.
         label: String,
+        /// Items of the nested menu.
         items: Vec<MenuItem<M>>,
+        /// Greys the item out and keeps the submenu closed.
         disabled: bool,
     },
+    /// A horizontal divider line.
     Separator,
+    /// A non-interactive section heading.
     Header(String),
 }
 
 impl<M> MenuItem<M> {
+    /// An action item that sends `msg` when picked.
     pub fn action(label: impl Into<String>, msg: M) -> Self {
         MenuItem::Action { label: label.into(), shortcut: None, icon: None, msg, disabled: false }
     }
+    /// A checkable item that sends `msg` when picked.
     pub fn check(label: impl Into<String>, checked: bool, msg: M) -> Self {
         MenuItem::Check { label: label.into(), checked, msg, shortcut: None, disabled: false }
     }
+    /// A nested menu containing `items`.
     pub fn submenu(label: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
         MenuItem::Submenu { label: label.into(), items, disabled: false }
     }
@@ -1155,12 +1258,14 @@ impl<M> MenuItem<M> {
         }
         self
     }
+    /// Show an icon before the label (action items only).
     pub fn icon(mut self, i: Icon) -> Self {
         if let MenuItem::Action { icon, .. } = &mut self {
             *icon = Some(i);
         }
         self
     }
+    /// Disable the item (actions, checks and submenus).
     pub fn disabled(mut self, d: bool) -> Self {
         match &mut self {
             MenuItem::Action { disabled, .. }
@@ -1414,11 +1519,14 @@ pub fn context_menu<M: Clone + 'static>(at: Point, items: Vec<MenuItem<M>>, on_d
 /// A top-level menu for a [`menu_bar`] or an app menu ([`App::menu`](crate::App::menu)).
 #[derive(Clone)]
 pub struct Menu<M> {
+    /// Title shown in the menu bar.
     pub title: String,
+    /// The menu's entries.
     pub items: Vec<MenuItem<M>>,
 }
 
 impl<M> Menu<M> {
+    /// A menu with a title and its items.
     pub fn new(title: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
         Self { title: title.into(), items }
     }
@@ -1440,6 +1548,25 @@ enum BarEv<M> {
 /// [`menu_bar`], whose open menu the app controls). Picking an item closes
 /// the menu and sends its message. Pass the app's menus:
 /// `menubar(self.menu())` (see [`App::menu`](crate::App::menu)).
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Open,
+///     Quit,
+/// }
+///
+/// let bar: Element<Msg> = menubar(vec![Menu::new(
+///     "File",
+///     vec![
+///         MenuItem::action("Open…", Msg::Open).shortcut("Mod+O"),
+///         MenuItem::Separator,
+///         MenuItem::action("Quit", Msg::Quit),
+///     ],
+/// )]);
+/// ```
 pub fn menubar<M: Clone + 'static>(menus: Vec<Menu<M>>) -> Element<M> {
     if crate::menu::native_menu_bar() {
         // Shown by the OS instead (macOS menu bar, or a native Win32 menu bar).

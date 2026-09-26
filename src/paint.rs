@@ -14,6 +14,18 @@ use crate::text::{TextStyle, TextSystem};
 
 /// A drawing surface. Coordinates are logical pixels. Custom widgets draw
 /// with it via [`canvas`](crate::canvas).
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// // A rounded panel with a dot in the middle and a diagonal line.
+/// let ring: Element<()> = canvas(|c: &mut Canvas, r: Rect| {
+///     c.fill_rounded(r, 6.0, hex("#202020"));
+///     c.fill_circle(r.center(), r.w.min(r.h) / 4.0, hex("#3b82f6"));
+///     c.line(r.origin(), Point::new(r.right(), r.bottom()), 1.0, hex("#ffffff"));
+/// })
+/// .size(48.0, 48.0);
+/// ```
 pub struct Canvas<'a> {
     pub(crate) scene: Scene,
     clips: Vec<(Rect, Corners)>,
@@ -55,6 +67,7 @@ impl<'a> Canvas<'a> {
         self.scene.cmds.push(Cmd::PushClip { rect, radius });
     }
 
+    /// Remove the clip added by the matching [`push_clip`](Self::push_clip).
     pub fn pop_clip(&mut self) {
         self.clips.pop();
         self.scene.cmds.push(Cmd::PopClip);
@@ -84,6 +97,7 @@ impl<'a> Canvas<'a> {
         self.scene.cmds.push(Cmd::PushLayer { opacity, bounds });
     }
 
+    /// End the group started by [`push_layer`](Self::push_layer) and composite it.
     pub fn pop_layer(&mut self) {
         self.scene.cmds.push(Cmd::PopLayer);
     }

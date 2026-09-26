@@ -20,6 +20,8 @@ All notable changes to rust-ui are listed here. The format follows
 - `WindowOptions::resizable`.
 - A versioning policy (`docs/SEMVER.md`), `CONTRIBUTING.md`, this changelog and a code of
   conduct.
+- The book (`book/`), whose examples run as doc tests, and docs on every public item
+  (`#![warn(missing_docs)]`).
 
 ## [0.1.0] - unreleased snapshot
 

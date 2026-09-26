@@ -9,10 +9,13 @@ use crate::runtime::{App, Event, MouseButton, Runtime, Shared, WindowSpec};
 
 /// A windowless harness around a [`Runtime`] with a manual clock.
 pub struct Headless<A: App> {
+    /// The runtime, for reading the app (`rt.app`) and element rects.
     pub rt: Runtime<A>,
 }
 
 impl<A: App> Headless<A> {
+    /// Render `app` at `width`×`height` logical px and `scale`.
+    ///
     /// Headless runs don't follow the OS reduced-motion setting (so tests
     /// behave the same on every machine) unless the thread has an explicit
     /// [`set_reduced_motion`](crate::anim::set_reduced_motion).
@@ -63,21 +66,45 @@ impl<A: App> Headless<A> {
         }
     }
 
+    /// Handle an input event and render.
     pub fn event(&mut self, e: Event) {
         self.rt.handle(e);
         self.rt.render();
     }
 
+    /// Move the pointer to (`x`, `y`).
     pub fn move_to(&mut self, x: f32, y: f32) {
         self.event(Event::PointerMove(Point::new(x, y)));
     }
 
+    /// Move the pointer to (`x`, `y`) and click the left button there.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    ///
+    /// #[derive(Default)]
+    /// struct Toggle { on: bool }
+    /// #[derive(Clone)]
+    /// enum Msg { Flip }
+    ///
+    /// impl App for Toggle {
+    ///     type Msg = Msg;
+    ///     fn update(&mut self, _: Msg, _: &mut Cx<Msg>) { self.on = !self.on }
+    ///     fn view(&self) -> Element<Msg> { button("Flip").id("flip").on_click(Msg::Flip) }
+    /// }
+    ///
+    /// let mut h = Headless::new(Toggle::default(), 200.0, 100.0, 1.0);
+    /// let r = h.rt.rect_of("flip").unwrap();
+    /// h.click(r.center().x, r.center().y);
+    /// assert!(h.rt.app.on);
+    /// ```
     pub fn click(&mut self, x: f32, y: f32) {
         self.move_to(x, y);
         self.event(Event::PointerDown(Point::new(x, y), MouseButton::Left));
         self.event(Event::PointerUp(Point::new(x, y), MouseButton::Left));
     }
 
+    /// Drag with the left button from `from` to `to`, moving in `steps` steps.
     pub fn drag(&mut self, from: (f32, f32), to: (f32, f32), steps: usize) {
         self.move_to(from.0, from.1);
         self.event(Event::PointerDown(Point::new(from.0, from.1), MouseButton::Left));
@@ -88,11 +115,26 @@ impl<A: App> Headless<A> {
         self.event(Event::PointerUp(Point::new(to.0, to.1), MouseButton::Left));
     }
 
+    /// Type `s` as committed text input.
     pub fn type_text(&mut self, s: &str) {
         self.event(Event::Text(s.to_string()));
     }
 
     /// Save the last frame as PNG.
+    ///
+    /// ```no_run
+    /// use rust_ui::prelude::*;
+    ///
+    /// struct Hello;
+    /// impl App for Hello {
+    ///     type Msg = ();
+    ///     fn update(&mut self, _: (), _: &mut Cx<()>) {}
+    ///     fn view(&self) -> Element<()> { text("Hello") }
+    /// }
+    ///
+    /// let mut h = Headless::new(Hello, 320.0, 200.0, 2.0);
+    /// h.save_png("hello.png").unwrap();
+    /// ```
     pub fn save_png(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         self.rt.render();
         self.rt.pixmap().ok_or("no frame")?.save_png(path).map_err(|e| e.to_string())
@@ -163,6 +205,8 @@ pub struct HeadlessApp<A: App> {
 type OpenWindow<A> = (WindowSpec<<A as App>::Msg>, Headless<Shared<A>>);
 
 impl<A: App> HeadlessApp<A> {
+    /// Open `app`'s main window at `width`×`height` (scale 1), plus the extra
+    /// windows it declares.
     pub fn new(app: A, width: f32, height: f32) -> Self {
         let app = Rc::new(RefCell::new(app));
         let main = Headless::new(Shared::new(app.clone(), None), width, height, 1.0);
@@ -176,10 +220,12 @@ impl<A: App> HeadlessApp<A> {
         self.app.borrow()
     }
 
+    /// The shared app state, mutably.
     pub fn app_mut(&mut self) -> RefMut<'_, A> {
         self.app.borrow_mut()
     }
 
+    /// The main window's harness.
     pub fn main(&mut self) -> &mut Headless<Shared<A>> {
         &mut self.main
     }

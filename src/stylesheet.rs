@@ -41,7 +41,9 @@ use crate::theme::{theme, Palette, Theme};
 /// A parse error, with its 1-based line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StyleError {
+    /// Line of the error, starting at 1.
     pub line: usize,
+    /// What went wrong.
     pub message: String,
 }
 

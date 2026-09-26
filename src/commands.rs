@@ -139,20 +139,24 @@ impl<'de> serde::Deserialize<'de> for KeyBinding {
 pub struct Command<M> {
     /// Stable identifier, used by keymaps (`"view.focusPanel1"`).
     pub id: String,
+    /// Name shown in menus and the palette.
     pub title: String,
     /// Shown before the title in the palette ("View: Focus Panel 1").
     pub category: Option<String>,
+    /// Message sent when the command runs.
     pub msg: M,
     /// Current key bindings (the defaults, or the keymap's override).
     pub keys: Vec<KeyBinding>,
     /// The bindings the app declared (before any keymap override).
     pub default_keys: Vec<KeyBinding>,
+    /// Disabled commands are greyed out and their keys do nothing.
     pub enabled: bool,
     /// For toggles: shown as a check item in menus.
     pub checked: Option<bool>,
 }
 
 impl<M> Command<M> {
+    /// A command with an id, a title and the message it sends; enabled, no keys.
     pub fn new(id: impl Into<String>, title: impl Into<String>, msg: M) -> Self {
         Self {
             id: id.into(),
@@ -166,6 +170,7 @@ impl<M> Command<M> {
         }
     }
 
+    /// Set the category shown before the title.
     pub fn category(mut self, c: impl Into<String>) -> Self {
         self.category = Some(c.into());
         self
@@ -182,11 +187,13 @@ impl<M> Command<M> {
         self
     }
 
+    /// Enable or disable the command.
     pub fn enabled(mut self, e: bool) -> Self {
         self.enabled = e;
         self
     }
 
+    /// Make it a toggle with this checked state.
     pub fn checked(mut self, c: bool) -> Self {
         self.checked = Some(c);
         self
@@ -225,6 +232,7 @@ impl<M> Default for Commands<M> {
 }
 
 impl<M> Commands<M> {
+    /// A command set from a list of commands.
     pub fn new(list: Vec<Command<M>>) -> Self {
         Self { list }
     }
@@ -243,18 +251,22 @@ impl<M> Commands<M> {
         self.list.push(c);
     }
 
+    /// The command with this id.
     pub fn get(&self, id: &str) -> Option<&Command<M>> {
         self.list.iter().find(|c| c.id == id)
     }
 
+    /// The commands, in declaration order.
     pub fn iter(&self) -> impl Iterator<Item = &Command<M>> {
         self.list.iter()
     }
 
+    /// Number of commands.
     pub fn len(&self) -> usize {
         self.list.len()
     }
 
+    /// Whether there are no commands.
     pub fn is_empty(&self) -> bool {
         self.list.is_empty()
     }
@@ -375,6 +387,7 @@ pub struct Keymap {
 }
 
 impl Keymap {
+    /// An empty keymap (every command keeps its defaults).
     pub fn new() -> Self {
         Self::default()
     }
@@ -404,6 +417,7 @@ impl Keymap {
         self.overrides.remove(id);
     }
 
+    /// Whether command `id` has overridden bindings.
     pub fn is_customized(&self, id: &str) -> bool {
         self.overrides.contains_key(id)
     }
@@ -419,8 +433,11 @@ impl Keymap {
 /// Messages of a [`CommandPalette`]. Forward them to [`CommandPalette::update`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaletteMsg {
+    /// Open the palette with an empty query.
     Open,
+    /// Close the palette.
     Close,
+    /// The search text changed.
     Query(String),
     /// Move the selection by this many rows.
     Move(i32),
@@ -453,14 +470,17 @@ pub struct CommandPalette {
 const PALETTE_ROWS: usize = 60;
 
 impl CommandPalette {
+    /// A closed palette.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Whether the palette is shown.
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// The current search text.
     pub fn query(&self) -> &str {
         &self.query
     }
@@ -618,6 +638,7 @@ pub fn key_chips<M: 'static>(k: &KeyBinding, strong: bool) -> Element<M> {
 /// Messages of a [`KeymapEditor`]. Forward them to [`KeymapEditor::update`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeymapMsg {
+    /// The search text changed.
     Query(String),
     /// Start recording a new binding for this command.
     Record(String),
@@ -625,6 +646,7 @@ pub enum KeymapMsg {
     Stroke(Shortcut),
     /// Save the recorded binding.
     Accept,
+    /// Stop recording without saving.
     CancelRecord,
     /// Back to the command's default bindings.
     Reset(String),
@@ -643,6 +665,7 @@ pub struct KeymapEditor {
 }
 
 impl KeymapEditor {
+    /// An editor with no query and nothing being recorded.
     pub fn new() -> Self {
         Self::default()
     }
@@ -652,6 +675,7 @@ impl KeymapEditor {
         self.recording.as_deref()
     }
 
+    /// Apply a message, saving binding changes into `keymap`.
     pub fn update(&mut self, msg: KeymapMsg, keymap: &mut Keymap) {
         match msg {
             KeymapMsg::Query(q) => self.query = q,

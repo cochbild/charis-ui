@@ -72,6 +72,16 @@ cargo run --release --example counter    # the minimal app above
 
 On Linux you need the usual X11/Wayland runtime libraries (e.g. `libxkbcommon-x11`).
 
+## Documentation
+
+- **The book** (`book/`, built with [mdBook](https://rust-lang.github.io/mdBook/): `mdbook serve
+  book`) is the guide: getting started, the app model, layout, styling, theming, panels,
+  commands, windows, testing and performance. Its examples run as doc tests.
+- **The API reference:** `cargo doc --open`. Every public item is documented.
+- **Deeper notes** in `docs/`: [customizing](docs/CUSTOMIZING.md),
+  [performance](docs/PERFORMANCE.md), [coming from iced](docs/FROM_ICED.md) and the
+  [versioning policy](docs/SEMVER.md).
+
 ## Concepts
 
 ### The app model

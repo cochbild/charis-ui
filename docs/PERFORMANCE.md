@@ -105,6 +105,5 @@ bookkeeping.
 
 ## Next
 
-- Damage-region repaint on the CPU backend.
 - Incremental accessibility-tree updates (currently a full tree per frame while a screen reader
   is active).

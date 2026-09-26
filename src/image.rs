@@ -64,6 +64,19 @@ impl Image {
     }
 
     /// Decode PNG bytes.
+    ///
+    /// ```
+    /// use rust_ui::image::Image;
+    ///
+    /// // A 2×1 image: one red pixel, one transparent.
+    /// let img = Image::from_rgba(2, 1, &[255, 0, 0, 255, 0, 0, 0, 0]).unwrap();
+    /// let png = img.to_png().unwrap();
+    ///
+    /// let decoded = Image::from_png(&png).unwrap();
+    /// assert_eq!((decoded.width(), decoded.height()), (2, 1));
+    /// assert_eq!(decoded.to_rgba(), img.to_rgba());
+    /// assert!(Image::from_png(b"not a png").is_none());
+    /// ```
     pub fn from_png(bytes: &[u8]) -> Option<Image> {
         Pixmap::decode_png(bytes).ok().map(Self::from_pixmap)
     }
@@ -98,10 +111,12 @@ impl Image {
         Self::decode(&std::fs::read(path).ok()?)
     }
 
+    /// Width in pixels.
     pub fn width(&self) -> u32 {
         self.pixmap.width()
     }
 
+    /// Height in pixels.
     pub fn height(&self) -> u32 {
         self.pixmap.height()
     }
@@ -196,7 +211,9 @@ pub enum Fit {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ImageSource {
+    /// A decoded raster image.
     Raster(Image),
+    /// A parsed SVG.
     #[cfg(feature = "svg")]
     Svg(Svg),
 }

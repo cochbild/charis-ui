@@ -34,15 +34,20 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DialogKind {
+    /// Choose one existing file.
     OpenFile,
+    /// Choose one or more existing files.
     OpenFiles,
+    /// Choose a folder.
     PickFolder,
+    /// Choose where to save a file.
     SaveFile,
 }
 
 /// A file dialog's options.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FileDialog {
+    /// Window title (the platform default if `None`).
     pub title: Option<String>,
     /// Folder to start in.
     pub directory: Option<PathBuf>,
@@ -53,17 +58,21 @@ pub struct FileDialog {
 }
 
 impl FileDialog {
+    /// Default options: no title, folder, name or filters.
     pub fn new() -> Self {
         Self::default()
     }
+    /// Set the window title.
     pub fn title(mut self, t: impl Into<String>) -> Self {
         self.title = Some(t.into());
         self
     }
+    /// Set the folder to start in.
     pub fn directory(mut self, d: impl Into<PathBuf>) -> Self {
         self.directory = Some(d.into());
         self
     }
+    /// Suggest a file name (save dialogs).
     pub fn file_name(mut self, n: impl Into<String>) -> Self {
         self.file_name = Some(n.into());
         self
@@ -78,7 +87,9 @@ impl FileDialog {
 /// A dialog the app asked for, waiting to be shown.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DialogRequest {
+    /// Which dialog to show.
     pub kind: DialogKind,
+    /// Its options.
     pub dialog: FileDialog,
 }
 

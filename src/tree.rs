@@ -68,8 +68,10 @@ pub trait TreeModel: 'static {
     /// its children are loaded.
     fn has_children(&self, id: &Self::Id) -> bool;
 
+    /// The text shown for the node.
     fn label(&self, id: &Self::Id) -> String;
 
+    /// An icon before the label (`expanded` tells a folder's state); none by default.
     fn icon(&self, _id: &Self::Id, _expanded: bool) -> Option<Icon> {
         None
     }
@@ -78,21 +80,28 @@ pub trait TreeModel: 'static {
 /// A visible row of the flattened tree.
 #[derive(Debug, Clone)]
 pub struct TreeRow<Id> {
+    /// The node shown in this row.
     pub id: Id,
+    /// Nesting level (0 for roots).
     pub depth: usize,
     /// Index of the parent's row.
     pub parent: Option<usize>,
+    /// Whether the node can expand.
     pub has_children: bool,
+    /// Whether the node is expanded.
     pub expanded: bool,
 }
 
 /// Messages of a tree view. Forward them to [`TreeState::update`].
 #[derive(Debug, Clone)]
 pub enum TreeMsg<Id> {
+    /// Expand or collapse the node (chevron click).
     Toggle(Id),
+    /// Select the node (click).
     Select(Id),
     /// Double-click (or Enter): open the node.
     Activate(Id),
+    /// A navigation key pressed in the focused tree.
     Key(KeyEvent),
 }
 
@@ -100,10 +109,13 @@ pub enum TreeMsg<Id> {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum TreeEvent<Id> {
+    /// The selection moved to this node.
     Selected(Id),
     /// Enter or double-click on a node without children.
     Activated(Id),
+    /// The node was expanded.
     Expanded(Id),
+    /// The node was collapsed.
     Collapsed(Id),
 }
 
@@ -156,26 +168,31 @@ impl<Id: Clone + Eq + Hash + 'static> TreeState<Id> {
         &self.id
     }
 
+    /// Whether node `id` is expanded.
     pub fn is_expanded(&self, id: &Id) -> bool {
         self.expanded.contains(id)
     }
 
+    /// Expand node `id` (its children become visible).
     pub fn expand(&mut self, id: Id) {
         if self.expanded.insert(id) {
             self.refresh();
         }
     }
 
+    /// Collapse node `id`.
     pub fn collapse(&mut self, id: &Id) {
         if self.expanded.remove(id) {
             self.refresh();
         }
     }
 
+    /// The selected node.
     pub fn selected(&self) -> Option<&Id> {
         self.selected.as_ref()
     }
 
+    /// Set the selected node (`None` clears it); sends no event.
     pub fn select(&mut self, id: Option<Id>) {
         self.selected = id;
     }

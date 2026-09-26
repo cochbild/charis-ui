@@ -56,11 +56,14 @@ pub(crate) fn set_native_menu_bar(on: bool) {
 /// `PageDown`, or `Plus`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Shortcut {
+    /// Modifier keys that must be held.
     pub mods: Modifiers,
+    /// The key pressed with them.
     pub key: Key,
 }
 
 impl Shortcut {
+    /// A shortcut from modifiers and a key.
     pub fn new(mods: Modifiers, key: Key) -> Self {
         Self { mods, key }
     }

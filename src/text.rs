@@ -19,10 +19,15 @@ pub(crate) struct GlyphInst {
 /// A run of styled text inside [`rich_text`](crate::rich_text).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Span {
+    /// The text itself.
     pub text: String,
+    /// Font weight (400 regular, 700 bold); `None` inherits.
     pub weight: Option<u16>,
+    /// Italic style.
     pub italic: bool,
+    /// Use the monospace font.
     pub mono: bool,
+    /// Text color; `None` inherits.
     pub color: Option<Color>,
     /// Font size in logical px (defaults to the element's size).
     pub size: Option<f32>,
@@ -31,39 +36,58 @@ pub struct Span {
 }
 
 /// Shorthand for a plain [`Span`].
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// let msg: Element<()> = rich_text([
+///     span("Saved to "),
+///     span("notes.txt").mono(),
+///     span(". "),
+///     span("Undo").bold().link("undo"),
+/// ]);
+/// ```
 pub fn span(text: impl Into<String>) -> Span {
     Span { text: text.into(), ..Default::default() }
 }
 
 impl Span {
+    /// Bold (weight 700).
     pub fn bold(mut self) -> Self {
         self.weight = Some(700);
         self
     }
+    /// Semibold (weight 600).
     pub fn semibold(mut self) -> Self {
         self.weight = Some(600);
         self
     }
+    /// Set the font weight (100–900).
     pub fn weight(mut self, w: u16) -> Self {
         self.weight = Some(w);
         self
     }
+    /// Italic.
     pub fn italic(mut self) -> Self {
         self.italic = true;
         self
     }
+    /// Monospace font.
     pub fn mono(mut self) -> Self {
         self.mono = true;
         self
     }
+    /// Set the text color.
     pub fn color(mut self, c: Color) -> Self {
         self.color = Some(c);
         self
     }
+    /// Set the font size in logical px.
     pub fn size(mut self, s: f32) -> Self {
         self.size = Some(s);
         self
     }
+    /// Make this span a link to `url`; clicks go to `Element::on_link`.
     pub fn link(mut self, url: impl Into<String>) -> Self {
         self.link = Some(url.into());
         self
@@ -86,12 +110,17 @@ fn hash_spans(spans: &[Span]) -> u64 {
 /// Resolved text properties used for shaping.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextStyle {
+    /// Font size in logical px.
     pub size: f32,
+    /// Font weight (400 regular, 700 bold).
     pub weight: u16,
+    /// Font family.
     pub family: FontFamily,
+    /// Italic style.
     pub italic: bool,
     /// Line height multiplier.
     pub line_height: f32,
+    /// Extra space between letters, in logical px.
     pub letter_spacing: f32,
 }
 
@@ -186,6 +215,7 @@ const BUNDLED: &[&[u8]] = &[
 ];
 
 impl TextSystem {
+    /// A text system with system (and bundled) fonts loaded.
     pub fn new() -> Self {
         // Scanning system fonts is the slow part (hundreds of fonts on a
         // typical desktop): do it once per thread and give later windows a

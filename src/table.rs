@@ -41,11 +41,17 @@ pub enum ColumnWidth {
 /// A table column definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Column {
+    /// Header text.
     pub title: String,
+    /// How the column takes up width.
     pub width: ColumnWidth,
+    /// Narrowest width (px), also when resized by the user.
     pub min_width: f32,
+    /// Horizontal alignment of header and cells.
     pub align: Justify,
+    /// Whether clicking the header emits the table's `on_sort` message.
     pub sortable: bool,
+    /// Whether the user can drag the header divider to resize it.
     pub resizable: bool,
 }
 
@@ -61,14 +67,17 @@ impl Column {
             resizable: true,
         }
     }
+    /// Make the column exactly `px` wide.
     pub fn fixed(mut self, px: f32) -> Self {
         self.width = ColumnWidth::Fixed(px);
         self
     }
+    /// Give the column a share `w` of the remaining width.
     pub fn weight(mut self, w: f32) -> Self {
         self.width = ColumnWidth::Weight(w.max(0.0));
         self
     }
+    /// Set the narrowest width (px; default 48).
     pub fn min_width(mut self, px: f32) -> Self {
         self.min_width = px;
         self
@@ -78,6 +87,7 @@ impl Column {
         self.align = Justify::End;
         self
     }
+    /// Center the column's contents.
     pub fn align_center(mut self) -> Self {
         self.align = Justify::Center;
         self
@@ -87,6 +97,7 @@ impl Column {
         self.sortable = true;
         self
     }
+    /// Allow or prevent resizing by the user.
     pub fn resizable(mut self, r: bool) -> Self {
         self.resizable = r;
         self
@@ -97,11 +108,14 @@ impl Column {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SortDir {
+    /// Smallest first.
     Asc,
+    /// Largest first.
     Desc,
 }
 
 impl SortDir {
+    /// The opposite direction.
     pub fn flip(self) -> Self {
         match self {
             SortDir::Asc => SortDir::Desc,
@@ -134,6 +148,22 @@ pub struct Table<M> {
 ///
 /// Columns can be resized by dragging the header dividers (double-click resets).
 /// Widths are kept by the runtime, so the app needs no state for it.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Select(usize),
+/// }
+///
+/// let names = ["alpha", "beta", "gamma"];
+/// let t: Element<Msg> = table("names", vec![Column::new("#").fixed(40.0), Column::new("Name")], names.len(), move |r, c| {
+///     if c == 0 { cell_text(r.to_string()) } else { cell_text(names[r]) }
+/// })
+/// .on_row_click(Msg::Select)
+/// .into();
+/// ```
 pub fn table<M: 'static>(
     id: &str,
     columns: Vec<Column>,
@@ -174,6 +204,7 @@ impl<M: 'static> Table<M> {
         self.on_sort = Some(Rc::new(f));
         self
     }
+    /// Emit `f(row)` when a row is clicked.
     pub fn on_row_click(mut self, f: impl Fn(usize) -> M + 'static) -> Self {
         self.on_row_click = Some(Rc::new(f));
         self

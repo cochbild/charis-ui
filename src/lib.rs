@@ -47,6 +47,8 @@
 //! # fn main() {}
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod anim;
 pub mod color;
 pub mod commands;
@@ -151,4 +153,29 @@ pub mod prelude {
     pub use crate::widgets::*;
     #[cfg(feature = "window")]
     pub use crate::window::{run, Backdrop, WindowOptions};
+}
+
+/// The book's chapters, compiled as doc tests so their examples stay correct.
+#[cfg(doctest)]
+mod book {
+    #[doc = include_str!("../book/src/getting-started.md")]
+    struct GettingStarted;
+    #[doc = include_str!("../book/src/app-model.md")]
+    struct AppModel;
+    #[doc = include_str!("../book/src/layout.md")]
+    struct Layout;
+    #[doc = include_str!("../book/src/styling.md")]
+    struct Styling;
+    #[doc = include_str!("../book/src/theming.md")]
+    struct Theming;
+    #[doc = include_str!("../book/src/panels.md")]
+    struct Panels;
+    #[doc = include_str!("../book/src/commands.md")]
+    struct Commands;
+    #[doc = include_str!("../book/src/windows.md")]
+    struct Windows;
+    #[doc = include_str!("../book/src/testing.md")]
+    struct Testing;
+    #[doc = include_str!("../book/src/performance.md")]
+    struct Performance;
 }

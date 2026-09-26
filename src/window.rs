@@ -19,16 +19,29 @@ use crate::runtime::{App, Event, MouseButton, ResizeEdge, Runtime, Shared, Windo
 use crate::style::Cursor;
 
 /// Options for the native window.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// let opts = WindowOptions::new("Notes").size(900.0, 600.0).min_size(400.0, 300.0).frameless(true);
+/// assert_eq!(opts.width, 900.0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct WindowOptions {
+    /// The window title.
     pub title: String,
+    /// Initial width (logical px).
     pub width: f32,
+    /// Initial height (logical px).
     pub height: f32,
+    /// Minimum width (logical px).
     pub min_width: f32,
+    /// Minimum height (logical px).
     pub min_height: f32,
     /// Draw no OS title bar/borders; the app provides its own chrome
     /// (see [`titlebar`](crate::widgets::titlebar)). Edges remain resizable.
     pub frameless: bool,
+    /// The user can resize the window.
     pub resizable: bool,
     /// Window icon as straight RGBA8 pixels (width, height, data).
     pub icon: Option<(u32, u32, Vec<u8>)>,
@@ -65,6 +78,7 @@ pub struct WindowOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Backdrop {
+    /// No backdrop (the default).
     #[default]
     None,
     /// Mica: the desktop wallpaper, blurred and tinted (main windows).
@@ -98,6 +112,7 @@ impl Default for WindowOptions {
 }
 
 impl WindowOptions {
+    /// Default options with this title.
     pub fn new(title: impl Into<String>) -> Self {
         Self { title: title.into(), ..Default::default() }
     }
@@ -109,11 +124,13 @@ impl WindowOptions {
         self.fonts.push(data.into());
         self
     }
+    /// Set the initial size (logical px).
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = w;
         self.height = h;
         self
     }
+    /// Set the minimum size (logical px).
     pub fn min_size(mut self, w: f32, h: f32) -> Self {
         self.min_width = w;
         self.min_height = h;
@@ -252,6 +269,19 @@ struct Shell<A: App> {
 
 /// Open a window and run the app until it is closed. Extra windows declared
 /// by [`App::windows`] open and close as the app's state changes.
+///
+/// ```no_run
+/// use rust_ui::prelude::*;
+///
+/// struct Hello;
+/// impl App for Hello {
+///     type Msg = ();
+///     fn update(&mut self, _: (), _: &mut Cx<()>) {}
+///     fn view(&self) -> Element<()> { text("Hello") }
+/// }
+///
+/// rust_ui::run(Hello, WindowOptions::new("Hello")).unwrap();
+/// ```
 pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();

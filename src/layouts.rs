@@ -54,7 +54,9 @@ pub enum LayoutMsg {
     /// Save the current arrangement under this name (replacing a layout
     /// with that name).
     Save(String),
+    /// Delete the layout with this name.
     Delete(String),
+    /// Rename a layout (from, to).
     Rename(String, String),
     /// Open the "Save Layout As" dialog.
     SaveAs,
@@ -85,6 +87,7 @@ impl<S> Default for Layouts<S> {
 }
 
 impl<S: Clone> Layouts<S> {
+    /// No layouts, none current.
     pub fn new() -> Self {
         Self::default()
     }
@@ -112,10 +115,12 @@ impl<S: Clone> Layouts<S> {
         self.entries.iter().map(|e| e.0.as_str())
     }
 
+    /// Number of layouts.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Whether there are no layouts.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -125,6 +130,7 @@ impl<S: Clone> Layouts<S> {
         self.current.as_deref()
     }
 
+    /// The state saved under `name` (doesn't change the current layout).
     pub fn get(&self, name: &str) -> Option<&S> {
         self.entries.iter().find(|e| e.0 == name).map(|e| &e.1)
     }
@@ -144,6 +150,7 @@ impl<S: Clone> Layouts<S> {
         Some(s)
     }
 
+    /// Delete layout `name` and return its state; if it was current, none is.
     pub fn remove(&mut self, name: &str) -> Option<S> {
         let i = self.entries.iter().position(|e| e.0 == name)?;
         if self.current.as_deref() == Some(name) {

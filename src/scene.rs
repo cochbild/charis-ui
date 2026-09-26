@@ -80,9 +80,11 @@ pub struct Scene {
     pub(crate) cmds: Vec<Cmd>,
     /// Physical pixels per logical pixel.
     pub scale: f32,
-    /// Physical size.
+    /// Physical width.
     pub width: u32,
+    /// Physical height.
     pub height: u32,
+    /// Color the frame is cleared to before drawing.
     pub background: Color,
 }
 
@@ -96,6 +98,7 @@ impl Scene {
         self.cmds.len()
     }
 
+    /// Whether no commands were recorded.
     pub fn is_empty(&self) -> bool {
         self.cmds.is_empty()
     }

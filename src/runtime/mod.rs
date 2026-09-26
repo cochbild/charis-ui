@@ -38,7 +38,32 @@ use crate::theme::{self, Theme};
 ///
 /// The runtime calls [`App::view`] to build the UI whenever something changed
 /// and [`App::update`] for every message produced by user interaction.
+///
+/// ```
+/// use rust_ui::prelude::*;
+///
+/// struct Counter { n: i32 }
+///
+/// #[derive(Clone)]
+/// enum Msg { Inc }
+///
+/// impl App for Counter {
+///     type Msg = Msg;
+///     fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
+///         match msg { Msg::Inc => self.n += 1 }
+///     }
+///     fn view(&self) -> Element<Msg> {
+///         col().child(text(format!("{}", self.n))).child(button("+").id("inc").on_click(Msg::Inc))
+///     }
+/// }
+///
+/// let mut h = Headless::new(Counter { n: 0 }, 200.0, 100.0, 1.0);
+/// let r = h.rt.rect_of("inc").unwrap();
+/// h.click(r.center().x, r.center().y);
+/// assert_eq!(h.rt.app.n, 1);
+/// ```
 pub trait App: 'static {
+    /// The message type produced by the UI and handled by [`App::update`].
     type Msg: Clone + 'static;
 
     /// Handle a message. Use `cx` for side effects: async tasks, window
@@ -95,13 +120,21 @@ pub trait App: 'static {
 /// Resize direction for frameless window edge dragging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeEdge {
+    /// Top edge.
     N,
+    /// Bottom edge.
     S,
+    /// Right edge.
     E,
+    /// Left edge.
     W,
+    /// Top-right corner.
     NE,
+    /// Top-left corner.
     NW,
+    /// Bottom-right corner.
     SE,
+    /// Bottom-left corner.
     SW,
 }
 
@@ -109,14 +142,23 @@ pub enum ResizeEdge {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum WindowRequest {
+    /// Start moving the window with the pointer (title-bar drag).
     DragMove,
+    /// Start resizing the window from this edge with the pointer.
     DragResize(ResizeEdge),
+    /// Minimize the window.
     Minimize,
+    /// Maximize the window, or restore it if maximized.
     ToggleMaximize,
+    /// Enter or leave full screen.
     ToggleFullscreen,
+    /// Close the window.
     Close,
+    /// Set the window title.
     SetTitle(String),
+    /// Put text on the system clipboard.
     SetClipboard(String),
+    /// Put an image on the system clipboard.
     SetClipboardImage(crate::image::Image),
 }
 
@@ -142,8 +184,11 @@ pub(crate) type ClipboardCb<M> = Box<dyn FnOnce(ClipboardContent) -> M>;
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ClipboardContent {
+    /// Nothing usable on the clipboard.
     Empty,
+    /// Text.
     Text(String),
+    /// An image.
     Image(crate::image::Image),
 }
 
@@ -188,9 +233,11 @@ impl<M> Cx<M> {
     pub fn close_window(&mut self) {
         self.requests.push(WindowRequest::Close);
     }
+    /// Minimize the window.
     pub fn minimize(&mut self) {
         self.requests.push(WindowRequest::Minimize);
     }
+    /// Maximize the window, or restore it if maximized.
     pub fn toggle_maximize(&mut self) {
         self.requests.push(WindowRequest::ToggleMaximize);
     }
@@ -199,16 +246,41 @@ impl<M> Cx<M> {
     pub fn toggle_fullscreen(&mut self) {
         self.requests.push(WindowRequest::ToggleFullscreen);
     }
+    /// Set the window title.
     pub fn set_title(&mut self, t: impl Into<String>) {
         self.requests.push(WindowRequest::SetTitle(t.into()));
     }
     /// Move keyboard focus to the element with the given `.id(...)`.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    ///
+    /// struct Form;
+    /// #[derive(Clone)]
+    /// enum Msg { Start }
+    ///
+    /// impl App for Form {
+    ///     type Msg = Msg;
+    ///     fn update(&mut self, msg: Msg, cx: &mut Cx<Msg>) {
+    ///         match msg { Msg::Start => cx.focus("name") }
+    ///     }
+    ///     fn view(&self) -> Element<Msg> {
+    ///         col().child(button("Start").id("start").on_click(Msg::Start)).child(div().id("name").focusable())
+    ///     }
+    /// }
+    ///
+    /// let mut h = Headless::new(Form, 200.0, 100.0, 1.0);
+    /// let r = h.rt.rect_of("start").unwrap();
+    /// h.click(r.center().x, r.center().y);
+    /// ```
     pub fn focus(&mut self, id: &str) {
         self.focus = Some(Some(crate::element::global_id(id)));
     }
+    /// Remove keyboard focus from the focused element.
     pub fn blur(&mut self) {
         self.focus = Some(None);
     }
+    /// Put text on the system clipboard.
     pub fn copy_to_clipboard(&mut self, s: impl Into<String>) {
         self.requests.push(WindowRequest::SetClipboard(s.into()));
     }
@@ -246,6 +318,35 @@ impl<M> Cx<M> {
 
 impl<M: Send + 'static> Cx<M> {
     /// Run a future in the background and deliver its output as a message.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    ///
+    /// #[derive(Default)]
+    /// struct Loader { data: Option<String> }
+    /// #[derive(Clone)]
+    /// enum Msg { Load, Loaded(String) }
+    ///
+    /// impl App for Loader {
+    ///     type Msg = Msg;
+    ///     fn update(&mut self, msg: Msg, cx: &mut Cx<Msg>) {
+    ///         match msg {
+    ///             Msg::Load => {
+    ///                 cx.spawn(async { "hello".to_string() }, Msg::Loaded);
+    ///             }
+    ///             Msg::Loaded(s) => self.data = Some(s),
+    ///         }
+    ///     }
+    ///     fn view(&self) -> Element<Msg> {
+    ///         button("Load").id("load").on_click(Msg::Load)
+    ///     }
+    /// }
+    ///
+    /// let mut h = Headless::new(Loader::default(), 200.0, 100.0, 1.0);
+    /// let r = h.rt.rect_of("load").unwrap();
+    /// h.click(r.center().x, r.center().y);
+    /// assert!(h.wait_until(std::time::Duration::from_secs(5), |a| a.data.is_some()));
+    /// ```
     pub fn spawn<F>(&mut self, fut: F, map: impl FnOnce(F::Output) -> M + Send + 'static) -> TaskHandle
     where
         F: std::future::Future + Send + 'static,
@@ -272,7 +373,9 @@ impl<M: Send + 'static> Cx<M> {
 /// Information about the window, readable from views via [`window_info`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindowInfo {
+    /// The window is maximized.
     pub maximized: bool,
+    /// The window has keyboard focus.
     pub focused: bool,
     /// In full screen ([`Cx::toggle_fullscreen`]; native full screen on macOS).
     pub fullscreen: bool,
@@ -345,6 +448,8 @@ pub struct ChromeMap {
 }
 
 impl ChromeMap {
+    /// What the point `p` (logical px) is: the last region containing it,
+    /// else [`ChromeHit::Client`].
     pub fn hit(&self, p: Point) -> ChromeHit {
         self.regions.iter().rev().find(|(r, _)| r.contains(p)).map(|(_, h)| *h).unwrap_or(ChromeHit::Client)
     }
@@ -354,34 +459,65 @@ impl ChromeMap {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MouseButton {
+    /// The primary (left) button.
     Left,
+    /// The secondary (right) button.
     Right,
+    /// The middle button (wheel click).
     Middle,
 }
 
 /// Input events fed to the runtime by the platform shell.
+///
+/// Positions are in logical pixels. Tests can feed them to a
+/// [`Headless`](crate::headless::Headless) harness directly:
+///
+/// ```
+/// use rust_ui::prelude::*;
+/// use rust_ui::Event;
+///
+/// struct Hello;
+/// impl App for Hello {
+///     type Msg = ();
+///     fn update(&mut self, _: (), _: &mut Cx<()>) {}
+///     fn view(&self) -> Element<()> { text("Hello") }
+/// }
+///
+/// let mut h = Headless::new(Hello, 200.0, 100.0, 1.0);
+/// h.event(Event::PointerMove(Point::new(10.0, 10.0)));
+/// h.event(Event::PointerLeave);
+/// assert_eq!(h.rt.pointer_pos(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Event {
+    /// The pointer moved to this position.
     PointerMove(Point),
+    /// A mouse button was pressed at this position.
     PointerDown(Point, MouseButton),
+    /// A mouse button was released at this position.
     PointerUp(Point, MouseButton),
+    /// The pointer left the window.
     PointerLeave,
     /// Scroll delta in logical pixels (positive y scrolls content down).
     Wheel(Point, Point),
+    /// A key was pressed.
     Key(KeyEvent),
     /// Committed text input (typed characters, IME commits).
     Text(String),
     /// IME composition in progress (shown inline, underlined, at the caret).
     /// `cursor` is a byte range within `text`; an empty `text` ends composition.
     Preedit {
+        /// The text being composed.
         text: String,
+        /// The composition cursor or selection, as a byte range within `text`.
         cursor: Option<(usize, usize)>,
     },
     /// Paste from the system clipboard.
     Paste(String),
     /// Paste an image from the system clipboard.
     PasteImage(crate::image::Image),
+    /// The window gained (`true`) or lost (`false`) keyboard focus.
     WindowFocus(bool),
 }
 
@@ -855,7 +991,9 @@ impl<M> Default for Frame<M> {
 
 /// Drives an [`App`]: layout, painting and event dispatch.
 pub struct Runtime<A: App> {
+    /// The app being driven.
     pub app: A,
+    /// Font loading, shaping and text layout.
     pub text: TextSystem,
     paint_cache: PaintCache,
     frame: Frame<A::Msg>,
@@ -951,6 +1089,7 @@ pub struct Runtime<A: App> {
     scene: Option<Scene>,
     /// Window chrome is drawn by the app (no OS decorations).
     pub frameless: bool,
+    /// The window is maximized (set by the shell).
     pub maximized: bool,
     window_focused: bool,
     clipboard: String,
@@ -968,6 +1107,7 @@ const TOOLTIP_DELAY: f64 = 0.55;
 const RESIZE_BORDER: f32 = 6.0;
 
 impl<A: App> Runtime<A> {
+    /// Wrap `app` in a runtime with an 800×600 window at scale 1.
     pub fn new(app: A) -> Self {
         let subs = app.subscriptions();
         Self {
@@ -1135,6 +1275,7 @@ impl<A: App> Runtime<A> {
         self.now = t;
     }
 
+    /// The current clock (seconds, as set by [`Runtime::set_time`]).
     pub fn time(&self) -> f64 {
         self.now
     }
@@ -1154,14 +1295,17 @@ impl<A: App> Runtime<A> {
         self.size
     }
 
+    /// The display scale factor.
     pub fn scale(&self) -> f32 {
         self.scale
     }
 
+    /// The mouse cursor to show for the hovered element.
     pub fn cursor(&self) -> Cursor {
         self.cursor
     }
 
+    /// Take the window requests queued since the last call, for the shell to carry out.
     pub fn take_requests(&mut self) -> Vec<WindowRequest> {
         std::mem::take(&mut self.requests)
     }
@@ -1234,6 +1378,7 @@ impl<A: App> Runtime<A> {
         next
     }
 
+    /// Whether a frame is due now (see [`Runtime::next_frame`]).
     pub fn needs_redraw(&self) -> bool {
         self.next_frame().is_some_and(|t| t <= self.now)
     }
@@ -4227,7 +4372,7 @@ impl<A: App> Runtime<A> {
         self.preedit.as_ref().map(|p| p.text.as_str())
     }
 
-    /// User-resized column widths of the [`table`] with this id (`None` = the
+    /// User-resized column widths of the [`table`](crate::table()) with this id (`None` = the
     /// column's declared width), e.g. to persist them.
     pub fn column_widths(&self, id: &str) -> Vec<Option<f32>> {
         self.tables.get(&global_id(id)).cloned().unwrap_or_default()

@@ -56,9 +56,13 @@ pub const DOCK_EDGE: GroupId = GroupId::MAX - 1;
 pub enum DropZone {
     /// Join the group (appended).
     Center,
+    /// Split the group, new tab on the left.
     Left,
+    /// Split the group, new tab on the right.
     Right,
+    /// Split the group, new tab above.
     Top,
+    /// Split the group, new tab below.
     Bottom,
     /// Join the group at this tab position (reordering within a group).
     Insert(usize),
@@ -70,9 +74,12 @@ pub enum DropZone {
 pub enum DockNode<T> {
     /// Children laid out along `axis` with flex weights.
     Split {
+        /// Direction the children are laid out in.
         axis: Axis,
+        /// Each child with its flex weight.
         children: Vec<(f32, DockNode<T>)>,
     },
+    /// A leaf holding a group of tabs.
     Group(TabGroup<T>),
 }
 
@@ -80,8 +87,11 @@ pub enum DockNode<T> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TabGroup<T> {
+    /// Identifies the group in [`DockMsg`]s; assigned by the dock.
     pub id: GroupId,
+    /// The group's tabs, in order.
     pub tabs: Vec<T>,
+    /// Index of the visible tab.
     pub active: usize,
 }
 
@@ -207,8 +217,11 @@ impl<T> DockNode<T> {
 /// Messages produced by a dock's UI. Forward them to [`Dock::update`].
 #[derive(Debug, Clone)]
 pub enum DockMsg {
+    /// Show tab `usize` of the group.
     Activate(GroupId, usize),
+    /// Close tab `usize` of the group.
     Close(GroupId, usize),
+    /// A tab of the group is being dragged.
     Drag(GroupId, usize, DragEvent),
     /// A drag moved over a group body.
     Target(GroupId, DropEvent),
@@ -287,6 +300,22 @@ pub struct Dock<T> {
 }
 
 impl<T> Dock<T> {
+    /// A dock with this layout; group ids are assigned here.
+    ///
+    /// ```
+    /// use rust_ui::prelude::*;
+    ///
+    /// #[derive(Clone)]
+    /// enum Msg {
+    ///     Dock(DockMsg),
+    /// }
+    ///
+    /// let dock = Dock::new(DockNode::hsplit(vec![
+    ///     (1.0, DockNode::tabs(vec!["Files"])),
+    ///     (3.0, DockNode::tabs(vec!["main.rs", "lib.rs"])),
+    /// ]));
+    /// let view: Element<Msg> = dock.view("dock", |t| t.to_string(), |t| text(*t), Msg::Dock);
+    /// ```
     pub fn new(mut root: DockNode<T>) -> Self {
         let mut next = 0;
         root.assign_ids(&mut next);
@@ -861,10 +890,13 @@ pub enum DockSpaceMsg {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FloatingDock<T> {
+    /// Identifies the window (see [`DockSpace::window_key`]).
     pub id: DockId,
+    /// The dock shown in the window.
     pub dock: Dock<T>,
     /// Where the window opened (screen, logical px), if known.
     pub position: Option<(f32, f32)>,
+    /// Window size (logical px).
     pub size: (f32, f32),
 }
 
@@ -907,7 +939,9 @@ pub struct FloatingDock<T> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DockSpace<T> {
+    /// The dock in the main window.
     pub main: Dock<T>,
+    /// Docks in their own windows.
     pub floating: Vec<FloatingDock<T>>,
     next: DockId,
     /// Dock where the current tab drag started.
@@ -918,6 +952,7 @@ pub struct DockSpace<T> {
 }
 
 impl<T> DockSpace<T> {
+    /// A dock space with `main` and no floating windows.
     pub fn new(main: Dock<T>) -> Self {
         Self { main, floating: Vec::new(), next: 0, drag_from: None, float_size: (640.0, 420.0) }
     }
@@ -988,6 +1023,7 @@ impl<T> DockSpace<T> {
         }
     }
 
+    /// Apply a message from any of the docks' UIs.
     pub fn update(&mut self, msg: DockSpaceMsg) {
         // Any action closes the tab menus (one may be open in another window).
         if !matches!(msg, DockSpaceMsg::Dock(_, DockMsg::TabMenu(..))) {

@@ -30,10 +30,15 @@ use crate::theme::Theme;
 pub struct WindowSpec<M> {
     /// Identifies the window across frames (and in [`App::window_view`]).
     pub key: String,
+    /// The window title.
     pub title: String,
+    /// Initial width (logical px).
     pub width: f32,
+    /// Initial height (logical px).
     pub height: f32,
+    /// Minimum width (logical px).
     pub min_width: f32,
+    /// Minimum height (logical px).
     pub min_height: f32,
     /// Initial position of the window's top-left corner on the screen
     /// (logical px); the OS places it when `None`.
@@ -45,6 +50,7 @@ pub struct WindowSpec<M> {
 }
 
 impl<M> WindowSpec<M> {
+    /// A 640×480 window identified by `key`, sending `on_close` when closed.
     pub fn new(key: impl Into<String>, title: impl Into<String>, on_close: M) -> Self {
         Self {
             key: key.into(),
@@ -58,11 +64,13 @@ impl<M> WindowSpec<M> {
             on_close,
         }
     }
+    /// Set the initial size (logical px).
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = w;
         self.height = h;
         self
     }
+    /// Set the minimum size (logical px).
     pub fn min_size(mut self, w: f32, h: f32) -> Self {
         self.min_width = w;
         self.min_height = h;
@@ -73,6 +81,7 @@ impl<M> WindowSpec<M> {
         self.position = Some((x, y));
         self
     }
+    /// Draw no OS title bar.
     pub fn frameless(mut self, f: bool) -> Self {
         self.frameless = f;
         self
@@ -85,11 +94,14 @@ impl<M> WindowSpec<M> {
 ///
 /// [`Runtime`]: super::Runtime
 pub struct Shared<A: App> {
+    /// The app, shared by all windows.
     pub app: Rc<RefCell<A>>,
+    /// The extra window's key, or `None` for the main window.
     pub key: Option<String>,
 }
 
 impl<A: App> Shared<A> {
+    /// The window `key` (`None` for the main window) of the shared `app`.
     pub fn new(app: Rc<RefCell<A>>, key: Option<String>) -> Self {
         Self { app, key }
     }

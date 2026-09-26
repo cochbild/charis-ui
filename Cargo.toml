@@ -14,10 +14,12 @@ exclude = ["docs/*.png", "tests/golden/*"]
 name = "rust_ui"
 
 [features]
-default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility"]
+default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs"]
 window = ["dep:winit", "dep:softbuffer"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
+# Native file dialogs (Windows common item dialog, macOS panels, XDG portal on Linux).
+dialogs = ["window", "dep:rfd"]
 gpu = ["dep:wgpu", "dep:pollster"]
 # Run spawned futures on tokio (needed for tokio-based crates such as reqwest).
 tokio = ["dep:tokio"]
@@ -42,6 +44,7 @@ futures = { version = "0.3", default-features = false, features = ["std", "execu
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 accesskit = { version = "0.25", optional = true }
 accesskit_winit = { version = "0.34", optional = true }
+rfd = { version = "0.17", optional = true }
 
 
 [target.'cfg(windows)'.dependencies]

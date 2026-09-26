@@ -20,6 +20,7 @@ use tiny_skia::Pixmap;
 use crate::anim::Anim;
 use crate::color::{Color, Fill};
 use crate::cpu::PaintCache;
+use crate::dialog::{DialogKind, DialogRequest, FileDialog};
 use crate::edit::{self, Selection};
 use crate::effects::{Proxy, TaskHandle};
 use crate::element::*;
@@ -109,12 +110,45 @@ pub(crate) enum ScrollCmd {
     ToItem(usize),
 }
 
+/// Answers file dialogs without showing them (headless runs).
+type DialogResponder = Box<dyn FnMut(&DialogRequest) -> Vec<std::path::PathBuf>>;
+
+/// Turns a dialog's chosen paths into the app's message.
+pub(crate) type DialogCb<M> = Box<dyn FnOnce(Vec<std::path::PathBuf>) -> M>;
+
 /// Context passed to [`App::update`] for side effects.
 pub struct Cx<M> {
+    pub(crate) dialogs: Vec<(DialogRequest, DialogCb<M>)>,
     pub(crate) requests: Vec<WindowRequest>,
     pub(crate) focus: Option<Option<u64>>,
     pub(crate) scrolls: Vec<(u64, ScrollCmd)>,
     pub(crate) proxy: Proxy<M>,
+}
+
+impl<M: 'static> Cx<M> {
+    fn dialog(&mut self, kind: DialogKind, dialog: FileDialog, cb: DialogCb<M>) {
+        self.dialogs.push((DialogRequest { kind, dialog }, cb));
+    }
+
+    /// Ask the user for a file to open; `done` receives `None` if cancelled.
+    pub fn open_file(&mut self, dialog: FileDialog, done: impl FnOnce(Option<std::path::PathBuf>) -> M + 'static) {
+        self.dialog(DialogKind::OpenFile, dialog, Box::new(move |p| done(p.into_iter().next())));
+    }
+
+    /// Ask for one or more files to open; `done` receives an empty list if cancelled.
+    pub fn open_files(&mut self, dialog: FileDialog, done: impl FnOnce(Vec<std::path::PathBuf>) -> M + 'static) {
+        self.dialog(DialogKind::OpenFiles, dialog, Box::new(done));
+    }
+
+    /// Ask for a folder.
+    pub fn pick_folder(&mut self, dialog: FileDialog, done: impl FnOnce(Option<std::path::PathBuf>) -> M + 'static) {
+        self.dialog(DialogKind::PickFolder, dialog, Box::new(move |p| done(p.into_iter().next())));
+    }
+
+    /// Ask where to save a file (the dialog confirms overwriting).
+    pub fn save_file(&mut self, dialog: FileDialog, done: impl FnOnce(Option<std::path::PathBuf>) -> M + 'static) {
+        self.dialog(DialogKind::SaveFile, dialog, Box::new(move |p| done(p.into_iter().next())));
+    }
 }
 
 impl<M> Cx<M> {
@@ -758,6 +792,10 @@ pub struct Runtime<A: App> {
     /// A drag from another window is over this one.
     external_over: bool,
     queue: Vec<Out<A::Msg>>,
+    dialog_requests: Vec<(u64, DialogRequest)>,
+    dialogs_pending: HashMap<u64, DialogCb<A::Msg>>,
+    next_dialog: u64,
+    dialog_responder: Option<DialogResponder>,
     updated: bool,
     mailbox: crate::effects::Mailbox<A::Msg>,
     subs: Subscriptions<A::Msg>,
@@ -830,6 +868,10 @@ impl<A: App> Runtime<A> {
             screen_origin: None,
             external_over: false,
             queue: Vec::new(),
+            dialog_requests: Vec::new(),
+            dialogs_pending: HashMap::default(),
+            next_dialog: 0,
+            dialog_responder: None,
             updated: false,
             mailbox: crate::effects::Mailbox::new(),
             subs,
@@ -2302,6 +2344,27 @@ impl<A: App> Runtime<A> {
         self.components.borrow().len()
     }
 
+    /// File dialogs the app asked for, to be shown by the window shell.
+    /// Answer each with [`Runtime::dialog_done`].
+    pub fn take_dialog_requests(&mut self) -> Vec<(u64, DialogRequest)> {
+        std::mem::take(&mut self.dialog_requests)
+    }
+
+    /// Deliver the user's answer to dialog `id` (empty = cancelled).
+    pub fn dialog_done(&mut self, id: u64, paths: Vec<std::path::PathBuf>) {
+        if let Some(cb) = self.dialogs_pending.remove(&id) {
+            self.queue.push(Out::Msg(cb(paths)));
+            self.flush();
+        }
+    }
+
+    /// Answer file dialogs immediately instead of showing them (headless
+    /// runs and tests): `respond` returns the "chosen" paths, or an empty
+    /// list for "cancelled".
+    pub fn set_dialog_responder(&mut self, respond: impl FnMut(&DialogRequest) -> Vec<std::path::PathBuf> + 'static) {
+        self.dialog_responder = Some(Box::new(respond));
+    }
+
     /// True if the app was updated since the last call (other windows of
     /// the same app need to re-render).
     pub fn take_updated(&mut self) -> bool {
@@ -2313,7 +2376,13 @@ impl<A: App> Runtime<A> {
             return;
         }
         self.updated = true;
-        let mut cx = Cx { requests: Vec::new(), focus: None, scrolls: Vec::new(), proxy: self.mailbox.proxy() };
+        let mut cx = Cx {
+            dialogs: Vec::new(),
+            requests: Vec::new(),
+            focus: None,
+            scrolls: Vec::new(),
+            proxy: self.mailbox.proxy(),
+        };
         while !self.queue.is_empty() {
             for out in std::mem::take(&mut self.queue) {
                 let msg = match out {
@@ -2322,6 +2391,20 @@ impl<A: App> Runtime<A> {
                 };
                 if let Some(m) = msg {
                     self.app.update(m, &mut cx);
+                }
+            }
+            for (req, cb) in std::mem::take(&mut cx.dialogs) {
+                match &mut self.dialog_responder {
+                    // Headless: answer right away.
+                    Some(respond) => {
+                        let paths = respond(&req);
+                        self.queue.push(Out::Msg(cb(paths)));
+                    }
+                    None => {
+                        self.next_dialog += 1;
+                        self.dialogs_pending.insert(self.next_dialog, cb);
+                        self.dialog_requests.push((self.next_dialog, req));
+                    }
                 }
             }
         }

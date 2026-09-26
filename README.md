@@ -349,6 +349,24 @@ titlebar(title, left_content, right_content, window_info().maximized)
 Any element can become a drag area (`.window_drag_area()`) or a window button
 (`.window_control(WindowControl::Close)`). Frameless windows stay resizable from their edges.
 
+### File dialogs
+
+Ask from `update`; the answer arrives as a message, so nothing blocks:
+
+```rust
+Msg::Open => cx.open_file(FileDialog::new().filter("GGUF models", &["gguf"]), Msg::Opened),
+Msg::Opened(Some(path)) => { /* load */ }
+Msg::Opened(None) => {} // cancelled
+```
+
+`open_files`, `pick_folder` and `save_file` work the same way. The native dialog is modal to the
+window that asked:
+- **Windows:** the common item dialog;
+- **macOS:** the system panels;
+- **Linux:** the XDG desktop portal, falling back to zenity.
+
+Headless tests script the user's choice with `Runtime::set_dialog_responder`.
+
 ### Headless testing and screenshots
 
 ```rust
@@ -393,7 +411,7 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
-- Native menus, file dialogs
+- Native menus
 - Auto-hide (JetBrains "unpinned") panels
 - Hot-reloadable stylesheet layer
 

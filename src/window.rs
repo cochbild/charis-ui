@@ -431,8 +431,33 @@ impl<A: App> Shell<A> {
         }
     }
 
+    /// Show the file dialogs window `i` asked for, each on its own thread
+    /// (the event loop keeps running; answers come back as `DialogDone`).
+    fn show_dialogs(&mut self, i: usize) {
+        let requests = self.wins[i].rt.take_dialog_requests();
+        for (id, req) in requests {
+            #[cfg(feature = "dialogs")]
+            {
+                let parent = self.wins[i].gfx.as_ref().map(|g| rfd::AsyncFileDialog::new().set_parent(&*g.window));
+                let proxy = self.proxy.clone();
+                let key = self.wins[i].key.clone();
+                std::thread::spawn(move || {
+                    let paths = futures::executor::block_on(crate::dialog::show(req, parent));
+                    let _ = proxy.send_event(UserEvent::DialogDone { window: key, id, paths });
+                });
+            }
+            #[cfg(not(feature = "dialogs"))]
+            {
+                let _ = req;
+                // Built without dialogs: answer "cancelled" so the app isn't left waiting.
+                self.wins[i].rt.dialog_done(id, Vec::new());
+            }
+        }
+    }
+
     fn apply_requests(&mut self, el: &ActiveEventLoop) {
         for i in 0..self.wins.len() {
+            self.show_dialogs(i);
             let requests = self.wins[i].rt.take_requests();
             for r in requests {
                 let Some(g) = &self.wins[i].gfx else { continue };
@@ -607,6 +632,9 @@ fn modifiers(m: ModifiersState) -> Modifiers {
 enum UserEvent {
     /// Background tasks posted messages.
     Wake,
+    /// A file dialog was answered.
+    #[cfg_attr(not(feature = "dialogs"), allow(dead_code))]
+    DialogDone { window: Option<String>, id: u64, paths: Vec<std::path::PathBuf> },
     /// A screen reader connected, disconnected, or requested an action.
     #[cfg(feature = "accessibility")]
     A11y(accesskit_winit::Event),
@@ -627,6 +655,14 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 for w in &mut self.wins {
                     w.rt.set_time(now);
                     w.rt.poll();
+                }
+            }
+            UserEvent::DialogDone { window, id, paths } => {
+                // The window may have closed meanwhile; then the main window's
+                // runtime can't know the id either, and the answer is dropped.
+                if let Some(w) = self.wins.iter_mut().find(|w| w.key == window) {
+                    w.rt.set_time(now);
+                    w.rt.dialog_done(id, paths);
                 }
             }
             #[cfg(feature = "accessibility")]

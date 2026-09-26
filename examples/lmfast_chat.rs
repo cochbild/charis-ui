@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
+use rust_ui::dialog::DialogKind;
 use rust_ui::prelude::*;
 use rust_ui::TaskHandle;
 
@@ -290,6 +291,8 @@ struct LmFast {
     search: String,
     messages: Vec<Message>,
     draft: String,
+    /// Files attached to the next message.
+    attachments: Vec<std::path::PathBuf>,
     streaming: Option<TaskHandle>,
     started: Option<Instant>,
     tokens: usize,
@@ -315,6 +318,9 @@ enum Msg {
     Select(usize),
     Search(String),
     Draft(String),
+    Attach(DialogKind),
+    Attached(Vec<std::path::PathBuf>),
+    Detach(usize),
     Send,
     Stop,
     Token(String),
@@ -380,6 +386,21 @@ impl App for LmFast {
             Msg::Model(i) => self.model = Some(i),
             Msg::Select(i) => self.active = i,
             Msg::Search(s) => self.search = s,
+            Msg::Attach(kind) => {
+                let d = match kind {
+                    DialogKind::OpenFiles => FileDialog::new()
+                        .title("Attach documents")
+                        .filter("Documents", &["pdf", "txt", "md", "docx", "html"]),
+                    _ => FileDialog::new().title("Attach images").filter("Images", &["png", "jpg", "jpeg", "webp"]),
+                };
+                cx.open_files(d, Msg::Attached);
+            }
+            Msg::Attached(paths) => self.attachments.extend(paths),
+            Msg::Detach(i) => {
+                if i < self.attachments.len() {
+                    self.attachments.remove(i);
+                }
+            }
             Msg::Draft(s) => self.draft = s,
             Msg::Send => {
                 let prompt = self.draft.trim().to_string();
@@ -1118,12 +1139,28 @@ impl LmFast {
                 .on_click(Msg::Send)
                 .disabled(self.draft.trim().is_empty())
         };
+        let chips = row().gap(6.0).flex_wrap().children(self.attachments.iter().enumerate().map(|(i, p)| {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            row()
+                .items_center()
+                .gap(6.0)
+                .h(26.0)
+                .pl(10.0)
+                .pr(4.0)
+                .rounded(th.radius)
+                .bg(c.elevated)
+                .border(1.0, c.border)
+                .child(icon(Icon::File).font_size(13.0).color(c.text_muted))
+                .child(text(name).font_size(12.0).nowrap())
+                .child(icon_button(Icon::Close).square(20.0).tooltip("Remove").on_click(Msg::Detach(i)))
+        }));
         col()
             .shrink(0.0)
             .px(24.0)
             .pt(8.0)
             .pb(16.0)
             .gap(8.0)
+            .child_if(!self.attachments.is_empty(), || chips)
             .child(
                 row()
                     .gap(8.0)
@@ -1148,8 +1185,20 @@ impl LmFast {
                 row()
                     .gap(4.0)
                     .color(c.text_faint)
-                    .child(ghost_button("Document").with_icon(Icon::File).font_size(12.0).h(26.0))
-                    .child(ghost_button("Image").with_icon(Icon::Layers).font_size(12.0).h(26.0))
+                    .child(
+                        ghost_button("Document")
+                            .with_icon(Icon::File)
+                            .font_size(12.0)
+                            .h(26.0)
+                            .on_click(Msg::Attach(DialogKind::OpenFiles)),
+                    )
+                    .child(
+                        ghost_button("Image")
+                            .with_icon(Icon::Layers)
+                            .font_size(12.0)
+                            .h(26.0)
+                            .on_click(Msg::Attach(DialogKind::OpenFile)),
+                    )
                     .child(ghost_button("Audio").with_icon(Icon::Bell).font_size(12.0).h(26.0))
                     .child(spacer())
                     .child(text(format!("{} messages", self.messages.len())).font_size(11.5).mono()),
@@ -1193,6 +1242,7 @@ fn initial() -> LmFast {
             },
         ],
         draft: String::new(),
+        attachments: Vec::new(),
         streaming: None,
         started: None,
         tokens: 0,
@@ -1253,6 +1303,12 @@ fn main() {
             h.rt.send(Msg::Send);
             h.wait_until(Duration::from_secs(5), |a| a.messages.last().is_some_and(|m| m.text.len() > 160));
             h.advance(0.3);
+        }
+        if args.iter().any(|a| a == "--attach") {
+            // Script the file dialog: the "user" picks two documents.
+            h.rt.set_dialog_responder(|_| vec!["/home/me/Q3 report.pdf".into(), "/home/me/notes.md".into()]);
+            h.rt.send(Msg::Attach(DialogKind::OpenFiles));
+            h.advance(0.1);
         }
         if args.iter().any(|a| a == "--scrolled") {
             // Scroll the log up while it keeps streaming: the view must stay put.

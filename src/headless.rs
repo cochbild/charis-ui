@@ -219,6 +219,59 @@ impl<A: App> HeadlessApp<A> {
         self.sync();
     }
 
+    /// Place a window on a virtual screen (logical px), so drags can cross
+    /// between windows and report screen positions.
+    pub fn set_origin(&mut self, window: Option<&str>, x: f32, y: f32) {
+        self.get(window).rt.set_screen_origin(Some(Point::new(x, y)));
+    }
+
+    fn runtimes(&mut self) -> Vec<&mut Runtime<Shared<A>>> {
+        std::iter::once(&mut self.main.rt).chain(self.windows.iter_mut().map(|(_, h)| &mut h.rt)).collect()
+    }
+
+    fn index(&self, window: Option<&str>) -> usize {
+        match window {
+            None => 0,
+            Some(k) => {
+                1 + self.windows.iter().position(|(s, _)| s.key == k).unwrap_or_else(|| panic!("no window {k:?}"))
+            }
+        }
+    }
+
+    /// Drag with the mouse from `from` in `window` to the screen point `to`
+    /// (which may be outside the window, or over another window of the app),
+    /// the way the window shell routes it. Windows need screen origins
+    /// ([`HeadlessApp::set_origin`]).
+    pub fn drag(&mut self, window: Option<&str>, from: Point, to: Point, steps: usize) {
+        self.drag_path(window, from, &[to], steps);
+    }
+
+    /// Like [`HeadlessApp::drag`], through several screen points in turn.
+    pub fn drag_path(&mut self, window: Option<&str>, from: Point, path: &[Point], steps: usize) {
+        let src = self.index(window);
+        let origin = self.get(window).rt.screen_origin().unwrap_or_default();
+        self.get(window).event(Event::PointerDown(from, MouseButton::Left));
+        let mut at = from;
+        for &to in path {
+            let to = to - origin;
+            let steps = steps.max(1);
+            for k in 1..=steps {
+                let t = k as f32 / steps as f32;
+                let p = Point::new(at.x + (to.x - at.x) * t, at.y + (to.y - at.y) * t);
+                self.get(window).move_to(p.x, p.y);
+                crate::runtime::route_drag(&mut self.runtimes(), src, p, false);
+                self.sync();
+            }
+            at = to;
+        }
+        // The window under the pointer gets the drop before the drag ends.
+        crate::runtime::route_drag(&mut self.runtimes(), src, at, true);
+        self.sync();
+        let h = if src == 0 { &mut self.main } else { &mut self.windows[src - 1].1 };
+        h.event(Event::PointerUp(at, MouseButton::Left));
+        self.sync();
+    }
+
     /// The user closes an extra window (its `on_close` message is sent).
     pub fn close(&mut self, key: &str) {
         if let Some((spec, _)) = self.windows.iter().find(|(s, _)| s.key == key) {

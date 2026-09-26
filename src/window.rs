@@ -402,6 +402,35 @@ impl<A: App> Shell<A> {
         }
     }
 
+    /// Keep window `i`'s screen position up to date (for drags between
+    /// windows and [`DragEvent::screen`](crate::DragEvent)). Unknown on Wayland.
+    fn update_origin(&mut self, i: usize) {
+        let w = &mut self.wins[i];
+        let Some(g) = &w.gfx else { return };
+        let scale = g.window.scale_factor();
+        let origin = g
+            .window
+            .inner_position()
+            .ok()
+            .map(|p| Point::new((p.x as f64 / scale) as f32, (p.y as f64 / scale) as f32));
+        w.rt.set_screen_origin(origin);
+    }
+
+    /// Forward an in-progress drag from window `i` to the window under the
+    /// pointer (tabs dragged between windows).
+    fn route_drag(&mut self, i: usize, local: Point, drop: bool) {
+        for j in 0..self.wins.len() {
+            self.update_origin(j);
+        }
+        let mut rts: Vec<&mut Runtime<Shared<A>>> = self.wins.iter_mut().map(|w| &mut w.rt).collect();
+        crate::runtime::route_drag(&mut rts, i, local, drop);
+        for w in &self.wins {
+            if let Some(g) = &w.gfx {
+                g.window.request_redraw();
+            }
+        }
+    }
+
     fn apply_requests(&mut self, el: &ActiveEventLoop) {
         for i in 0..self.wins.len() {
             let requests = self.wins[i].rt.take_requests();
@@ -459,6 +488,10 @@ impl<A: App> Shell<A> {
         w.rt.maximized = g.window.is_maximized();
         crate::runtime::set_window_info(crate::runtime::WindowInfo { maximized: w.rt.maximized, focused: true });
         w.rt.resize(Size::new(size.width as f32 / scale, size.height as f32 / scale), scale);
+        if let Ok(p) = g.window.inner_position() {
+            let s = scale as f64;
+            w.rt.set_screen_origin(Some(Point::new((p.x as f64 / s) as f32, (p.y as f64 / s) as f32)));
+        }
         match &mut g.presenter {
             #[cfg(feature = "gpu")]
             Presenter::Gpu(gs) => {
@@ -648,10 +681,13 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
             }
             WindowEvent::ModifiersChanged(m) => self.wins[i].mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
-                self.wins[i]
-                    .rt
-                    .handle(Event::PointerMove(Point::new(position.x as f32 / scale, position.y as f32 / scale)));
+                let p = Point::new(position.x as f32 / scale, position.y as f32 / scale);
+                self.wins[i].rt.handle(Event::PointerMove(p));
+                if self.wins.len() > 1 && self.wins[i].rt.element_dragging() {
+                    self.route_drag(i, p, false);
+                }
             }
+            WindowEvent::Moved(_) => self.update_origin(i),
             WindowEvent::CursorLeft { .. } => self.wins[i].rt.handle(Event::PointerLeave),
             WindowEvent::MouseInput { state, button, .. } => {
                 let b = match button {
@@ -660,9 +696,13 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                     winit::event::MouseButton::Middle => MouseButton::Middle,
                     _ => return,
                 };
-                let rt = &mut self.wins[i].rt;
                 // Position comes from the last move event.
-                let p = rt.pointer_pos().unwrap_or_default();
+                let p = self.wins[i].rt.pointer_pos().unwrap_or_default();
+                if state == ElementState::Released && self.wins.len() > 1 && self.wins[i].rt.element_dragging() {
+                    // The window under the pointer takes the drop before the drag ends.
+                    self.route_drag(i, p, true);
+                }
+                let rt = &mut self.wins[i].rt;
                 rt.handle(match state {
                     ElementState::Pressed => Event::PointerDown(p, b),
                     ElementState::Released => Event::PointerUp(p, b),

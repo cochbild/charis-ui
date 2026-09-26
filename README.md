@@ -250,8 +250,27 @@ What users can do:
 - Resize every split. Sizes are proportional and are written back into the layout tree.
 - Close tabs. Empty groups disappear.
 
-With the `serde` feature, the whole `Dock` (tree, weights, tabs, maximized group, and a
-`version` field) serializes, so layouts can be persisted per workspace.
+**Tabs in their own windows.** Wrap the dock in a `DockSpace` and return its `windows()` from
+`App::windows`. Users can then:
+- drag a tab out of the window, which opens it in a new OS window where it was dropped;
+- drag it onto any group in another window to dock it there, with the same edge and center
+  previews;
+- use the header buttons "Open in new window" and "Dock back", which also work for keyboard
+  users and on Wayland (where a window can't learn its screen position).
+
+Closing a floating window docks its tabs back.
+
+```rust
+// update:      Msg::Dock(m) => self.dock.update(m)
+// view:        self.dock.view(None, title, content, Msg::Dock)
+// windows:     self.dock.windows(title, Msg::Dock)
+// window_view: self.dock.view(Some(key), title, content, Msg::Dock)
+```
+
+![A tab dragged out into its own window](docs/dock-tear-out.png)
+
+With the `serde` feature, the whole `Dock` or `DockSpace` (tree, weights, tabs, maximized group,
+floating windows, and a `version` field) serializes, so layouts can be persisted per workspace.
 
 Any element can animate its layout changes with `.animate_layout(secs)` (FLIP-style), which is
 useful for indicators, previews and reordering.
@@ -375,8 +394,7 @@ This is an early but working foundation. Known gaps and planned work:
 - Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
 - Native menus, file dialogs
-- Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows
-  (needs multi-window support)
+- Auto-hide (JetBrains "unpinned") panels
 - Hot-reloadable stylesheet layer
 
 See [`docs/LANDSCAPE.md`](docs/LANDSCAPE.md) for the survey of existing Rust UI frameworks and

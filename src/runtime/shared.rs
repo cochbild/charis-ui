@@ -4,8 +4,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::{App, Cx};
+use super::{App, Cx, Runtime};
 use crate::element::{Element, KeyEvent};
+use crate::geometry::{Point, Rect};
 use crate::subscription::Subscriptions;
 use crate::theme::Theme;
 
@@ -127,5 +128,36 @@ impl<A: App> App for Shared<A> {
 
     fn windows(&self) -> Vec<super::WindowSpec<A::Msg>> {
         self.app.borrow().windows()
+    }
+}
+
+/// Forward a drag in window `src` (pointer at `local`, its coordinates) to
+/// the app's other windows: the window under the pointer gets it as an
+/// external drag (and the drop, with `drop`); the others are told it left.
+/// Windows without a known screen position (Wayland) take no part.
+pub(crate) fn route_drag<A: App>(rts: &mut [&mut Runtime<Shared<A>>], src: usize, local: Point, drop: bool) {
+    let Some(origin) = rts[src].screen_origin() else { return };
+    let size = rts[src].window_size();
+    let screen = origin + local;
+    let inside_src = Rect::new(0.0, 0.0, size.w, size.h).contains(local);
+    let target = (!inside_src)
+        .then(|| {
+            (0..rts.len()).find(|&j| {
+                j != src
+                    && rts[j].screen_origin().is_some_and(|o| {
+                        let s = rts[j].window_size();
+                        Rect::new(o.x, o.y, s.w, s.h).contains(screen)
+                    })
+            })
+        })
+        .flatten();
+    for (j, rt) in rts.iter_mut().enumerate() {
+        if j == src {
+            continue;
+        }
+        match (Some(j) == target, rt.screen_origin()) {
+            (true, Some(o)) => rt.external_drag(Some(screen - o), drop),
+            _ => rt.external_drag(None, false),
+        }
     }
 }

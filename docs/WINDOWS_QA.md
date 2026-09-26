@@ -61,4 +61,16 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
       demo: wheel scrolling jumps instead of gliding, and collapsing a sidebar is instant. Hover
       color fades still work.
 
+**Multiple windows and tab tear-out** (`cargo run --release --example dock`)
+- [ ] Drag the "Terminal" tab out of the window: a new window opens where you release it, with
+      Windows' own title bar, snap and shadow.
+- [ ] Drag that tab back onto a panel in the main window: the edge/center preview shows while
+      hovering, and it docks there when released; the empty window closes.
+- [ ] "Open in new window" (↗ in a panel header) and "Dock back" work; closing a floating window
+      with its ✕ puts its tabs back in the main window.
+- [ ] On a second monitor with different scaling: drag a tab out onto it; the new window is
+      sharp and correctly sized.
+- [ ] `cargo run --release --example multiwindow`: inspector windows open, share the count, and
+      close independently.
+
 Report anything that fails, with a screenshot if possible.

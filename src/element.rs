@@ -86,6 +86,11 @@ pub struct DragEvent {
     pub delta: Point,
     /// The element's rectangle at the time of the event.
     pub rect: Rect,
+    /// The pointer is outside the window (e.g. a tab dragged out of it).
+    pub outside: bool,
+    /// Pointer position on the screen (logical px), where the platform
+    /// reports window positions (not on Wayland).
+    pub screen: Option<Point>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

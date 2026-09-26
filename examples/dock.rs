@@ -1,9 +1,12 @@
 //! Drag-and-drop docking: drag any tab onto another panel's center to join it,
-//! or onto an edge to split it. Every splitter is resizable.
+//! or onto an edge to split it. Drag a tab out of the window to open it in its
+//! own window, and drag it back (or press "Dock back") to re-dock it. Every
+//! splitter is resizable.
 //!
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
 
+use rust_ui::dock::{DockSpace, DockSpaceMsg};
 use rust_ui::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -43,13 +46,13 @@ impl Panel {
 }
 
 struct DockDemo {
-    dock: Dock<Panel>,
+    dock: DockSpace<Panel>,
     dark: bool,
 }
 
 #[derive(Clone)]
 enum Msg {
-    Dock(DockMsg),
+    Dock(DockSpaceMsg),
     Theme,
 }
 
@@ -86,7 +89,19 @@ impl App for DockDemo {
             window_info().maximized,
         );
         col().size_full().child(bar).child(self.dock.view_with_icons(
-            "dock",
+            None,
+            Panel::title,
+            |p| Some(p.icon()),
+            panel_content,
+            Msg::Dock,
+        ))
+    }
+    fn windows(&self) -> Vec<WindowSpec<Msg>> {
+        self.dock.windows(Panel::title, Msg::Dock)
+    }
+    fn window_view(&self, key: &str) -> Element<Msg> {
+        col().size_full().child(self.dock.view_with_icons(
+            Some(key),
             Panel::title,
             |p| Some(p.icon()),
             panel_content,
@@ -151,21 +166,22 @@ fn panel_content(p: &Panel) -> Element<Msg> {
                     .shadows(th.shadow_popover.clone()),
             )
             .child(text("Live preview").color(c.text_muted)),
-        Panel::Chat => {
-            col()
-                .p(12.0)
-                .gap(10.0)
-                .child(card().p(10.0).child(
-                    text("Try dragging the “Terminal” tab onto the right edge of the editor.").color(c.text_muted),
-                ))
-                .child(spacer())
-                .child(text_input("", |_| Msg::Theme).placeholder("Ask something…"))
-        }
+        Panel::Chat => col()
+            .p(12.0)
+            .gap(10.0)
+            .child(
+                card().p(10.0).child(
+                    text("Try dragging the “Terminal” tab onto the right edge of the editor, or out of the window.")
+                        .color(c.text_muted),
+                ),
+            )
+            .child(spacer())
+            .child(text_input("", |_| Msg::Theme).placeholder("Ask something…")),
     }
 }
 
-fn initial() -> Dock<Panel> {
-    Dock::new(DockNode::hsplit(vec![
+fn initial() -> DockSpace<Panel> {
+    DockSpace::new(Dock::new(DockNode::hsplit(vec![
         (
             1.0,
             DockNode::vsplit(vec![
@@ -190,11 +206,20 @@ fn initial() -> Dock<Panel> {
                 (1.0, DockNode::tabs(vec![Panel::Chat])),
             ]),
         ),
-    ]))
+    ])))
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // For scripted UI tests: print where a text is (center, window coordinates).
+    if let Some(pos) = args.iter().position(|a| a == "--where") {
+        let mut h = Headless::new(DockDemo { dock: initial(), dark: true }, 1280.0, 800.0, 1.0);
+        h.settle();
+        let t = args.get(pos + 1).expect("--where TEXT");
+        let c = h.rt.rect_of_text(t).expect("text not found").center();
+        println!("{} {}", c.x.round(), c.y.round());
+        return;
+    }
     if let Some(pos) = args.iter().position(|a| a == "--screenshot") {
         let out = args.get(pos + 1).cloned().unwrap_or_else(|| "dock.png".into());
         let mut h = Headless::new(DockDemo { dock: initial(), dark: true }, 1280.0, 800.0, 1.0);

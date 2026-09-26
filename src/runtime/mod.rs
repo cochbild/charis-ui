@@ -13,6 +13,7 @@ use taffy as tf;
 mod a11y;
 pub(crate) mod memo;
 mod shared;
+pub(crate) use shared::route_drag;
 pub use shared::{Shared, WindowSpec};
 use tiny_skia::Pixmap;
 
@@ -753,6 +754,9 @@ pub struct Runtime<A: App> {
     /// Read-only text selection: (node id, anchor byte, cursor byte).
     text_sel: Option<(u64, usize, usize)>,
     drop_target: Option<u64>,
+    screen_origin: Option<Point>,
+    /// A drag from another window is over this one.
+    external_over: bool,
     queue: Vec<Out<A::Msg>>,
     updated: bool,
     mailbox: crate::effects::Mailbox<A::Msg>,
@@ -823,6 +827,8 @@ impl<A: App> Runtime<A> {
             splitter_hover: None,
             text_sel: None,
             drop_target: None,
+            screen_origin: None,
+            external_over: false,
             queue: Vec::new(),
             updated: false,
             mailbox: crate::effects::Mailbox::new(),
@@ -2351,15 +2357,10 @@ impl<A: App> Runtime<A> {
                     {
                         if !dragging && p.distance(start) > DRAG_THRESHOLD {
                             dragging = true;
-                            self.queue.push(h(DragEvent {
-                                phase: DragPhase::Start,
-                                pos: start,
-                                delta: Point::ZERO,
-                                rect,
-                            }));
+                            self.queue.push(h(self.drag_event(DragPhase::Start, start, start, rect)));
                         }
                         if dragging {
-                            self.queue.push(h(DragEvent { phase: DragPhase::Move, pos: p, delta: p - start, rect }));
+                            self.queue.push(h(self.drag_event(DragPhase::Move, p, start, rect)));
                             self.update_drop_target(p, false);
                         }
                     } else if !dragging && p.distance(start) > DRAG_THRESHOLD {
@@ -2535,6 +2536,53 @@ impl<A: App> Runtime<A> {
         let NodeContent::Text(spec) = &n.content else { return None };
         let (a, b) = (a.min(b), a.max(b));
         (a != b).then(|| spec.text.get(a..b).map(str::to_string)).flatten()
+    }
+
+    fn drag_event(&self, phase: DragPhase, pos: Point, start: Point, rect: Rect) -> DragEvent {
+        let outside = pos.x < 0.0 || pos.y < 0.0 || pos.x >= self.size.w || pos.y >= self.size.h;
+        DragEvent { phase, pos, delta: pos - start, rect, outside, screen: self.screen_origin.map(|o| o + pos) }
+    }
+
+    /// Where the window's content area is on the screen (logical px), for
+    /// [`DragEvent::screen`]. The window shell keeps this up to date.
+    pub fn set_screen_origin(&mut self, origin: Option<Point>) {
+        self.screen_origin = origin;
+    }
+
+    /// The logical window size.
+    pub fn window_size(&self) -> Size {
+        self.size
+    }
+
+    /// The window's content origin on the screen, if known.
+    pub fn screen_origin(&self) -> Option<Point> {
+        self.screen_origin
+    }
+
+    /// True while the user drags an element that has a drag handler (so
+    /// the pointer may leave the window and hover other windows).
+    pub fn element_dragging(&self) -> bool {
+        match &self.drag {
+            Drag::Press { node, dragging: true, .. } => self.find_up(*node, |n| n.handlers.drag.is_some()).is_some(),
+            _ => false,
+        }
+    }
+
+    /// A drag that started in another window of the app moves over this
+    /// one (`Some(pos)`, window coordinates) or leaves it (`None`). With
+    /// `drop`, it is released here. Drop targets receive the same
+    /// [`DropEvent`]s as for drags within the window.
+    pub fn external_drag(&mut self, pos: Option<Point>, drop: bool) {
+        if pos.is_none() && !self.external_over {
+            return;
+        }
+        self.external_over = pos.is_some() && !drop;
+        match pos {
+            Some(p) => self.update_drop_target(p, drop),
+            None => self.update_drop_target(Point::new(-1e6, -1e6), false),
+        }
+        self.dirty = true;
+        self.flush();
     }
 
     /// Track the drop target under the pointer during a drag and notify it.
@@ -2760,7 +2808,7 @@ impl<A: App> Runtime<A> {
                     if let Some(d) = self.find_up(node, |n| n.handlers.drag.is_some()) {
                         if let Some(n) = self.node_by_id(d) {
                             if let Some(h) = n.handlers.drag.clone() {
-                                let ev = DragEvent { phase: DragPhase::End, pos: p, delta: p - start, rect: n.rect };
+                                let ev = self.drag_event(DragPhase::End, p, start, n.rect);
                                 self.queue.push(h(ev));
                             }
                         }

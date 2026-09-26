@@ -51,6 +51,10 @@ pub enum Icon {
     Dot,
     Refresh,
     Columns,
+    /// Open in a new window.
+    PopOut,
+    /// Move back into the main window.
+    DockIn,
     /// Custom SVG path data (24×24 viewbox), stroked.
     Svg(Rc<str>),
     /// Custom SVG path data (24×24 viewbox), filled.
@@ -84,6 +88,8 @@ impl Icon {
             Icon::Check => "M20 6L9 17l-5-5",
             Icon::Maximize => "M6 6h12v12H6z",
             Icon::Restore => "M8 9h10v10H8z M6 15V6a1 1 0 0 1 1-1h9",
+            Icon::PopOut => "M15 3h6v6 M10 14L21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
+            Icon::DockIn => "M21 3L11 13 M11 7v6h6 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
             Icon::Menu => "M4 6h16M4 12h16M4 18h16",
             Icon::Search => "M4 11a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M21 21l-4.35-4.35",
             Icon::File => "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5",
@@ -449,6 +455,8 @@ mod tests {
             Icon::Dot,
             Icon::Refresh,
             Icon::Columns,
+            Icon::PopOut,
+            Icon::DockIn,
         ];
         for i in all {
             assert!(i.path().is_some(), "{i:?} failed to parse");

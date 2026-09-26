@@ -160,7 +160,9 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Multiple windows: declared by `App::windows()` / `window_view`, one runtime per window
   around a shared app, `HeadlessApp` for tests. Follow-up: share one font database between
   windows (each window currently loads its own).
-- [ ] Drag a dock tab out into a floating OS window, and dock it back.
+- [x] Drag a dock tab out into a floating OS window, and dock it back (`DockSpace`): tear-out at
+  the drop point, cross-window drop targets with previews, pop-out / dock-back buttons, closing
+  a floating window re-docks its tabs. Verified end to end under Xvfb with real OS windows.
 - [ ] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
       style).
 - [ ] Panel commands:

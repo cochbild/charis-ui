@@ -205,6 +205,49 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Draw rich text; each span may override `color`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn rich_text_block(
+        &mut self,
+        s: &str,
+        spans: Option<&[crate::text::Span]>,
+        style: &TextStyle,
+        rect: Rect,
+        wrap_width: Option<f32>,
+        color: Color,
+        link_color: Color,
+        ellipsis: bool,
+    ) {
+        let Some(spans) = spans else {
+            self.text_block(s, style, rect, wrap_width, color, ellipsis);
+            return;
+        };
+        if s.is_empty() || !self.visible(rect.outset(4.0)) {
+            return;
+        }
+        let glyphs = self.text.glyphs_rich(s, Some(spans), style, rect, wrap_width, self.scale, ellipsis);
+        let color_of = |g: &crate::text::GlyphInst| {
+            spans
+                .get(g.span as usize)
+                .map(|sp| sp.color.unwrap_or(if sp.link.is_some() { link_color } else { color }))
+                .unwrap_or(color)
+        };
+        // Group consecutive glyphs by color.
+        let mut run: Vec<crate::text::GlyphInst> = Vec::new();
+        let mut cur: Option<Color> = None;
+        for g in glyphs {
+            let c = color_of(&g);
+            if cur.is_some_and(|x| x != c) {
+                self.scene.cmds.push(Cmd::Glyphs { glyphs: std::mem::take(&mut run), color: cur.unwrap_or(color) });
+            }
+            cur = Some(c);
+            run.push(g);
+        }
+        if !run.is_empty() {
+            self.scene.cmds.push(Cmd::Glyphs { glyphs: run, color: cur.unwrap_or(color) });
+        }
+    }
+
     /// Measure text in logical pixels.
     pub fn measure_text(&mut self, s: &str, style: &TextStyle, max_width: Option<f32>) -> Size {
         self.text.measure(s, style, max_width, self.scale)

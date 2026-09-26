@@ -152,6 +152,7 @@ pub(crate) struct Handlers<M> {
     pub resize: Option<Cb<Vec<f32>, M>>,
     pub drop_target: Option<Cb<DropEvent, M>>,
     pub scroll: Option<Cb<ScrollInfo, M>>,
+    pub link: Option<Cb<String, M>>,
 }
 
 impl<M> Default for Handlers<M> {
@@ -170,6 +171,7 @@ impl<M> Default for Handlers<M> {
             resize: None,
             drop_target: None,
             scroll: None,
+            link: None,
         }
     }
 }
@@ -199,6 +201,7 @@ impl<M: 'static> Handlers<M> {
             resize: wrap(self.resize, &f),
             drop_target: wrap(self.drop_target, &f),
             scroll: wrap(self.scroll, &f),
+            link: wrap(self.link, &f),
         }
     }
 }
@@ -209,6 +212,9 @@ pub(crate) struct TextSpec {
     pub text: String,
     pub wrap: bool,
     pub ellipsis: bool,
+    /// Styled runs (rich text); `text` is their concatenation.
+    pub spans: Option<Rc<[crate::text::Span]>>,
+    pub selectable: bool,
 }
 
 /// Single-line text input configuration.
@@ -396,7 +402,34 @@ pub fn spacer<M: 'static>() -> Element<M> {
 
 /// A run of text. Wraps by default; see [`Element::nowrap`] and [`Element::ellipsis`].
 pub fn text<M: 'static>(s: impl Into<String>) -> Element<M> {
-    Element::new(Content::Text(TextSpec { text: s.into(), wrap: true, ellipsis: false }))
+    Element::new(Content::Text(TextSpec {
+        text: s.into(),
+        wrap: true,
+        ellipsis: false,
+        spans: None,
+        selectable: false,
+    }))
+}
+
+/// Styled text made of [`Span`](crate::text::Span)s (bold, italic, mono,
+/// colors, sizes, links). Wraps like [`text`].
+///
+/// ```
+/// # use rust_ui::prelude::*;
+/// # #[derive(Clone)] enum Msg { Open(String) }
+/// let e: Element<Msg> = rich_text([
+///     span("Read the "),
+///     span("docs").link("https://example.com"),
+///     span(" or run "),
+///     span("cargo doc").mono(),
+/// ])
+/// .selectable()
+/// .on_link(Msg::Open);
+/// ```
+pub fn rich_text<M: 'static>(spans: impl IntoIterator<Item = crate::text::Span>) -> Element<M> {
+    let spans: Rc<[crate::text::Span]> = spans.into_iter().collect();
+    let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+    Element::new(Content::Text(TextSpec { text, wrap: true, ellipsis: false, spans: Some(spans), selectable: false }))
 }
 
 /// A vector icon, sized by `font_size` unless given an explicit size.
@@ -1001,6 +1034,21 @@ impl<M: 'static> Element<M> {
         }
         self
     }
+    /// Let the user select this text with the mouse and copy it with Ctrl+C
+    /// (double-click selects a word, triple-click everything).
+    pub fn selectable(mut self) -> Self {
+        if let Content::Text(t) = &mut self.content {
+            t.selectable = true;
+        }
+        self
+    }
+
+    /// Called with the target when a link span in rich text is clicked.
+    pub fn on_link(mut self, f: impl Fn(String) -> M + 'static) -> Self {
+        self.handlers.link = Some(Rc::new(f));
+        self
+    }
+
     /// Keep text on one line and truncate it with "…" when it doesn't fit.
     pub fn ellipsis(mut self) -> Self {
         if let Content::Text(t) = &mut self.content {

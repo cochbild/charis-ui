@@ -82,6 +82,7 @@ pub use paint::Canvas;
 pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
 pub use subscription::Subscriptions;
+pub use text::{span, Span};
 pub use theme::{theme, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;
 #[cfg(feature = "window")]
@@ -94,8 +95,8 @@ pub mod prelude {
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};
     pub use crate::effects::{Proxy, TaskHandle};
     pub use crate::element::{
-        canvas, col, div, hsplit, icon, row, spacer, split, text, vsplit, DragEvent, DragPhase, DropEvent, DropPhase,
-        Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
+        canvas, col, div, hsplit, icon, rich_text, row, spacer, split, text, vsplit, DragEvent, DragPhase, DropEvent,
+        DropPhase, Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
     };
     pub use crate::geometry::{Axis, Point, Rect, Size};
     pub use crate::headless::Headless;
@@ -107,6 +108,7 @@ pub mod prelude {
         TextAlign, Track, Weight,
     };
     pub use crate::subscription::Subscriptions;
+    pub use crate::text::{span, Span};
     pub use crate::theme::{theme, Density, GrayTint, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]

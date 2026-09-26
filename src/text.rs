@@ -14,6 +14,75 @@ pub(crate) struct GlyphInst {
     pub key: cosmic_text::CacheKey,
     pub x: i32,
     pub y: i32,
+    /// Index of the rich-text span this glyph belongs to (`u32::MAX` = none).
+    pub span: u32,
+}
+
+/// A run of styled text inside [`rich_text`](crate::rich_text).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Span {
+    pub text: String,
+    pub weight: Option<u16>,
+    pub italic: bool,
+    pub mono: bool,
+    pub color: Option<Color>,
+    /// Font size in logical px (defaults to the element's size).
+    pub size: Option<f32>,
+    /// A link target; clicks are delivered to `Element::on_link`.
+    pub link: Option<String>,
+}
+
+/// Shorthand for a plain [`Span`].
+pub fn span(text: impl Into<String>) -> Span {
+    Span { text: text.into(), ..Default::default() }
+}
+
+impl Span {
+    pub fn bold(mut self) -> Self {
+        self.weight = Some(700);
+        self
+    }
+    pub fn semibold(mut self) -> Self {
+        self.weight = Some(600);
+        self
+    }
+    pub fn weight(mut self, w: u16) -> Self {
+        self.weight = Some(w);
+        self
+    }
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
+        self
+    }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = Some(c);
+        self
+    }
+    pub fn size(mut self, s: f32) -> Self {
+        self.size = Some(s);
+        self
+    }
+    pub fn link(mut self, url: impl Into<String>) -> Self {
+        self.link = Some(url.into());
+        self
+    }
+}
+
+fn hash_spans(spans: &[Span]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for s in spans {
+        s.text.hash(&mut h);
+        s.weight.hash(&mut h);
+        s.italic.hash(&mut h);
+        s.mono.hash(&mut h);
+        s.size.map(f32::to_bits).hash(&mut h);
+    }
+    h.finish() | 1
 }
 
 /// Resolved text properties used for shaping.
@@ -45,6 +114,7 @@ struct Key {
     ls: u32,
     width: Option<u32>,
     scale: u32,
+    spans: u64,
 }
 
 struct Entry {
@@ -145,7 +215,19 @@ impl TextSystem {
     }
 
     fn entry(&mut self, text: &str, st: &TextStyle, max_width: Option<f32>, scale: f32) -> &mut Entry {
+        self.entry_rich(text, None, st, max_width, scale)
+    }
+
+    fn entry_rich(
+        &mut self,
+        text: &str,
+        spans: Option<&[Span]>,
+        st: &TextStyle,
+        max_width: Option<f32>,
+        scale: f32,
+    ) -> &mut Entry {
         let key = Key {
+            spans: spans.map(hash_spans).unwrap_or(0),
             text: text.to_string(),
             size: st.size.to_bits(),
             weight: st.weight,
@@ -181,19 +263,164 @@ impl TextSystem {
                 // cosmic-text expects letter spacing in em units.
                 attrs = attrs.letter_spacing(st.letter_spacing / st.size.max(1.0));
             }
-            buffer.set_text(text, &attrs, Shaping::Advanced, None);
+            match spans {
+                Some(spans) => {
+                    let mono = Family::Monospace;
+                    let items: Vec<(&str, Attrs)> = spans
+                        .iter()
+                        .enumerate()
+                        .map(|(i, sp)| {
+                            let mut a = attrs.clone().metadata(i);
+                            if sp.mono {
+                                a = a.family(mono);
+                            }
+                            if let Some(w) = sp.weight {
+                                a = a.weight(fontdb::Weight(w));
+                            }
+                            if sp.italic {
+                                a = a.style(fontdb::Style::Italic);
+                            }
+                            if let Some(sz) = sp.size {
+                                a = a.metrics(Metrics::new(sz * scale, sz * st.line_height * scale));
+                            }
+                            (sp.text.as_str(), a)
+                        })
+                        .collect();
+                    buffer.set_rich_text(items, &attrs, Shaping::Advanced, None);
+                }
+                None => buffer.set_text(text, &attrs, Shaping::Advanced, None),
+            }
             buffer.shape_until_scroll(fs, false);
             let mut w: f32 = 0.0;
+            let mut h: f32 = 0.0;
             let mut lines = 0;
             for run in buffer.layout_runs() {
                 w = w.max(run.line_w);
+                h += run.line_height;
                 lines += 1;
             }
-            let h = lines.max(1) as f32 * metrics.line_height;
+            if lines == 0 {
+                h = metrics.line_height;
+            }
             Entry { buffer, last_used: frame, size: (w / scale, h / scale) }
         });
         e.last_used = frame;
         e
+    }
+
+    /// Measure rich text in logical pixels.
+    pub(crate) fn measure_rich(
+        &mut self,
+        text: &str,
+        spans: Option<&[Span]>,
+        st: &TextStyle,
+        max_width: Option<f32>,
+        scale: f32,
+    ) -> Size {
+        let (w, h) = self.entry_rich(text, spans, st, max_width, scale).size;
+        Size::new(w, h)
+    }
+
+    /// Byte offset in `text` closest to the point (logical px, relative to the
+    /// text's top-left).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hit_byte(
+        &mut self,
+        text: &str,
+        spans: Option<&[Span]>,
+        st: &TextStyle,
+        wrap: Option<f32>,
+        scale: f32,
+        x: f32,
+        y: f32,
+    ) -> usize {
+        let starts = line_starts(text);
+        let e = self.entry_rich(text, spans, st, wrap, scale);
+        let total_h = e.size.1 * scale;
+        let yy = (y * scale).clamp(0.0, (total_h - 1.0).max(0.0));
+        match e.buffer.hit(x * scale, yy) {
+            Some(c) => (starts.get(c.line).copied().unwrap_or(0) + c.index).min(text.len()),
+            None => text.len(),
+        }
+    }
+
+    /// Caret rectangle (logical px, relative to the text origin) for a byte offset.
+    pub(crate) fn caret_rect(
+        &mut self,
+        text: &str,
+        st: &TextStyle,
+        wrap: Option<f32>,
+        scale: f32,
+        byte: usize,
+    ) -> Rect {
+        let starts = line_starts(text);
+        let line = starts.iter().rposition(|&s| s <= byte).unwrap_or(0);
+        let idx = byte - starts[line];
+        let e = self.entry(text, st, wrap, scale);
+        let mut best: Option<Rect> = None;
+        for run in e.buffer.layout_runs() {
+            if run.line_i != line {
+                continue;
+            }
+            let r = |x: f32| Rect::new(x / scale, run.line_top / scale, 0.0, run.line_height / scale);
+            if run.glyphs.is_empty() {
+                best = Some(r(0.0));
+                break;
+            }
+            let first = run.glyphs.first().map(|g| g.start).unwrap_or(0);
+            let last = run.glyphs.last().map(|g| g.end).unwrap_or(0);
+            if idx < first {
+                continue;
+            }
+            if let Some(g) = run.glyphs.iter().find(|g| g.start <= idx && idx < g.end) {
+                let x = if g.start == idx || g.level.is_rtl() { g.x } else { g.x + g.w };
+                return r(x);
+            }
+            if idx >= last {
+                // End of this visual line (may continue on the next run).
+                best = Some(r(run.line_w));
+            }
+        }
+        best.unwrap_or_else(|| Rect::new(0.0, 0.0, 0.0, st.size * st.line_height))
+    }
+
+    /// Rectangles covering bytes `a..b` (logical px, relative to the text origin).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn selection_rects(
+        &mut self,
+        text: &str,
+        spans: Option<&[Span]>,
+        st: &TextStyle,
+        wrap: Option<f32>,
+        scale: f32,
+        a: usize,
+        b: usize,
+    ) -> Vec<Rect> {
+        let starts = line_starts(text);
+        let e = self.entry_rich(text, spans, st, wrap, scale);
+        let mut out = Vec::new();
+        for run in e.buffer.layout_runs() {
+            let base = starts.get(run.line_i).copied().unwrap_or(0);
+            let (mut x0, mut x1) = (f32::MAX, f32::MIN);
+            for g in run.glyphs {
+                let (gs, ge) = (base + g.start, base + g.end);
+                if ge > a && gs < b {
+                    x0 = x0.min(g.x);
+                    x1 = x1.max(g.x + g.w);
+                }
+            }
+            // Selected line breaks show as a small tail, like browsers.
+            let line_end = base + run.glyphs.last().map(|g| g.end).unwrap_or(0);
+            let nl_selected = a <= line_end && b > line_end;
+            if x1 < x0 && nl_selected && run.glyphs.is_empty() {
+                x0 = 0.0;
+                x1 = st.size * 0.3 * scale;
+            }
+            if x1 > x0 {
+                out.push(Rect::new(x0 / scale, run.line_top / scale, (x1 - x0) / scale, run.line_height / scale));
+            }
+        }
+        out
     }
 
     /// Measure text in logical pixels. `max_width` enables wrapping.
@@ -233,6 +460,21 @@ impl TextSystem {
         scale: f32,
         ellipsis: bool,
     ) -> Vec<GlyphInst> {
+        self.glyphs_rich(text, None, st, rect, wrap_width, scale, ellipsis)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn glyphs_rich(
+        &mut self,
+        text: &str,
+        spans: Option<&[Span]>,
+        st: &TextStyle,
+        rect: Rect,
+        wrap_width: Option<f32>,
+        scale: f32,
+        ellipsis: bool,
+    ) -> Vec<GlyphInst> {
+        let rich = spans.is_some();
         let mut out = Vec::new();
         if text.is_empty() {
             return out;
@@ -243,7 +485,7 @@ impl TextSystem {
         let oy = (rect.y * scale).round();
         let mut ell_at = None;
         {
-            let e = self.entry(text, st, wrap_width, scale);
+            let e = self.entry_rich(text, spans, st, wrap_width, scale);
             let truncate = ellipsis && e.size.0 * scale > avail + 0.5;
             for run in e.buffer.layout_runs() {
                 for g in run.glyphs {
@@ -253,7 +495,8 @@ impl TextSystem {
                     }
                     // Snap each baseline to the pixel grid: fractional baselines blur text.
                     let pg = g.physical((ox, (oy + run.line_y).round()), 1.0);
-                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y });
+                    let span = if rich { g.metadata as u32 } else { u32::MAX };
+                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y, span });
                 }
                 if truncate {
                     if ell_at.is_none() {
@@ -268,7 +511,7 @@ impl TextSystem {
             for run in e.buffer.layout_runs() {
                 for g in run.glyphs {
                     let pg = g.physical((ox + x, (oy + run.line_y).round()), 1.0);
-                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y });
+                    out.push(GlyphInst { key: pg.cache_key, x: pg.x, y: pg.y, span: u32::MAX });
                 }
             }
         }
@@ -370,6 +613,17 @@ impl TextSystem {
             }
         }
     }
+}
+
+/// Byte offsets where each `\n`-separated line starts.
+pub(crate) fn line_starts(text: &str) -> Vec<usize> {
+    let mut v = vec![0];
+    for (i, c) in text.char_indices() {
+        if c == '\n' {
+            v.push(i + 1);
+        }
+    }
+    v
 }
 
 const IDENTITY_LUT: [u8; 256] = {

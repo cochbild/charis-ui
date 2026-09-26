@@ -388,6 +388,10 @@ enum Drag {
     TextSelect {
         node: u64,
     },
+    /// Selecting read-only text.
+    ReadSelect {
+        node: u64,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +478,8 @@ pub struct Runtime<A: App> {
     inputs: HashMap<u64, InputState>,
     tooltip: Option<(u64, f64, Point)>,
     splitter_hover: Option<(u64, f64)>,
+    /// Read-only text selection: (node id, anchor byte, cursor byte).
+    text_sel: Option<(u64, usize, usize)>,
     drop_target: Option<u64>,
     queue: Vec<A::Msg>,
     mailbox: crate::effects::Mailbox<A::Msg>,
@@ -528,6 +534,7 @@ impl<A: App> Runtime<A> {
             inputs: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
+            text_sel: None,
             drop_target: None,
             queue: Vec::new(),
             mailbox: crate::effects::Mailbox::new(),
@@ -1323,6 +1330,7 @@ impl<A: App> Runtime<A> {
             inputs: &self.inputs,
             drag: &self.drag,
             splitter_hover: self.splitter_hover,
+            text_sel: self.text_sel,
             theme: &th,
             window_focused: self.window_focused,
         };
@@ -1401,10 +1409,18 @@ impl<A: App> Runtime<A> {
                     cursor = c;
                     break;
                 }
-                if matches!(n.content, NodeContent::Input(_)) {
+                if matches!(n.content, NodeContent::Input(_))
+                    || matches!(&n.content, NodeContent::Text(t) if t.selectable)
+                {
                     cursor = Cursor::Text;
                     break;
                 }
+            }
+        }
+        if let Some(i) = hit {
+            let id = self.frame.nodes[i].id;
+            if self.link_at(id, p).is_some() {
+                cursor = Cursor::Pointer;
             }
         }
         if let Some(edge) = self.resize_edge(p) {
@@ -1669,7 +1685,62 @@ impl<A: App> Runtime<A> {
                 self.drag = Drag::TextSelect { node };
                 self.dirty = true;
             }
+            Drag::ReadSelect { node } => {
+                if let (Some(b), Some(sel)) = (self.read_hit(node, p), self.text_sel.as_mut()) {
+                    sel.2 = b;
+                }
+                self.drag = Drag::ReadSelect { node };
+                self.dirty = true;
+            }
         }
+    }
+
+    /// Byte offset under `p` in a text node.
+    fn read_hit(&mut self, node: u64, p: Point) -> Option<usize> {
+        let &i = self.frame.by_id.get(&node)?;
+        let n = &self.frame.nodes[i];
+        let NodeContent::Text(spec) = &n.content else { return None };
+        let (tr, wrap) = text_frame(&mut self.text, n, spec, self.scale);
+        Some(self.text.hit_byte(&spec.text, spec.spans.as_deref(), &n.text, wrap, self.scale, p.x - tr.x, p.y - tr.y))
+    }
+
+    /// Link target of the rich-text span at `p`, if any.
+    fn link_at(&mut self, node: u64, p: Point) -> Option<String> {
+        let &i = self.frame.by_id.get(&node)?;
+        let has_links = matches!(&self.frame.nodes[i].content, NodeContent::Text(t) if t.spans.as_ref().is_some_and(|s| s.iter().any(|s| s.link.is_some())));
+        if !has_links {
+            return None;
+        }
+        let b = self.read_hit(node, p)?;
+        let NodeContent::Text(spec) = &self.frame.nodes[i].content else { return None };
+        let mut at = 0;
+        for sp in spec.spans.as_deref().unwrap_or(&[]) {
+            let end = at + sp.text.len();
+            if b >= at && b < end {
+                return sp.link.clone();
+            }
+            at = end;
+        }
+        None
+    }
+
+    fn emit_link(&mut self, node: u64, url: String) {
+        if let Some(h) = self
+            .find_up(node, |n| n.handlers.link.is_some())
+            .and_then(|d| self.node_by_id(d))
+            .and_then(|n| n.handlers.link.clone())
+        {
+            self.queue.push(h(url));
+        }
+    }
+
+    /// Currently selected read-only text, if any.
+    pub fn selected_text(&self) -> Option<String> {
+        let (id, a, b) = self.text_sel?;
+        let n = self.node_by_id(id)?;
+        let NodeContent::Text(spec) = &n.content else { return None };
+        let (a, b) = (a.min(b), a.max(b));
+        (a != b).then(|| spec.text.get(a..b).map(str::to_string)).flatten()
     }
 
     /// Track the drop target under the pointer during a drag and notify it.
@@ -1755,6 +1826,28 @@ impl<A: App> Runtime<A> {
         self.pressed = chain.iter().map(|&i| self.frame.nodes[i].id).collect();
         self.dirty = true;
 
+        // Selectable read-only text.
+        if let NodeContent::Text(spec) = &self.frame.nodes[hit].content {
+            if spec.selectable {
+                let text = spec.text.clone();
+                if let Some(b) = self.read_hit(hit_id, p) {
+                    self.text_sel = Some(match clicks {
+                        1 => (hit_id, b, b),
+                        2 => {
+                            let (a, e) = edit::word_at(&text, b);
+                            (hit_id, a, e)
+                        }
+                        _ => (hit_id, 0, text.len()),
+                    });
+                    if clicks == 1 {
+                        self.drag = Drag::ReadSelect { node: hit_id };
+                    }
+                    return;
+                }
+            }
+        }
+        self.text_sel = None;
+
         for &i in &chain {
             let n = &self.frame.nodes[i];
             match &n.behavior {
@@ -1839,7 +1932,21 @@ impl<A: App> Runtime<A> {
         let pressed = std::mem::take(&mut self.pressed);
         self.dirty = true;
         match drag {
+            Drag::ReadSelect { node } => {
+                // A click without a drag on a link follows it.
+                if self.text_sel.is_none_or(|s| s.1 == s.2) {
+                    if let Some(url) = self.link_at(node, p) {
+                        self.text_sel = None;
+                        self.emit_link(node, url);
+                    }
+                }
+            }
             Drag::Press { node, start, dragging } => {
+                if !dragging {
+                    if let Some(url) = self.link_at(node, p) {
+                        self.emit_link(node, url);
+                    }
+                }
                 if dragging {
                     self.update_drop_target(p, true);
                     if let Some(d) = self.find_up(node, |n| n.handlers.drag.is_some()) {
@@ -2009,6 +2116,24 @@ impl<A: App> Runtime<A> {
                     if self.input_key(i, &k) {
                         return;
                     }
+                }
+            }
+        }
+        if k.mods.command() && k.key == Key::Char('c') {
+            if let Some(t) = self.selected_text() {
+                self.clipboard = t.clone();
+                self.requests.push(WindowRequest::SetClipboard(t));
+                return;
+            }
+        }
+        if k.mods.command() && k.key == Key::Char('a') {
+            if let Some((id, _, _)) = self.text_sel {
+                if let Some(len) = self.node_by_id(id).and_then(|n| match &n.content {
+                    NodeContent::Text(t) => Some(t.text.len()),
+                    _ => None,
+                }) {
+                    self.text_sel = Some((id, 0, len));
+                    return;
                 }
             }
         }
@@ -2375,6 +2500,23 @@ fn scrollbar_rects<M>(n: &Node<M>) -> Bars {
     out
 }
 
+/// Where a text node's glyphs start and its wrap width (mirrors painting).
+fn text_frame<M>(text: &mut TextSystem, n: &Node<M>, spec: &TextSpec, scale: f32) -> (Rect, Option<f32>) {
+    let cr = content_rect(n);
+    let wrap = if spec.wrap { Some(cr.w.max(1.0)) } else { None };
+    let mut tr = cr;
+    if !spec.wrap {
+        let m = text.measure_rich(&spec.text, spec.spans.as_deref(), &n.text, None, scale);
+        match n.style.text_align.unwrap_or_default() {
+            TextAlign::Left => {}
+            TextAlign::Center => tr.x += ((cr.w - m.w) / 2.0).max(0.0),
+            TextAlign::Right => tr.x += (cr.w - m.w).max(0.0),
+        }
+        tr.y += ((cr.h - m.h) / 2.0).max(0.0);
+    }
+    (tr, wrap)
+}
+
 fn measure_node<M>(
     text: &mut TextSystem,
     node: &Node<M>,
@@ -2394,7 +2536,7 @@ fn measure_node<M>(
             } else {
                 None
             };
-            let s = text.measure(&spec.text, &node.text, max_w, scale);
+            let s = text.measure_rich(&spec.text, spec.spans.as_deref(), &node.text, max_w, scale);
             let mut w = s.w;
             if spec.ellipsis {
                 if let tf::AvailableSpace::MinContent = avail.width {
@@ -2571,6 +2713,7 @@ struct PaintCtx<'a, M> {
     inputs: &'a HashMap<u64, InputState>,
     drag: &'a Drag,
     splitter_hover: Option<(u64, f64)>,
+    text_sel: Option<(u64, usize, usize)>,
     theme: &'a Theme,
     window_focused: bool,
 }
@@ -2655,18 +2798,19 @@ fn paint_node<M>(
     let cr = content_rect(n);
     match &n.content {
         NodeContent::Text(spec) => {
-            let wrap = if spec.wrap { Some(cr.w.max(1.0)) } else { None };
-            let mut tr = cr;
-            if !spec.wrap {
-                let m = c.text.measure(&spec.text, &n.text, None, c.scale);
-                match s.text_align.unwrap_or_default() {
-                    TextAlign::Left => {}
-                    TextAlign::Center => tr.x += ((cr.w - m.w) / 2.0).max(0.0),
-                    TextAlign::Right => tr.x += (cr.w - m.w).max(0.0),
+            let scale = c.scale;
+            let (tr, wrap) = text_frame(c.text, n, spec, scale);
+            if let Some((id, a, b)) = ctx.text_sel {
+                if id == n.id && a != b {
+                    let (a, b) = (a.min(b), a.max(b));
+                    let sel = ctx.theme.colors.selection;
+                    for r in c.text.selection_rects(&spec.text, spec.spans.as_deref(), &n.text, wrap, scale, a, b) {
+                        c.fill_rect(r.translate(tr.x, tr.y), sel);
+                    }
                 }
-                tr.y += ((cr.h - m.h) / 2.0).max(0.0);
             }
-            c.text_block(&spec.text, &n.text, tr, wrap, n.color, spec.ellipsis);
+            let link = ctx.theme.colors.accent;
+            c.rich_text_block(&spec.text, spec.spans.as_deref(), &n.text, tr, wrap, n.color, link, spec.ellipsis);
         }
         NodeContent::Icon(icon) => {
             let stroke = 2.0 * (n.text.weight as f32 / 400.0).clamp(0.6, 1.6) * 0.9;

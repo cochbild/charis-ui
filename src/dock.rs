@@ -599,6 +599,15 @@ impl<T> Dock<T> {
         });
     }
 
+    /// The element id of group `n`'s active tab (in layout order, from 0),
+    /// for keyboard commands like "Focus Panel 1": pass it to
+    /// [`Cx::focus`](crate::Cx::focus). `id` is the one given to
+    /// [`Dock::view`].
+    pub fn focus_id(&self, id: &str, n: usize) -> Option<String> {
+        let g = *self.groups().get(n)?;
+        (!g.tabs.is_empty()).then(|| tab_id(id, g.id, g.active))
+    }
+
     /// Is the dock empty (no tabs anywhere)?
     pub fn is_empty(&self) -> bool {
         self.groups().iter().all(|g| g.tabs.is_empty())
@@ -952,6 +961,12 @@ impl<T> DockSpace<T> {
         self.floating.retain(|f| !f.dock.is_empty());
     }
 
+    /// The element id of the main dock's group `n`'s active tab (in layout
+    /// order, from 0), for [`Cx::focus`](crate::Cx::focus).
+    pub fn focus_id(&self, n: usize) -> Option<String> {
+        self.main.focus_id("dockspace-0", n)
+    }
+
     /// Open a tab: in the main dock's first group.
     pub fn open(&mut self, tab: T) {
         self.main.open(tab);
@@ -1160,6 +1175,10 @@ fn compass_button<M: 'static>(zone: DropZone, on: bool) -> Element<M> {
         .child(div().w(20.0).h(15.0).rounded(2.0).border(1.5, c.text_muted).clip().child(fill))
 }
 
+fn tab_id(dock: &str, g: GroupId, i: usize) -> String {
+    format!("{dock}/tab/{g}/{i}")
+}
+
 /// Compass button size and gap.
 const COMPASS_B: f32 = 34.0;
 const COMPASS_GAP: f32 = 4.0;
@@ -1259,7 +1278,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
             let dragged = drag.is_some_and(|d| d.from == (gid, i));
             let m = self.map.clone();
             let mut tab = row()
-                .key(("dock-tab", gid, i))
+                .id(&tab_id(self.id, gid, i))
                 .items_center()
                 .gap(7.0)
                 .pl(12.0)

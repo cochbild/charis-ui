@@ -194,6 +194,7 @@ pub(crate) struct Handlers<M> {
     pub hover: Option<Cb<bool, M>>,
     pub drag: Option<Cb<DragEvent, M>>,
     pub key: Option<KeyCb<M>>,
+    pub key_capture: Option<KeyCb<M>>,
     pub value: Option<Cb<f32, M>>,
     pub input: Option<Cb<String, M>>,
     pub submit: Option<M>,
@@ -214,6 +215,7 @@ impl<M: Clone> Clone for Handlers<M> {
             hover: self.hover.clone(),
             drag: self.drag.clone(),
             key: self.key.clone(),
+            key_capture: self.key_capture.clone(),
             value: self.value.clone(),
             input: self.input.clone(),
             submit: self.submit.clone(),
@@ -236,6 +238,7 @@ impl<M> Default for Handlers<M> {
             hover: None,
             drag: None,
             key: None,
+            key_capture: None,
             value: None,
             input: None,
             submit: None,
@@ -264,6 +267,10 @@ impl<M: 'static> Handlers<M> {
             hover: wrap(self.hover, &f),
             drag: wrap(self.drag, &f),
             key: self.key.map(|k| {
+                let f = f.clone();
+                Rc::new(move |e: &KeyEvent| k(e).map(|m| f(m))) as KeyCb<N>
+            }),
+            key_capture: self.key_capture.map(|k| {
                 let f = f.clone();
                 Rc::new(move |e: &KeyEvent| k(e).map(|m| f(m))) as KeyCb<N>
             }),
@@ -1343,6 +1350,14 @@ impl<M: 'static> Element<M> {
     /// Key presses while this element (or a descendant) has focus.
     pub fn on_key(mut self, f: impl Fn(&KeyEvent) -> Option<M> + 'static) -> Self {
         self.handlers.key = Some(Rc::new(move |e: &KeyEvent| f(e).map(Out::Msg)));
+        self
+    }
+    /// Like [`on_key`](Self::on_key), but runs first, while the element or
+    /// a descendant has focus: before text inputs, key bindings and menu
+    /// shortcuts. For widgets that own the keyboard, such as a shortcut
+    /// recorder or a list driven from its search field.
+    pub fn on_key_capture(mut self, f: impl Fn(&KeyEvent) -> Option<M> + 'static) -> Self {
+        self.handlers.key_capture = Some(Rc::new(move |e: &KeyEvent| f(e).map(Out::Msg)));
         self
     }
     /// For split containers: called when the user collapses/expands a pane by

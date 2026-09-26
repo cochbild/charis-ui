@@ -62,6 +62,13 @@ pub trait App: 'static {
         None
     }
 
+    /// The app's commands, with their key bindings (apply the user's
+    /// [`Keymap`](crate::commands::Keymap) here). Bindings work in every
+    /// window, chords included; see [`commands`](crate::commands).
+    fn commands(&self) -> crate::commands::Commands<Self::Msg> {
+        crate::commands::Commands::default()
+    }
+
     /// The app's menus (File, Edit, View…), declared from state. Their
     /// shortcuts work in every window; show them in-window with
     /// [`menubar`](crate::widgets::menubar), and natively on macOS (see
@@ -802,6 +809,8 @@ pub struct Runtime<A: App> {
     external_over: bool,
     queue: Vec<Out<A::Msg>>,
     native_menu: bool,
+    /// Strokes of a key chord typed so far.
+    chord: Vec<KeyEvent>,
     dialog_requests: Vec<(u64, DialogRequest)>,
     dialogs_pending: HashMap<u64, DialogCb<A::Msg>>,
     next_dialog: u64,
@@ -879,6 +888,7 @@ impl<A: App> Runtime<A> {
             external_over: false,
             queue: Vec::new(),
             native_menu: false,
+            chord: Vec::new(),
             dialog_requests: Vec::new(),
             dialogs_pending: HashMap::default(),
             next_dialog: 0,
@@ -3158,6 +3168,22 @@ impl<A: App> Runtime<A> {
         if self.preedit.as_ref().is_some_and(|p| Some(p.node) == self.focused) {
             return;
         }
+        // Widgets that own the keyboard (`on_key_capture`) come first.
+        if let Some(i) = self.focused.and_then(|f| self.frame.by_id.get(&f).copied()) {
+            for j in self.chain(i) {
+                if let Some(h) = &self.frame.nodes[j].handlers.key_capture {
+                    if let Some(m) = h(&k) {
+                        self.queue.push(m);
+                        return;
+                    }
+                }
+            }
+        }
+        // The second stroke of a chord goes to the key bindings, wherever
+        // the focus is.
+        if !self.chord.is_empty() && self.key_binding(&k) {
+            return;
+        }
         if let Some(d) = self.open_dropdown() {
             if self.dropdown_key(d, &k) {
                 return;
@@ -3198,13 +3224,9 @@ impl<A: App> Runtime<A> {
                 }
             }
         }
-        // App menu shortcuts (unless a native menu bar handles them).
-        if !self.native_menu {
-            let menus = self.app.menu();
-            if let Some(m) = menus.iter().flat_map(|m| &m.items).find_map(|i| i.shortcut_msg(&k)) {
-                self.queue.push(Out::Msg(m.clone()));
-                return;
-            }
+        // Commands' and menus' key bindings.
+        if self.key_binding(&k) {
+            return;
         }
         if k.key == Key::Tab {
             let list = self.focusables();
@@ -3321,6 +3343,59 @@ impl<A: App> Runtime<A> {
         if let Some(m) = self.app.on_key(&k) {
             self.queue.push(Out::Msg(m));
         }
+    }
+
+    /// Match a keystroke (after the chord's earlier strokes) against the
+    /// commands' bindings and the menu items' shortcuts. True when consumed.
+    fn key_binding(&mut self, k: &KeyEvent) -> bool {
+        use crate::commands::{Command, KeyMatch};
+        if k.key == Key::Other {
+            // Modifier keys alone don't end a chord.
+            return !self.chord.is_empty();
+        }
+        let mut all = self.app.commands();
+        // Menu shortcuts too, except those a native menu bar handles itself
+        // (it takes single keystrokes; chords are ours).
+        let menus = self.app.menu();
+        let mut items = Vec::new();
+        for m in &menus {
+            m.items.iter().for_each(|i| i.bindings(&mut items));
+        }
+        for (b, msg) in items {
+            if !self.native_menu || b.0.len() > 1 {
+                let mut c = Command::new("", "", msg.clone());
+                c.keys.push(b.clone());
+                all.push(c);
+            }
+        }
+        let mut keys = self.chord.clone();
+        keys.push(k.clone());
+        let was_pending = !self.chord.is_empty();
+        let consumed = match all.lookup(&keys) {
+            KeyMatch::Run(m) => {
+                self.chord.clear();
+                self.queue.push(Out::Msg(m));
+                true
+            }
+            KeyMatch::Pending => {
+                self.chord = keys;
+                true
+            }
+            // An unbound second stroke ends the chord and is swallowed.
+            KeyMatch::None => {
+                self.chord.clear();
+                was_pending
+            }
+        };
+        let label = (!self.chord.is_empty()).then(|| {
+            self.chord
+                .iter()
+                .map(|e| crate::menu::Shortcut::new(e.mods, e.key.clone()).label())
+                .collect::<Vec<_>>()
+                .join(" ")
+        });
+        crate::commands::set_pending_chord(label);
+        consumed
     }
 
     /// Returns true if the key was consumed by the input.

@@ -49,6 +49,7 @@
 
 pub mod anim;
 pub mod color;
+pub mod commands;
 pub mod component;
 pub mod cpu;
 pub mod dialog;
@@ -111,6 +112,7 @@ pub use window::{run, WindowOptions};
 pub mod prelude {
     pub use crate::anim::Easing;
     pub use crate::color::{hex, oklch, rgb, rgba, Color, Fill};
+    pub use crate::commands::{Command, Commands, KeyBinding, Keymap};
     pub use crate::component::{component, stateful, Component};
     pub use crate::dialog::FileDialog;
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};

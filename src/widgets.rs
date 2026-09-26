@@ -12,10 +12,10 @@
 use std::rc::Rc;
 
 use crate::color::Color;
+use crate::commands::KeyBinding;
 use crate::element::*;
 use crate::geometry::Point;
 use crate::icons::Icon;
-use crate::menu::Shortcut;
 use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
@@ -836,7 +836,7 @@ pub fn titlebar<M: 'static>(
 pub enum MenuItem<M> {
     Action {
         label: String,
-        shortcut: Option<Shortcut>,
+        shortcut: Option<KeyBinding>,
         icon: Option<Icon>,
         msg: M,
         disabled: bool,
@@ -845,7 +845,7 @@ pub enum MenuItem<M> {
         label: String,
         checked: bool,
         msg: M,
-        shortcut: Option<Shortcut>,
+        shortcut: Option<KeyBinding>,
         disabled: bool,
     },
     /// A nested menu, opened by hovering it.
@@ -868,10 +868,11 @@ impl<M> MenuItem<M> {
     pub fn submenu(label: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
         MenuItem::Submenu { label: label.into(), items, disabled: false }
     }
-    /// A keyboard shortcut such as `"Mod+S"` (see [`Shortcut::parse`]). In
-    /// an app menu ([`App::menu`](crate::App::menu)) it also triggers the item.
+    /// A keyboard shortcut such as `"Mod+S"` or a chord `"Ctrl+K Ctrl+S"`
+    /// (see [`KeyBinding::parse`]). In an app menu ([`App::menu`](crate::App::menu))
+    /// it also triggers the item.
     pub fn shortcut(mut self, s: &str) -> Self {
-        let parsed = Shortcut::parse(s);
+        let parsed = KeyBinding::parse(s);
         debug_assert!(parsed.is_some(), "unrecognized shortcut {s:?}");
         match &mut self {
             MenuItem::Action { shortcut, .. } | MenuItem::Check { shortcut, .. } => *shortcut = parsed,
@@ -912,18 +913,13 @@ impl<M> MenuItem<M> {
         }
     }
 
-    /// The message of the enabled item whose shortcut matches `e`, searching
-    /// submenus too.
-    pub fn shortcut_msg(&self, e: &KeyEvent) -> Option<&M> {
+    /// The enabled items' key bindings and messages, including submenus'.
+    pub(crate) fn bindings<'a>(&'a self, out: &mut Vec<(&'a KeyBinding, &'a M)>) {
         match self {
             MenuItem::Action { shortcut: Some(s), msg, disabled: false, .. }
-            | MenuItem::Check { shortcut: Some(s), msg, disabled: false, .. }
-                if s.matches(e) =>
-            {
-                Some(msg)
-            }
-            MenuItem::Submenu { items, disabled: false, .. } => items.iter().find_map(|i| i.shortcut_msg(e)),
-            _ => None,
+            | MenuItem::Check { shortcut: Some(s), msg, disabled: false, .. } => out.push((s, msg)),
+            MenuItem::Submenu { items, disabled: false, .. } => items.iter().for_each(|i| i.bindings(out)),
+            _ => {}
         }
     }
 }
@@ -1046,7 +1042,7 @@ fn render_panel<M: Clone + 'static>(
         }
     };
     let blank = || div().w(15.0).shrink(0.0);
-    let hint = |s: Option<Shortcut>| s.map(|s| text(s.label()).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
+    let hint = |s: Option<KeyBinding>| s.map(|s| text(s.label()).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
     for (i, it) in items.into_iter().enumerate() {
         let hover_close = |r: Element<M>| match &on_hover {
             // Hovering any other item closes submenus opened at this level.

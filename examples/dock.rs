@@ -3,10 +3,13 @@
 //! own window, and drag it back (or press "Dock back") to re-dock it. Every
 //! splitter is resizable (also with the arrow keys once focused). Right-click
 //! a tab for its commands. Window ▸ Layouts switches between saved layouts.
+//! Every command has a rebindable key: Ctrl+Shift+P (⇧⌘P) searches them,
+//! Ctrl+K Ctrl+S (⌘K ⌘S) edits the bindings, Ctrl+1…6 focus panel 1…6.
 //!
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
 
+use rust_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
 use rust_ui::dock::{DockSpace, DockSpaceMsg};
 use rust_ui::layouts::{LayoutMsg, Layouts};
 use rust_ui::prelude::*;
@@ -106,6 +109,11 @@ struct DockDemo {
     tools: ToolWindows<Tool>,
     layouts: Layouts<Workspace>,
     dark: bool,
+    /// The user's key binding overrides.
+    keymap: Keymap,
+    palette: CommandPalette,
+    keys: KeymapEditor,
+    show_keys: bool,
 }
 
 /// What a saved layout holds: the dock (including floating windows) and
@@ -122,7 +130,16 @@ impl DockDemo {
             .with("Default", Workspace { dock: initial(), tools: tools() })
             .with("Focus", focus())
             .with("Review", review());
-        DockDemo { dock: initial(), tools: tools(), layouts, dark: true }
+        DockDemo {
+            dock: initial(),
+            tools: tools(),
+            layouts,
+            dark: true,
+            keymap: Keymap::new(),
+            palette: CommandPalette::new(),
+            keys: KeymapEditor::new(),
+            show_keys: false,
+        }
     }
 }
 
@@ -135,6 +152,12 @@ enum Msg {
     Open(Panel),
     Tool(ToolMsg<Tool>),
     Layout(LayoutMsg),
+    Palette(PaletteMsg),
+    Keys(KeymapMsg),
+    ShowKeys(bool),
+    /// Focus the active tab of dock group N (from 0).
+    FocusPanel(usize),
+    ToggleTool(Tool),
 }
 
 impl App for DockDemo {
@@ -146,8 +169,21 @@ impl App for DockDemo {
             Theme::light()
         }
     }
-    fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
+    fn update(&mut self, msg: Msg, cx: &mut Cx<Msg>) {
         match msg {
+            Msg::Palette(m) => {
+                if let Some(run) = self.palette.update(m, &self.commands()) {
+                    self.update(run, cx);
+                }
+            }
+            Msg::Keys(m) => self.keys.update(m, &mut self.keymap),
+            Msg::ShowKeys(on) => self.show_keys = on,
+            Msg::FocusPanel(n) => {
+                if let Some(id) = self.dock.focus_id(n) {
+                    cx.focus(&id);
+                }
+            }
+            Msg::ToggleTool(t) => self.tools.update(ToolMsg::Toggle(t)),
             Msg::Dock(m) => self.dock.update(m),
             Msg::Theme => self.dark = !self.dark,
             Msg::ResetLayout => {
@@ -169,24 +205,86 @@ impl App for DockDemo {
     fn on_key(&self, k: &KeyEvent) -> Option<Msg> {
         self.tools.key(k).map(Msg::Tool)
     }
+    /// Every action, with its default keys; the user's keymap applies on top.
+    fn commands(&self) -> Commands<Msg> {
+        let mut list = vec![
+            Command::new("file.newEditor", "New Editor", Msg::Open(Panel::Editor("untitled.rs")))
+                .category("File")
+                .key("Mod+N"),
+            Command::new("view.commandPalette", "Command Palette…", Msg::Palette(PaletteMsg::Open))
+                .category("View")
+                .key("Mod+Shift+P")
+                .key("F1"),
+            Command::new("view.toggleTheme", "Dark Theme", Msg::Theme)
+                .category("View")
+                .key("Mod+Shift+T")
+                .checked(self.dark),
+            Command::new("view.resetLayout", "Reset Layout", Msg::ResetLayout).category("View").key("Mod+Shift+R"),
+            Command::new("view.hideToolWindows", "Hide All Tool Windows", Msg::Tool(ToolMsg::HideAll))
+                .category("View")
+                .key("Mod+Shift+F12"),
+            Command::new("window.dockAllBack", "Dock All Windows Back", Msg::DockAllBack)
+                .category("Window")
+                .key("Mod+Shift+W")
+                .enabled(!self.dock.floating.is_empty()),
+            Command::new("layout.saveAs", "Save Layout As…", Msg::Layout(LayoutMsg::SaveAs)).category("Layout"),
+            Command::new("preferences.keyboardShortcuts", "Keyboard Shortcuts", Msg::ShowKeys(true))
+                .category("Preferences")
+                .key("Mod+K Mod+S"),
+        ];
+        for n in 1..=6 {
+            list.push(
+                Command::new(format!("view.focusPanel{n}"), format!("Focus Panel {n}"), Msg::FocusPanel(n - 1))
+                    .category("View")
+                    .key(&format!("Mod+{n}")),
+            );
+        }
+        // JetBrains-style Alt+number for tool windows.
+        for (t, key) in
+            [(Tool::Bookmarks, "Alt+2"), (Tool::Build, "Alt+4"), (Tool::Todo, "Alt+6"), (Tool::Git, "Alt+9")]
+        {
+            list.push(
+                Command::new(format!("view.tool.{t:?}"), format!("{t:?}"), Msg::ToggleTool(t))
+                    .category("Tool Window")
+                    .key(key)
+                    .checked(self.tools.is_open(&t)),
+            );
+        }
+        for name in self.layouts.names() {
+            list.push(
+                Command::new(format!("layout.apply.{name}"), name, Msg::Layout(LayoutMsg::Apply(name.to_string())))
+                    .category("Layout"),
+            );
+        }
+        Commands::new(list).with_keymap(&self.keymap)
+    }
     fn menu(&self) -> Vec<Menu<Msg>> {
         let open = |p: Panel| MenuItem::action(p.title(), Msg::Open(p)).icon(p.icon());
+        let c = self.commands();
         vec![
             Menu::new(
                 "File",
-                vec![
-                    MenuItem::action("New Editor", Msg::Open(Panel::Editor("untitled.rs")))
-                        .icon(Icon::File)
-                        .shortcut("Mod+N"),
-                    MenuItem::Separator,
-                    MenuItem::action("Close Window", Msg::DockAllBack).shortcut("Mod+Shift+W"),
-                ],
+                vec![c.menu_item("file.newEditor"), MenuItem::Separator, c.menu_item("preferences.keyboardShortcuts")],
             ),
             Menu::new(
                 "View",
                 vec![
-                    MenuItem::check("Dark Theme", self.dark, Msg::Theme).shortcut("Mod+Shift+T"),
-                    MenuItem::action("Reset Layout", Msg::ResetLayout).shortcut("Mod+Shift+R"),
+                    c.menu_item("view.commandPalette"),
+                    MenuItem::Separator,
+                    c.menu_item("view.toggleTheme"),
+                    c.menu_item("view.resetLayout"),
+                    MenuItem::submenu(
+                        "Tool Windows",
+                        ["Bookmarks", "Build", "Todo", "Git"]
+                            .iter()
+                            .map(|t| c.menu_item(&format!("view.tool.{t}")))
+                            .collect(),
+                    ),
+                    c.menu_item("view.hideToolWindows"),
+                    MenuItem::submenu(
+                        "Focus Panel",
+                        (1..=6).map(|n| c.menu_item(&format!("view.focusPanel{n}"))).collect(),
+                    ),
                 ],
             ),
             Menu::new(
@@ -205,9 +303,7 @@ impl App for DockDemo {
                     ),
                     MenuItem::submenu("Layouts", self.layouts.menu_items(&Msg::Layout)),
                     MenuItem::Separator,
-                    MenuItem::action("Dock All Windows Back", Msg::DockAllBack)
-                        .icon(Icon::DockIn)
-                        .disabled(self.dock.floating.is_empty()),
+                    c.menu_item("window.dockAllBack"),
                 ],
             ),
         ]
@@ -240,7 +336,24 @@ impl App for DockDemo {
         );
         let dock = self.dock.view_with_icons(None, Panel::title, |p| Some(p.icon()), panel_content, Msg::Dock);
         let body = self.tools.view(dock, |t| format!("{t:?}"), Tool::icon, tool_content, Msg::Tool);
-        col().size_full().child(bar).child(body).children(self.layouts.dialog(Msg::Layout))
+        let cmds = self.commands();
+        // A chord's first stroke, like VS Code's status bar hint.
+        let status = status_bar().child(text(match pending_chord() {
+            Some(k) => format!("({k}) was pressed. Waiting for the second key of the chord…"),
+            None => format!(
+                "{} commands · {} keyboard shortcuts",
+                cmds.key_label("view.commandPalette").unwrap_or_default(),
+                cmds.key_label("preferences.keyboardShortcuts").unwrap_or_default()
+            ),
+        }));
+        col()
+            .size_full()
+            .child(bar)
+            .child(body)
+            .child(status)
+            .children(self.layouts.dialog(Msg::Layout))
+            .children(self.show_keys.then(|| self.keys_dialog(&cmds)))
+            .children(self.palette.view(&cmds, Msg::Palette))
     }
     fn windows(&self) -> Vec<WindowSpec<Msg>> {
         self.dock.windows(Panel::title, Msg::Dock)
@@ -353,6 +466,42 @@ fn initial() -> DockSpace<Panel> {
             ]),
         ),
     ])))
+}
+
+impl DockDemo {
+    /// The keyboard shortcuts editor, in a large dialog.
+    fn keys_dialog(&self, cmds: &Commands<Msg>) -> Element<Msg> {
+        let th = theme();
+        let c = &th.colors;
+        let close = Msg::ShowKeys(false);
+        let esc = close.clone();
+        div().child(backdrop(close.clone(), true)).child(
+            div().fixed().top(0.0).left(0.0).right(0.0).bottom(0.0).z_index(95).center().pointer_events(false).child(
+                col()
+                    .pointer_events(true)
+                    .aria_modal()
+                    .aria_label("Keyboard Shortcuts")
+                    .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone()))
+                    .w(820.0)
+                    .h(560.0)
+                    .max_w(pct(94.0))
+                    .max_h(pct(90.0))
+                    .p(16.0)
+                    .gap(10.0)
+                    .bg(c.elevated)
+                    .border(1.0, c.border_strong)
+                    .rounded(th.radius_lg + 2.0)
+                    .shadows(th.shadow_popover.clone())
+                    .child(
+                        row()
+                            .items_center()
+                            .child(text("Keyboard Shortcuts").font_size(th.font_size_lg).semibold().grow(1.0))
+                            .child(icon_button(Icon::Close).aria_label("Close").on_click(close)),
+                    )
+                    .child(self.keys.view(cmds, &self.keymap, Msg::Keys)),
+            ),
+        )
+    }
 }
 
 /// Just the editors and the terminal; everything else in auto-hide tool windows.
@@ -468,6 +617,28 @@ fn main() {
             h.rt.send(Msg::Layout(LayoutMsg::SaveAs));
             h.settle();
             h.type_text("Debugging");
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("palette") {
+            h.rt.send(Msg::Palette(PaletteMsg::Open));
+            h.settle();
+            h.type_text("focus");
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("keys") {
+            h.rt.send(Msg::ShowKeys(true));
+            h.rt.send(Msg::Keys(KeymapMsg::Record("view.resetLayout".into())));
+            h.settle();
+            for key in [Key::Char('k'), Key::Char('r')] {
+                let mods = Modifiers { ctrl: true, ..Default::default() };
+                h.event(rust_ui::Event::Key(KeyEvent { key, mods, repeat: false }));
+            }
             h.settle();
             h.save_png(&out).expect("save");
             println!("saved {out}");

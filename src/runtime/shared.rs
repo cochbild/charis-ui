@@ -130,6 +130,10 @@ impl<A: App> App for Shared<A> {
         self.app.borrow().menu()
     }
 
+    fn commands(&self) -> crate::commands::Commands<A::Msg> {
+        self.app.borrow().commands()
+    }
+
     fn windows(&self) -> Vec<super::WindowSpec<A::Msg>> {
         self.app.borrow().windows()
     }

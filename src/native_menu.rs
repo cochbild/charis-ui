@@ -6,9 +6,9 @@ use std::hash::{Hash, Hasher};
 use muda::accelerator::{Accelerator, Code, Modifiers as MMods};
 use muda::{CheckMenuItem, IsMenuItem, MenuId, MenuItem as MItem, PredefinedMenuItem, Submenu};
 
+use crate::commands::KeyBinding;
 use crate::element::Key;
 use crate::fxhash::FxHashMap;
-use crate::menu::Shortcut;
 use crate::widgets::{Menu, MenuItem};
 
 /// A built native menu and the messages of its items.
@@ -131,8 +131,13 @@ fn code(k: &Key) -> Option<Code> {
     })
 }
 
-fn accelerator(s: &Option<Shortcut>) -> Option<Accelerator> {
-    let s = s.as_ref()?;
+/// Native accelerators are single keystrokes: chords are handled by the
+/// runtime (and not shown in the native menu).
+fn accelerator(s: &Option<KeyBinding>) -> Option<Accelerator> {
+    let s = match s.as_ref()?.0.as_slice() {
+        [s] => s,
+        _ => return None,
+    };
     let mut m = MMods::empty();
     for (on, f) in [
         (s.mods.ctrl, MMods::CONTROL),

@@ -172,14 +172,17 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
       style): `ToolWindows` with pinned/auto-hide modes, one per edge, resizable, Escape and
       outside click hide, reduced-motion aware.
-- [ ] Panel commands:
-  - move a panel to the left, right, top or bottom;
-  - hide all panels;
-  - focus panel N;
-  - keyboard resizing of splitters.
+- [x] Panel commands: tab context menu (right-click / Shift+F10) with close others / all, split
+      right / down, move to the dock's left / right / top / bottom edge, new window / dock back,
+      maximize; tool window menu (move to an edge, pinned / auto-hide, hide); hide all auto-hide
+      tool windows (Escape); keyboard resizing of splitters (arrows, Shift, Home / End).
+      Menus are keyboard accessible (autofocus, arrows, Enter, Escape).
+- [ ] Focus panel N (a keymap command).
 - [ ] Split resize priorities (VS Code's Low/Normal/High) and "remember last size" for every pane.
-- [ ] Drop-target styles: edge zones (default) or compass (Visual Studio style).
-- [ ] Workspaces: named, saved layouts ("perspectives").
+- [x] Drop targets: edge zones plus a Visual Studio-style compass in the hovered group and
+      guides at the dock's outer edges (`Dock::compass`, on by default).
+- [x] Workspaces: named, saved layouts (`Layouts<S>`) with menu commands, a Save As dialog, and
+      serde support.
 
 **Exit:** a demo IDE with floating panels across two monitors that restores its exact layout after
 a restart.

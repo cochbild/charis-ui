@@ -1246,12 +1246,15 @@ pub fn modal<M: Clone + 'static>(
     let th = theme();
     let c = th.colors.clone();
     let title = title.into();
+    let esc = on_dismiss.clone();
     div()
         .child(backdrop(on_dismiss.clone(), true).aria_hidden())
         .child(
             div().fixed().top(0.0).left(0.0).right(0.0).bottom(0.0).z_index(95).center().pointer_events(false).child(
                 col()
                     .pointer_events(true)
+                    // Escape closes it (from anywhere inside, e.g. a text field).
+                    .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone()))
                     .aria_modal()
                     .aria_label(title.clone())
                     .w(440.0)

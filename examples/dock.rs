@@ -1,12 +1,14 @@
 //! Drag-and-drop docking: drag any tab onto another panel's center to join it,
 //! or onto an edge to split it. Drag a tab out of the window to open it in its
 //! own window, and drag it back (or press "Dock back") to re-dock it. Every
-//! splitter is resizable.
+//! splitter is resizable (also with the arrow keys once focused). Right-click
+//! a tab for its commands. Window ▸ Layouts switches between saved layouts.
 //!
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
 
 use rust_ui::dock::{DockSpace, DockSpaceMsg};
+use rust_ui::layouts::{LayoutMsg, Layouts};
 use rust_ui::prelude::*;
 use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
 
@@ -102,7 +104,26 @@ fn tool_content(t: &Tool) -> Element<Msg> {
 struct DockDemo {
     dock: DockSpace<Panel>,
     tools: ToolWindows<Tool>,
+    layouts: Layouts<Workspace>,
     dark: bool,
+}
+
+/// What a saved layout holds: the dock (including floating windows) and
+/// the tool windows.
+#[derive(Clone)]
+struct Workspace {
+    dock: DockSpace<Panel>,
+    tools: ToolWindows<Tool>,
+}
+
+impl DockDemo {
+    fn new() -> Self {
+        let layouts = Layouts::new()
+            .with("Default", Workspace { dock: initial(), tools: tools() })
+            .with("Focus", focus())
+            .with("Review", review());
+        DockDemo { dock: initial(), tools: tools(), layouts, dark: true }
+    }
 }
 
 #[derive(Clone)]
@@ -113,6 +134,7 @@ enum Msg {
     DockAllBack,
     Open(Panel),
     Tool(ToolMsg<Tool>),
+    Layout(LayoutMsg),
 }
 
 impl App for DockDemo {
@@ -135,6 +157,13 @@ impl App for DockDemo {
             Msg::DockAllBack => self.dock.dock_all_back(),
             Msg::Open(p) => self.dock.open(p),
             Msg::Tool(m) => self.tools.update(m),
+            Msg::Layout(m) => {
+                let now = Workspace { dock: self.dock.clone(), tools: self.tools.clone() };
+                if let Some(w) = self.layouts.update(m, &now) {
+                    self.dock = w.dock;
+                    self.tools = w.tools;
+                }
+            }
         }
     }
     fn on_key(&self, k: &KeyEvent) -> Option<Msg> {
@@ -174,6 +203,7 @@ impl App for DockDemo {
                             open(Panel::Chat),
                         ],
                     ),
+                    MenuItem::submenu("Layouts", self.layouts.menu_items(&Msg::Layout)),
                     MenuItem::Separator,
                     MenuItem::action("Dock All Windows Back", Msg::DockAllBack)
                         .icon(Icon::DockIn)
@@ -192,16 +222,25 @@ impl App for DockDemo {
                 .items_center()
                 .child(icon(Icon::Grid).font_size(16.0).color(th.colors.accent))
                 .child(menubar(self.menu())),
-            row().pr(6.0).child(
-                icon_button(if self.dark { Icon::Sun } else { Icon::Moon })
-                    .on_click(Msg::Theme)
-                    .tooltip("Toggle theme"),
-            ),
+            row()
+                .pr(6.0)
+                .gap(6.0)
+                .items_center()
+                .children(
+                    self.layouts
+                        .current()
+                        .map(|l| badge(format!("Layout: {l}")).tooltip("Window ▸ Layouts to switch or save")),
+                )
+                .child(
+                    icon_button(if self.dark { Icon::Sun } else { Icon::Moon })
+                        .on_click(Msg::Theme)
+                        .tooltip("Toggle theme"),
+                ),
             window_info().maximized,
         );
         let dock = self.dock.view_with_icons(None, Panel::title, |p| Some(p.icon()), panel_content, Msg::Dock);
         let body = self.tools.view(dock, |t| format!("{t:?}"), Tool::icon, tool_content, Msg::Tool);
-        col().size_full().child(bar).child(body)
+        col().size_full().child(bar).child(body).children(self.layouts.dialog(Msg::Layout))
     }
     fn windows(&self) -> Vec<WindowSpec<Msg>> {
         self.dock.windows(Panel::title, Msg::Dock)
@@ -316,11 +355,43 @@ fn initial() -> DockSpace<Panel> {
     ])))
 }
 
+/// Just the editors and the terminal; everything else in auto-hide tool windows.
+fn focus() -> Workspace {
+    let dock = DockSpace::new(Dock::new(DockNode::vsplit(vec![
+        (4.0, DockNode::tabs(vec![Panel::Editor("main.rs"), Panel::Editor("app.rs"), Panel::Editor("dock.rs")])),
+        (1.0, DockNode::tabs(vec![Panel::Terminal])),
+    ])));
+    let mut tools = tools();
+    for w in &mut tools.windows {
+        w.mode = ToolMode::AutoHide;
+    }
+    Workspace { dock, tools }
+}
+
+/// Code and preview side by side, with Git changes pinned open.
+fn review() -> Workspace {
+    let dock = DockSpace::new(Dock::new(DockNode::hsplit(vec![
+        (1.0, DockNode::tabs(vec![Panel::Explorer])),
+        (2.4, DockNode::tabs(vec![Panel::Editor("dock.rs"), Panel::Editor("main.rs")])),
+        (
+            2.0,
+            DockNode::vsplit(vec![
+                (2.0, DockNode::tabs(vec![Panel::Preview])),
+                (1.0, DockNode::tabs(vec![Panel::Problems])),
+            ]),
+        ),
+    ])));
+    let mut tools = tools();
+    tools.update(ToolMsg::SetMode(Tool::Git, ToolMode::Pinned));
+    tools.update(ToolMsg::Toggle(Tool::Git));
+    Workspace { dock, tools }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     // For scripted UI tests: print where a text is (center, window coordinates).
     if let Some(pos) = args.iter().position(|a| a == "--where") {
-        let mut h = Headless::new(DockDemo { dock: initial(), tools: tools(), dark: true }, 1280.0, 800.0, 1.0);
+        let mut h = Headless::new(DockDemo::new(), 1280.0, 800.0, 1.0);
         h.settle();
         let t = args.get(pos + 1).expect("--where TEXT");
         let c = h.rt.rect_of_text(t).expect("text not found").center();
@@ -329,7 +400,7 @@ fn main() {
     }
     if let Some(pos) = args.iter().position(|a| a == "--screenshot") {
         let out = args.get(pos + 1).cloned().unwrap_or_else(|| "dock.png".into());
-        let mut h = Headless::new(DockDemo { dock: initial(), tools: tools(), dark: true }, 1280.0, 800.0, 1.0);
+        let mut h = Headless::new(DockDemo::new(), 1280.0, 800.0, 1.0);
         h.settle();
         let state = args.iter().position(|a| a == "--state").and_then(|i| args.get(i + 1)).cloned();
         if state.as_deref() == Some("reorder") {
@@ -380,6 +451,28 @@ fn main() {
             println!("saved {out}");
             return;
         }
+        if state.as_deref() == Some("layouts") {
+            // Window ▸ Layouts, with "Review" applied.
+            h.rt.send(Msg::Layout(LayoutMsg::Apply("Review".into())));
+            h.settle();
+            let w = h.rt.rect_of_text("Window").unwrap().center();
+            h.click(w.x, w.y);
+            let sub = h.rt.rect_of_text("Layouts").unwrap().center();
+            h.move_to(sub.x, sub.y);
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("saveas") {
+            h.rt.send(Msg::Layout(LayoutMsg::SaveAs));
+            h.settle();
+            h.type_text("Debugging");
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
         if state.as_deref() == Some("maximize") {
             let t = h.rt.rect_of_text("Terminal").unwrap().center();
             h.click(t.x, t.y);
@@ -408,9 +501,5 @@ fn main() {
         println!("saved {out} and {after}");
         return;
     }
-    rust_ui::run(
-        DockDemo { dock: initial(), tools: tools(), dark: true },
-        WindowOptions::new("Dock demo").size(1280.0, 800.0).frameless(true),
-    )
-    .expect("run");
+    rust_ui::run(DockDemo::new(), WindowOptions::new("Dock demo").size(1280.0, 800.0).frameless(true)).expect("run");
 }

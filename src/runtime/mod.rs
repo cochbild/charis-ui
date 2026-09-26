@@ -1227,8 +1227,16 @@ impl<A: App> Runtime<A> {
         // Elements marked `autofocus` take focus when they first appear.
         let appeared = frame.nodes.iter().find(|n| n.autofocus && !self.frame.by_id.contains_key(&n.id)).map(|n| n.id);
         self.frame = frame;
-        if appeared.is_some() {
-            self.focused = appeared;
+        if let Some(id) = appeared {
+            self.focused = Some(id);
+            // An autofocused text input starts with its text selected, so
+            // typing replaces a suggested value.
+            if let Some(NodeContent::Input(spec)) = self.node_by_id(id).map(|n| &n.content) {
+                let len = spec.value.len();
+                let st = self.inputs.entry(id).or_default();
+                st.sel = Selection { anchor: 0, cursor: len };
+                st.blink_start = self.now;
+            }
         }
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
@@ -3421,10 +3429,9 @@ impl<A: App> Runtime<A> {
                     self.queue.push(m);
                 }
             }
-            Key::Escape => {
-                self.focused = None;
-                return true;
-            }
+            // Not consumed: it bubbles to `on_key` handlers (a dialog
+            // closes), and blurs the input when nothing handles it.
+            Key::Escape => return false,
             Key::Char(c) if cmd => match c.to_ascii_lowercase() {
                 'a' => sel = Selection { anchor: 0, cursor: value.len() },
                 'z' | 'y' => {

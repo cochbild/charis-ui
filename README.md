@@ -17,7 +17,9 @@ Electron / modern web apps while staying pure Rust, with no browser or webview.
   proportional sizing, and animated slide-to-collapse, nested in any direction. Drag a splitter
   past half the minimum to collapse a pane (VS Code style). Double-click a splitter to reset it.
 - **Drag-and-drop docking.** `Dock` lets users drag tabs between panel groups or onto an edge to
-  split it left/right/top/bottom, with live drop previews.
+  split it left/right/top/bottom, with live drop previews and a Visual Studio-style compass.
+  Tabs have context menus, panels can move into their own windows, and named layouts save and
+  restore whole arrangements.
 - **Electron-style chrome.** Frameless windows with custom title bars, window controls,
   edge-resizing, menu bars with dropdowns, context menus, modals and tooltips.
 - **Smooth.** CSS-like `transition`s for hover, press, focus and any style change. Smooth wheel
@@ -245,10 +247,19 @@ What users can do:
 - Drag a tab onto another group's body to join it.
 - Drag a tab onto a group's edge (VS Code-style zones) to split it. The drop preview slides
   between zones.
+- Or aim with the **compass**: while dragging, a cross of targets appears in the middle of the
+  hovered group (join, or split left/right/top/bottom), and guides at the dock's outer edges add a
+  full-height or full-width panel along that edge. Turn it off with `dock.compass = false`.
 - Drag a tab along a tab strip to reorder it, with an insertion marker.
 - Double-click a tab, or use the header button, to maximize a group and restore it.
 - Resize every split. Sizes are proportional and are written back into the layout tree.
 - Close tabs. Empty groups disappear.
+- Right-click a tab (or press Shift+F10 on it) for its commands: Close, Close Others, Close All
+  in Group, Split Right / Down, Move to Edge ▸, Open in New Window / Dock Back, Maximize.
+- Resize splitters from the keyboard: Tab to one, then the arrow keys (Shift for bigger steps),
+  Home and End.
+
+![The compass while dragging a tab](docs/dock-compass.png)
 
 **Tabs in their own windows.** Wrap the dock in a `DockSpace` and return its `windows()` from
 `App::windows`. Users can then:
@@ -280,8 +291,28 @@ dock:
 
 ![Pinned and auto-hide tool windows](docs/tool-windows.png)
 
+Right-click a tool window's stripe button or header (or use its ⋯ button) to move it to another
+edge, switch between pinned and auto-hide, or hide it.
+
+**Named layouts** (`Layouts<S>`) keep snapshots of any arrangement under a name, like JetBrains
+layouts or Visual Studio window layouts. `S` is usually your dock plus tool windows:
+
+```rust
+#[derive(Clone)]
+struct Workspace { dock: DockSpace<Panel>, tools: ToolWindows<Tool> }
+
+let layouts = Layouts::new().with("Default", default()).with("Debug", debug());
+// update:  if let Some(w) = self.layouts.update(m, &self.workspace()) { self.set_workspace(w) }
+// menu:    MenuItem::submenu("Layouts", self.layouts.menu_items(&Msg::Layout))
+// view:    .children(self.layouts.dialog(Msg::Layout))   // "Save Layout As" dialog
+```
+
+The menu lists the layouts (the current one checked), "Save Changes to …", "Save Layout As…" and
+"Delete Layout ▸". Applying a layout replaces the arrangement, floating windows included.
+
 With the `serde` feature, the whole `Dock` or `DockSpace` (tree, weights, tabs, maximized group,
-floating windows, and a `version` field) serializes, so layouts can be persisted per workspace.
+floating windows, and a `version` field), `ToolWindows` and `Layouts` serialize, so layouts can
+be persisted across runs.
 
 Any element can animate its layout changes with `.animate_layout(secs)` (FLIP-style), which is
 useful for indicators, previews and reordering.

@@ -86,6 +86,18 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 - [ ] The pin button in a panel's header switches between pinned and auto-hide; dragging an
       auto-hide panel's inner edge resizes it.
 
+**Panel commands, compass and layouts** (dock example)
+- [ ] Right-click a tab: the menu opens at the pointer; "Split Right" and "Move to Edge ▸ Bottom"
+      do what they say. With a tab focused (click it), Shift+F10 opens the menu, ↑/↓ move, Enter
+      picks, Escape closes.
+- [ ] While dragging a tab over a group, the compass appears in its middle; releasing on its left
+      square splits the group left. The four guides at the dock's edges add full-height or
+      full-width panels.
+- [ ] Tab to a splitter (it lights up), then ←/→ resize it.
+- [ ] Window ▸ Layouts: "Focus" and "Review" switch the arrangement (the title bar badge follows);
+      "Save Layout As…" opens a dialog with the name selected for typing, Enter saves, Escape
+      cancels.
+
 **File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
 - [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
       "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.

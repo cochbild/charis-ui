@@ -103,31 +103,119 @@ impl Default for TextStyle {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
-struct Key {
+/// FxHash-style hasher: much faster than SipHash for short keys, and the
+/// cache verifies entries anyway, so DoS resistance isn't needed.
+#[derive(Default)]
+struct FxHasher(u64);
+
+impl std::hash::Hasher for FxHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut b = [0u8; 8];
+            b[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(b));
+        }
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn write_u32(&mut self, v: u32) {
+        self.write_u64(v as u64);
+    }
+    fn write_u16(&mut self, v: u16) {
+        self.write_u64(v as u64);
+    }
+    fn write_u8(&mut self, v: u8) {
+        self.write_u64(v as u64);
+    }
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(v as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Identity hasher for keys that are already hashes.
+#[derive(Default)]
+struct IdHasher(u64);
+
+impl std::hash::Hasher for IdHasher {
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("IdHasher only hashes u64 keys")
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = v;
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type IdMap<V> = HashMap<u64, V, std::hash::BuildHasherDefault<IdHasher>>;
+
+/// Everything that affects shaping except the wrap width.
+#[derive(PartialEq, Clone)]
+struct ShapeKey {
     text: String,
+    spans: u64,
     size: u32,
     weight: u16,
     family: FontFamily,
     italic: bool,
     lh: u32,
     ls: u32,
-    width: Option<u32>,
     scale: u32,
-    spans: u64,
 }
 
+impl ShapeKey {
+    fn matches(&self, text: &str, spans: u64, st: &TextStyle, scale: f32) -> bool {
+        self.spans == spans
+            && self.size == st.size.to_bits()
+            && self.weight == st.weight
+            && self.italic == st.italic
+            && self.lh == st.line_height.to_bits()
+            && self.ls == st.letter_spacing.to_bits()
+            && self.scale == scale.to_bits()
+            && self.family == st.family
+            && self.text == text
+    }
+}
+
+/// A shaped text: shaped once, re-wrapped (cheaply) for each width asked for.
 struct Entry {
+    key: ShapeKey,
     buffer: Buffer,
-    last_used: u64,
+    /// Width (physical px) the buffer is currently laid out at.
+    width: Option<u32>,
+    /// Logical size at the current width.
     size: (f32, f32),
+    /// Sizes measured at other widths, so layout's repeated min/max/definite
+    /// queries don't re-wrap back and forth.
+    sizes: Vec<(Option<u32>, (f32, f32))>,
+    last_used: u64,
+}
+
+fn buffer_size(buffer: &Buffer, scale: f32) -> (f32, f32) {
+    let mut w: f32 = 0.0;
+    let mut h: f32 = 0.0;
+    let mut lines = 0;
+    for run in buffer.layout_runs() {
+        w = w.max(run.line_w);
+        h += run.line_height;
+        lines += 1;
+    }
+    if lines == 0 {
+        h = buffer.metrics().line_height;
+    }
+    (w / scale, h / scale)
 }
 
 /// Shapes and caches text layouts and rasterizes glyphs.
 pub struct TextSystem {
     fs: FontSystem,
     swash: SwashCache,
-    cache: HashMap<Key, Entry>,
+    cache: IdMap<Entry>,
     frame: u64,
     ui_family: Option<String>,
     /// Apply DirectWrite-style contrast/gamma correction to glyph coverage.
@@ -189,7 +277,7 @@ impl TextSystem {
             }
         }
         let fs = FontSystem::new_with_locale_and_db("en-US".into(), db);
-        Self { fs, swash: SwashCache::new(), cache: HashMap::new(), frame: 0, ui_family, text_correction: true }
+        Self { fs, swash: SwashCache::new(), cache: IdMap::default(), frame: 0, ui_family, text_correction: true }
     }
 
     /// Register an additional font (TTF/OTF bytes). Use its family name with
@@ -218,6 +306,97 @@ impl TextSystem {
         self.entry_rich(text, None, st, max_width, scale)
     }
 
+    fn shape_hash(text: &str, spans: u64, st: &TextStyle, scale: f32) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = FxHasher::default();
+        text.hash(&mut h);
+        spans.hash(&mut h);
+        st.size.to_bits().hash(&mut h);
+        st.weight.hash(&mut h);
+        st.family.hash(&mut h);
+        st.italic.hash(&mut h);
+        st.line_height.to_bits().hash(&mut h);
+        st.letter_spacing.to_bits().hash(&mut h);
+        scale.to_bits().hash(&mut h);
+        h.finish()
+    }
+
+    /// The cached, shaped entry for this text and style (width-independent).
+    fn shaped(&mut self, text: &str, spans: Option<&[Span]>, st: &TextStyle, scale: f32) -> u64 {
+        let sh = spans.map(hash_spans).unwrap_or(0);
+        let hash = Self::shape_hash(text, sh, st, scale);
+        let frame = self.frame;
+        if let Some(e) = self.cache.get_mut(&hash) {
+            if e.key.matches(text, sh, st, scale) {
+                e.last_used = frame;
+                return hash;
+            }
+        }
+        let font_px = (st.size * scale).max(1.0);
+        let metrics = Metrics::new(font_px, (st.size * st.line_height * scale).max(1.0));
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(Wrap::WordOrGlyph);
+        buffer.set_size(None, None);
+        let family = match &st.family {
+            FontFamily::Ui => match &self.ui_family {
+                Some(n) => Family::Name(n.as_str()),
+                None => Family::SansSerif,
+            },
+            FontFamily::Mono => Family::Monospace,
+            FontFamily::Named(n) => Family::Name(n.as_str()),
+        };
+        let mut attrs = Attrs::new().family(family).weight(fontdb::Weight(st.weight));
+        if st.italic {
+            attrs = attrs.style(fontdb::Style::Italic);
+        }
+        if st.letter_spacing != 0.0 {
+            // cosmic-text expects letter spacing in em units.
+            attrs = attrs.letter_spacing(st.letter_spacing / st.size.max(1.0));
+        }
+        match spans {
+            Some(spans) => {
+                let mono = Family::Monospace;
+                let items: Vec<(&str, Attrs)> = spans
+                    .iter()
+                    .enumerate()
+                    .map(|(i, sp)| {
+                        let mut a = attrs.clone().metadata(i);
+                        if sp.mono {
+                            a = a.family(mono);
+                        }
+                        if let Some(w) = sp.weight {
+                            a = a.weight(fontdb::Weight(w));
+                        }
+                        if sp.italic {
+                            a = a.style(fontdb::Style::Italic);
+                        }
+                        if let Some(sz) = sp.size {
+                            a = a.metrics(Metrics::new(sz * scale, sz * st.line_height * scale));
+                        }
+                        (sp.text.as_str(), a)
+                    })
+                    .collect();
+                buffer.set_rich_text(items, &attrs, Shaping::Advanced, None);
+            }
+            None => buffer.set_text(text, &attrs, Shaping::Advanced, None),
+        }
+        buffer.shape_until_scroll(&mut self.fs, false);
+        let size = buffer_size(&buffer, scale);
+        let key = ShapeKey {
+            text: text.to_string(),
+            spans: sh,
+            size: st.size.to_bits(),
+            weight: st.weight,
+            family: st.family.clone(),
+            italic: st.italic,
+            lh: st.line_height.to_bits(),
+            ls: st.letter_spacing.to_bits(),
+            scale: scale.to_bits(),
+        };
+        self.cache.insert(hash, Entry { key, buffer, width: None, size, sizes: vec![(None, size)], last_used: frame });
+        hash
+    }
+
     fn entry_rich(
         &mut self,
         text: &str,
@@ -226,85 +405,23 @@ impl TextSystem {
         max_width: Option<f32>,
         scale: f32,
     ) -> &mut Entry {
-        let key = Key {
-            spans: spans.map(hash_spans).unwrap_or(0),
-            text: text.to_string(),
-            size: st.size.to_bits(),
-            weight: st.weight,
-            family: st.family.clone(),
-            italic: st.italic,
-            lh: st.line_height.to_bits(),
-            ls: st.letter_spacing.to_bits(),
-            width: max_width.map(|w| (w * scale).ceil().max(0.0) as u32),
-            scale: scale.to_bits(),
-        };
-        let frame = self.frame;
+        let hash = self.shaped(text, spans, st, scale);
+        let width = max_width.map(|w| (w * scale).ceil().max(0.0) as u32);
         let fs = &mut self.fs;
-        let ui = self.ui_family.clone();
-        let e = self.cache.entry(key).or_insert_with_key(|k| {
-            let font_px = (st.size * scale).max(1.0);
-            let metrics = Metrics::new(font_px, (st.size * st.line_height * scale).max(1.0));
-            let mut buffer = Buffer::new_empty(metrics);
-            buffer.set_wrap(if k.width.is_some() { Wrap::WordOrGlyph } else { Wrap::None });
-            buffer.set_size(k.width.map(|w| w as f32), None);
-            let family = match &st.family {
-                FontFamily::Ui => match &ui {
-                    Some(n) => Family::Name(n.as_str()),
-                    None => Family::SansSerif,
-                },
-                FontFamily::Mono => Family::Monospace,
-                FontFamily::Named(n) => Family::Name(n.as_str()),
-            };
-            let mut attrs = Attrs::new().family(family).weight(fontdb::Weight(st.weight));
-            if st.italic {
-                attrs = attrs.style(fontdb::Style::Italic);
-            }
-            if st.letter_spacing != 0.0 {
-                // cosmic-text expects letter spacing in em units.
-                attrs = attrs.letter_spacing(st.letter_spacing / st.size.max(1.0));
-            }
-            match spans {
-                Some(spans) => {
-                    let mono = Family::Monospace;
-                    let items: Vec<(&str, Attrs)> = spans
-                        .iter()
-                        .enumerate()
-                        .map(|(i, sp)| {
-                            let mut a = attrs.clone().metadata(i);
-                            if sp.mono {
-                                a = a.family(mono);
-                            }
-                            if let Some(w) = sp.weight {
-                                a = a.weight(fontdb::Weight(w));
-                            }
-                            if sp.italic {
-                                a = a.style(fontdb::Style::Italic);
-                            }
-                            if let Some(sz) = sp.size {
-                                a = a.metrics(Metrics::new(sz * scale, sz * st.line_height * scale));
-                            }
-                            (sp.text.as_str(), a)
-                        })
-                        .collect();
-                    buffer.set_rich_text(items, &attrs, Shaping::Advanced, None);
+        let Some(e) = self.cache.get_mut(&hash) else { unreachable!("entry was just inserted") };
+        if e.width != width {
+            // Re-wrap only: shaping is kept per line by cosmic-text.
+            e.buffer.set_size(width.map(|w| w as f32), None);
+            e.buffer.shape_until_scroll(fs, false);
+            e.width = width;
+            e.size = buffer_size(&e.buffer, scale);
+            if !e.sizes.iter().any(|(w, _)| *w == width) {
+                if e.sizes.len() >= 6 {
+                    e.sizes.remove(1);
                 }
-                None => buffer.set_text(text, &attrs, Shaping::Advanced, None),
+                e.sizes.push((width, e.size));
             }
-            buffer.shape_until_scroll(fs, false);
-            let mut w: f32 = 0.0;
-            let mut h: f32 = 0.0;
-            let mut lines = 0;
-            for run in buffer.layout_runs() {
-                w = w.max(run.line_w);
-                h += run.line_height;
-                lines += 1;
-            }
-            if lines == 0 {
-                h = metrics.line_height;
-            }
-            Entry { buffer, last_used: frame, size: (w / scale, h / scale) }
-        });
-        e.last_used = frame;
+        }
         e
     }
 
@@ -317,6 +434,11 @@ impl TextSystem {
         max_width: Option<f32>,
         scale: f32,
     ) -> Size {
+        let hash = self.shaped(text, spans, st, scale);
+        let width = max_width.map(|w| (w * scale).ceil().max(0.0) as u32);
+        if let Some((_, (w, h))) = self.cache.get(&hash).and_then(|e| e.sizes.iter().find(|(x, _)| *x == width)) {
+            return Size::new(*w, *h);
+        }
         let (w, h) = self.entry_rich(text, spans, st, max_width, scale).size;
         Size::new(w, h)
     }
@@ -425,8 +547,7 @@ impl TextSystem {
 
     /// Measure text in logical pixels. `max_width` enables wrapping.
     pub fn measure(&mut self, text: &str, st: &TextStyle, max_width: Option<f32>, scale: f32) -> Size {
-        let (w, h) = self.entry(text, st, max_width, scale).size;
-        Size::new(w, h)
+        self.measure_rich(text, None, st, max_width, scale)
     }
 
     /// x offsets (logical, relative to text start) of every caret stop, as

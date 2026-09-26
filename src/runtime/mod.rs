@@ -368,6 +368,60 @@ impl ScrollState {
     }
 }
 
+/// `RUI_PROFILE=1` prints per-frame timings (checked once).
+fn profiling() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("RUI_PROFILE").is_some())
+}
+
+/// A node of the persistent layout tree, with what it was last synced from.
+struct LayoutNode {
+    t: tf::NodeId,
+    style: tf::Style,
+    sig: u64,
+    kids: Vec<tf::NodeId>,
+    generation: u64,
+}
+
+/// Hash of everything besides style that affects a node's intrinsic size
+/// (its text and text style); a change marks the node dirty.
+fn content_signature<M>(n: &Node<M>, scale: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let hash_text = |h: &mut std::collections::hash_map::DefaultHasher| {
+        let t = &n.text;
+        (t.size.to_bits(), t.weight, &t.family, t.italic, t.line_height.to_bits(), t.letter_spacing.to_bits()).hash(h);
+        scale.to_bits().hash(h);
+    };
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    match &n.content {
+        NodeContent::Text(spec) => {
+            0u8.hash(&mut h);
+            spec.text.hash(&mut h);
+            (spec.wrap, spec.ellipsis).hash(&mut h);
+            if let Some(spans) = &spec.spans {
+                for sp in spans.iter() {
+                    (&sp.text, sp.weight, sp.italic, sp.mono, sp.size.map(f32::to_bits)).hash(&mut h);
+                }
+            }
+            hash_text(&mut h);
+        }
+        NodeContent::Input(spec) => {
+            1u8.hash(&mut h);
+            if spec.multiline {
+                spec.value.hash(&mut h);
+                spec.rows.hash(&mut h);
+            }
+            hash_text(&mut h);
+        }
+        NodeContent::Icon(_) => {
+            2u8.hash(&mut h);
+            n.text.size.to_bits().hash(&mut h);
+        }
+        _ => return 0,
+    }
+    h.finish()
+}
+
 /// Retained state of a [`virtual_list`]: measured row heights.
 #[derive(Default)]
 struct VirtState {
@@ -639,6 +693,10 @@ pub struct Runtime<A: App> {
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
+    /// Persistent layout tree (see `sync_layout_tree`).
+    ltree: tf::TaffyTree<u64>,
+    lnodes: HashMap<u64, LayoutNode>,
+    layout_gen: u64,
     preedit: Option<Preedit>,
     history: HashMap<u64, History>,
     /// User-resized table column widths, by table id.
@@ -702,6 +760,9 @@ impl<A: App> Runtime<A> {
             pending_values: HashMap::new(),
             dropdowns: HashMap::new(),
             virt: HashMap::new(),
+            ltree: tf::TaffyTree::new(),
+            lnodes: HashMap::new(),
+            layout_gen: 0,
             preedit: None,
             history: HashMap::new(),
             tables: HashMap::new(),
@@ -967,7 +1028,7 @@ impl<A: App> Runtime<A> {
         if !self.queue.is_empty() {
             self.flush();
         }
-        if std::env::var("RUI_PROFILE").is_ok() {
+        if profiling() {
             eprintln!("build {:?} record {:?} nodes {}", t1, t2.elapsed(), self.frame.nodes.len());
         }
         self.scene.get_or_insert_with(|| Scene::new(1, 1, 1.0, Color::TRANSPARENT))
@@ -1018,7 +1079,9 @@ impl<A: App> Runtime<A> {
         self.pending_values.clear();
         self.theme = Rc::new(self.app.theme());
         theme::set_theme(self.theme.clone());
+        let t0 = std::time::Instant::now();
         let view = self.app.view();
+        let t_view = t0.elapsed();
         let th = self.theme.clone();
         let root = div()
             .id("__root")
@@ -1032,9 +1095,16 @@ impl<A: App> Runtime<A> {
             .child(view.grow(1.0).min_h(0.0).min_w(0.0));
         let mut frame = Frame::default();
         let base = TextStyle::default();
+        let t1 = std::time::Instant::now();
         self.flatten(root, None, 0x5eed, 0, &base, Color::WHITE, true, &mut frame);
+        let t_flatten = t1.elapsed();
+        let t2 = std::time::Instant::now();
         self.layout(&mut frame);
+        let t_layout = t2.elapsed();
         frame.order = paint_order(&frame.nodes);
+        if profiling() {
+            eprintln!("view {t_view:?} flatten {t_flatten:?} layout {t_layout:?}");
+        }
         self.frame = frame;
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
@@ -1606,12 +1676,24 @@ impl<A: App> Runtime<A> {
     // --------------------------------------------------------------- layout
 
     fn layout(&mut self, frame: &mut Frame<A::Msg>) {
-        let mut tree: tf::TaffyTree<usize> = tf::TaffyTree::new();
-        // Children have larger indices than parents: build bottom-up.
+        // The taffy tree persists between frames so unchanged subtrees keep
+        // their cached layout; take it out while `self` is borrowed elsewhere.
+        let mut tree = std::mem::replace(&mut self.ltree, tf::TaffyTree::with_capacity(0));
+        self.layout_in(frame, &mut tree);
+        self.ltree = tree;
+    }
+
+    /// Sync the persistent taffy tree with this frame: only styles, content
+    /// and child lists that changed are touched (which marks just those paths
+    /// dirty), and nodes that left the UI are removed.
+    fn sync_layout_tree(&mut self, frame: &mut Frame<A::Msg>, tree: &mut tf::TaffyTree<u64>) {
+        self.layout_gen += 1;
+        let generation = self.layout_gen;
+        let scale = self.scale;
+        // Children have larger indices than parents: sync bottom-up.
         for i in (0..frame.nodes.len()).rev() {
             let n = &frame.nodes[i];
             let mut ts = to_taffy(&n.style);
-            let is_leaf = matches!(n.content, NodeContent::Text(_) | NodeContent::Input(_));
             if let NodeContent::Icon(_) = n.content {
                 if n.style.width == Length::Auto {
                     ts.size.width = tf::Dimension::length(n.text.size);
@@ -1621,20 +1703,63 @@ impl<A: App> Runtime<A> {
                 }
                 ts.flex_shrink = 0.0;
             }
+            let sig = content_signature(n, scale);
             let kids: Vec<tf::NodeId> = n.children.iter().map(|&c| frame.nodes[c].tnode).collect();
-            // Taffy only errors on unknown child ids, which this bottom-up build never produces.
-            let t = if is_leaf { tree.new_leaf_with_context(ts, i) } else { tree.new_with_children(ts, &kids) };
-            let Ok(t) = t else {
-                debug_assert!(false, "taffy node creation failed");
-                return;
+            let t = match self.lnodes.get_mut(&n.id) {
+                Some(l) if l.generation != generation => {
+                    if l.style != ts {
+                        let _ = tree.set_style(l.t, ts.clone());
+                        l.style = ts;
+                    }
+                    if l.sig != sig {
+                        let _ = tree.mark_dirty(l.t);
+                        l.sig = sig;
+                    }
+                    if l.kids != kids {
+                        let _ = tree.set_children(l.t, &kids);
+                        l.kids = kids;
+                    }
+                    l.generation = generation;
+                    l.t
+                }
+                _ => {
+                    // The context is the element id: stable across frames, so
+                    // it never has to be reset (which would dirty the node).
+                    let Ok(t) = tree.new_leaf_with_context(ts.clone(), n.id) else {
+                        debug_assert!(false, "taffy node creation failed");
+                        continue;
+                    };
+                    let _ = tree.set_children(t, &kids);
+                    if let Some(old) = self.lnodes.insert(n.id, LayoutNode { t, style: ts, sig, kids, generation }) {
+                        // Same id twice in one frame: the older node is orphaned.
+                        let _ = tree.remove(old.t);
+                    }
+                    t
+                }
             };
             frame.nodes[i].tnode = t;
         }
+        self.lnodes.retain(|_, l| {
+            if l.generation != generation {
+                let _ = tree.remove(l.t);
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    fn layout_in(&mut self, frame: &mut Frame<A::Msg>, tree: &mut tf::TaffyTree<u64>) {
+        let lt0 = std::time::Instant::now();
+        self.sync_layout_tree(frame, tree);
+        let lt_build = lt0.elapsed();
+        let lt1 = std::time::Instant::now();
         let root = frame.nodes[0].tnode;
         let scale = self.scale;
         {
             let text = &mut self.text;
             let nodes = &frame.nodes;
+            let by_id = &frame.by_id;
             let computed = tree.compute_layout_with_measure(
                 root,
                 tf::Size {
@@ -1642,10 +1767,9 @@ impl<A: App> Runtime<A> {
                     height: tf::AvailableSpace::Definite(self.size.h),
                 },
                 |inputs, _id, ctx, style| {
-                    let Some(&mut i) = ctx else {
+                    let Some(node) = ctx.and_then(|id| by_id.get(id)).map(|&i| &nodes[i]) else {
                         return tf::compute_leaf_layout(inputs, style, |_, _| 0.0, |_, _| tf::Size::ZERO);
                     };
-                    let node = &nodes[i];
                     tf::compute_leaf_layout(
                         inputs,
                         style,
@@ -1660,6 +1784,9 @@ impl<A: App> Runtime<A> {
             }
         }
 
+        if profiling() {
+            eprintln!("  layout sync {lt_build:?} compute {:?}", lt1.elapsed());
+        }
         // Virtual lists: cache measured row heights. Rows were stacked using
         // estimates, so re-stack the ones after a mis-estimated row, grow the
         // list's extent, and shift the scroll offset by any change above the
@@ -3158,6 +3285,23 @@ impl<A: App> Runtime<A> {
             a.set(y.clamp(0.0, st.max.y), self.now, 0.2);
             self.dirty = true;
         }
+    }
+
+    /// Sizes of core structs (for profiling).
+    #[doc(hidden)]
+    pub fn struct_sizes() -> [(&'static str, usize); 5] {
+        [
+            ("Element", std::mem::size_of::<Element<()>>()),
+            ("Style", std::mem::size_of::<Style>()),
+            ("StylePatch", std::mem::size_of::<StylePatch>()),
+            ("Node", std::mem::size_of::<Node<()>>()),
+            ("taffy::Style", std::mem::size_of::<tf::Style>()),
+        ]
+    }
+
+    /// Number of elements in the current frame (for profiling).
+    pub fn node_count(&self) -> usize {
+        self.frame.nodes.len()
     }
 
     /// Scroll a [`virtual_list`] (by `.id`) so row `index` is at the top.

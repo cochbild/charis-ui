@@ -133,7 +133,12 @@ systems; a 100k-line file scrolls at 120fps.
 
 ### M4: Scale and performance
 
-- [ ] Incremental layout: keep the taffy tree between frames and re-lay out only changed nodes.
+- [x] Incremental layout: the taffy tree persists between frames; only changed styles, text and
+  child lists are marked dirty. An unchanged 700-element frame dropped from 12.6ms to 0.7ms
+  (`examples/stress.rs`).
+- [x] Text cache: text is shaped once per string and style and only re-wrapped for other widths;
+  lookups don't allocate.
+- [ ] Memoized subtrees (skip `view`/flatten for unchanged components).
 - [x] Virtualized list (`virtual_list`: variable heights, anchored scrolling, follow-end,
   scroll-to-item).
 - [x] Virtualized table (`table`: sortable headers, resizable columns, selection).

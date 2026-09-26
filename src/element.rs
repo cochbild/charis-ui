@@ -383,10 +383,12 @@ pub(crate) enum Behavior {
 pub struct Element<M> {
     pub(crate) key: Option<u64>,
     pub(crate) style: Style,
-    pub(crate) hover: Option<StylePatch>,
-    pub(crate) active: Option<StylePatch>,
-    pub(crate) focus: Option<StylePatch>,
-    pub(crate) disabled_style: Option<StylePatch>,
+    // Boxed: most elements have none, and elements are moved by value
+    // through every builder call.
+    pub(crate) hover: Option<Box<StylePatch>>,
+    pub(crate) active: Option<Box<StylePatch>>,
+    pub(crate) focus: Option<Box<StylePatch>>,
+    pub(crate) disabled_style: Option<Box<StylePatch>>,
     pub(crate) children: Vec<Element<M>>,
     pub(crate) content: Content<M>,
     pub(crate) handlers: Handlers<M>,
@@ -1047,22 +1049,22 @@ impl<M: 'static> Element<M> {
     }
     /// Style applied while hovered.
     pub fn hover(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
-        self.hover = Some(f(self.hover.take().unwrap_or_default()));
+        self.hover = Some(Box::new(f(self.hover.take().map(|b| *b).unwrap_or_default())));
         self
     }
     /// Style applied while pressed.
     pub fn active(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
-        self.active = Some(f(self.active.take().unwrap_or_default()));
+        self.active = Some(Box::new(f(self.active.take().map(|b| *b).unwrap_or_default())));
         self
     }
     /// Style applied while keyboard-focused.
     pub fn focus_style(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
-        self.focus = Some(f(self.focus.take().unwrap_or_default()));
+        self.focus = Some(Box::new(f(self.focus.take().map(|b| *b).unwrap_or_default())));
         self
     }
     /// Style applied while disabled.
     pub fn disabled_style(mut self, f: impl FnOnce(StylePatch) -> StylePatch) -> Self {
-        self.disabled_style = Some(f(self.disabled_style.take().unwrap_or_default()));
+        self.disabled_style = Some(Box::new(f(self.disabled_style.take().map(|b| *b).unwrap_or_default())));
         self
     }
 

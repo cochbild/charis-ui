@@ -475,9 +475,11 @@ pub struct Element<M> {
     pub(crate) handlers: Handlers<Out<M>>,
     pub(crate) behavior: Behavior,
     pub(crate) focusable: bool,
+    pub(crate) autofocus: bool,
     pub(crate) disabled: bool,
     pub(crate) hit_slop: f32,
-    pub(crate) pointer_events: bool,
+    /// `None` inherits from the parent.
+    pub(crate) pointer_events: Option<bool>,
     pub(crate) tooltip: Option<String>,
     pub(crate) follow_end: bool,
     pub(crate) sem: Option<Box<Semantics>>,
@@ -515,9 +517,10 @@ impl<M> Element<M> {
             handlers: Handlers::default(),
             behavior: Behavior::None,
             focusable: false,
+            autofocus: false,
             disabled: false,
             hit_slop: 0.0,
-            pointer_events: true,
+            pointer_events: None,
             tooltip: None,
             follow_end: false,
             sem: None,
@@ -813,6 +816,7 @@ impl<M: 'static> Element<M> {
             handlers: self.handlers.map(f),
             behavior: self.behavior,
             focusable: self.focusable,
+            autofocus: self.autofocus,
             disabled: self.disabled,
             hit_slop: self.hit_slop,
             pointer_events: self.pointer_events,
@@ -1358,6 +1362,13 @@ impl<M: 'static> Element<M> {
         self.focusable = true;
         self
     }
+    /// Focus this element when it appears (e.g. the first item of a menu
+    /// or the input of a dialog). Implies [`focusable`](Self::focusable).
+    pub fn autofocus(mut self) -> Self {
+        self.focusable = true;
+        self.autofocus = true;
+        self
+    }
     pub fn disabled(mut self, d: bool) -> Self {
         self.disabled = d;
         self
@@ -1367,9 +1378,11 @@ impl<M: 'static> Element<M> {
         self.hit_slop = v;
         self
     }
-    /// `pointer-events: none` when false.
+    /// `pointer-events: none` when false. Like CSS, it's inherited, and a
+    /// descendant can opt back in with `pointer_events(true)` (e.g. a
+    /// dialog inside a click-through overlay).
     pub fn pointer_events(mut self, v: bool) -> Self {
-        self.pointer_events = v;
+        self.pointer_events = Some(v);
         self
     }
     /// Show a tooltip after hovering.

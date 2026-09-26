@@ -1030,6 +1030,21 @@ fn render_panel<M: Clone + 'static>(
             }
         }
     };
+    // Keyboard: the first enabled item takes focus when the menu opens.
+    let first = items.iter().position(|it| match it {
+        MenuItem::Action { disabled, .. } | MenuItem::Check { disabled, .. } | MenuItem::Submenu { disabled, .. } => {
+            !disabled
+        }
+        _ => false,
+    });
+    let item_row = |i: usize, label, lead, trail, msg, disabled| {
+        let r = item_row(label, lead, trail, msg, disabled);
+        match (disabled, first == Some(i)) {
+            (true, _) => r,
+            (false, true) => r.autofocus(),
+            (false, false) => r.focusable(),
+        }
+    };
     let blank = || div().w(15.0).shrink(0.0);
     let hint = |s: Option<Shortcut>| s.map(|s| text(s.label()).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
     for (i, it) in items.into_iter().enumerate() {
@@ -1044,21 +1059,28 @@ fn render_panel<M: Clone + 'static>(
         panel = match it {
             MenuItem::Action { label, shortcut, icon: ic, msg, disabled } => {
                 let lead = ic.map(|i| icon(i).font_size(15.0)).unwrap_or_else(blank);
-                panel.child(hover_close(item_row(label, lead, hint(shortcut), Some(msg), disabled)))
+                panel.child(hover_close(item_row(i, label, lead, hint(shortcut), Some(msg), disabled)))
             }
             MenuItem::Check { label, checked, msg, shortcut, disabled } => {
                 let lead = if checked { icon(Icon::Check).font_size(15.0) } else { blank() };
                 panel.child(
-                    hover_close(item_row(label, lead, hint(shortcut), Some(msg), disabled)).aria_checked(checked),
+                    hover_close(item_row(i, label, lead, hint(shortcut), Some(msg), disabled)).aria_checked(checked),
                 )
             }
             MenuItem::Submenu { label, items, disabled } => {
                 let open = path.get(depth) == Some(&i) && !disabled;
                 let chevron = icon(Icon::ChevronRight).font_size(13.0).opacity(0.6).ml(24.0);
-                let mut r = item_row(label, blank(), Some(chevron), None, disabled).aria_expanded(open);
+                let mut r = item_row(i, label, blank(), Some(chevron), None, disabled).aria_expanded(open);
                 if let Some(h) = &on_hover {
-                    let h = h.clone();
-                    r = r.on_hover(move |entered| h(depth, if entered { Some(i) } else { Some(usize::MAX) }));
+                    let h2 = h.clone();
+                    r = r.on_hover(move |entered| h2(depth, if entered { Some(i) } else { Some(usize::MAX) }));
+                    if !disabled {
+                        // Keyboard: Enter or → opens it.
+                        let h3 = h.clone();
+                        r = r
+                            .on_click(h(depth, Some(i)))
+                            .on_key(move |k| (k.key == Key::Right).then(|| h3(depth, Some(i))));
+                    }
                 }
                 if open {
                     r = r.bg(c.hover).child(
@@ -1107,7 +1129,15 @@ pub fn backdrop<M: 'static>(on_dismiss: M, dim: bool) -> Element<M> {
 
 /// A context menu at a window position, with a dismiss backdrop.
 pub fn context_menu<M: Clone + 'static>(at: Point, items: Vec<MenuItem<M>>, on_dismiss: M) -> Element<M> {
-    div().child(backdrop(on_dismiss, false)).child(menu_panel(items).fixed().left(at.x).top(at.y).z_index(100))
+    let esc = on_dismiss.clone();
+    div().child(backdrop(on_dismiss, false)).child(
+        menu_panel(items)
+            .fixed()
+            .left(at.x)
+            .top(at.y)
+            .z_index(100)
+            .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone())),
+    )
 }
 
 /// A top-level menu for a [`menu_bar`] or an app menu ([`App::menu`](crate::App::menu)).

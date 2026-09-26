@@ -86,6 +86,12 @@ impl Rect {
         let b = self.bottom().min(o.bottom());
         Rect::new(x, y, (r - x).max(0.0), (b - y).max(0.0))
     }
+    /// The smallest rect containing both.
+    pub fn union(&self, o: &Rect) -> Rect {
+        let x = self.x.min(o.x);
+        let y = self.y.min(o.y);
+        Rect::new(x, y, self.right().max(o.right()) - x, self.bottom().max(o.bottom()) - y)
+    }
     pub fn is_empty(&self) -> bool {
         self.w <= 0.0 || self.h <= 0.0
     }

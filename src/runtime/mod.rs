@@ -685,6 +685,7 @@ pub(crate) struct Node<M> {
     pub handlers: Handlers<Out<M>>,
     pub behavior: Behavior,
     pub focusable: bool,
+    pub autofocus: bool,
     pub disabled: bool,
     pub hit_slop: f32,
     pub pointer_events: bool,
@@ -705,8 +706,8 @@ pub(crate) struct Node<M> {
     pub virt_item: Option<(u64, usize)>,
     #[cfg_attr(not(feature = "accessibility"), allow(dead_code))]
     pub sem: Option<Box<crate::semantics::Semantics>>,
-    /// The element's own `pointer_events` (before inheritance).
-    pub own_pointer: bool,
+    /// The element's own `pointer_events` (`None`: inherited).
+    pub own_pointer: Option<bool>,
     /// `text_align` was inherited from the parent.
     pub inherit_align: bool,
     /// Copied unchanged from the previous frame by a `lazy` subtree: layout
@@ -1223,7 +1224,12 @@ impl<A: App> Runtime<A> {
         if profiling() {
             eprintln!("view {t_view:?} flatten {t_flatten:?} layout {t_layout:?}");
         }
+        // Elements marked `autofocus` take focus when they first appear.
+        let appeared = frame.nodes.iter().find(|n| n.autofocus && !self.frame.by_id.contains_key(&n.id)).map(|n| n.id);
         self.frame = frame;
+        if appeared.is_some() {
+            self.focused = appeared;
+        }
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.virt.retain(|_, v| v.seen + 120 >= self.frame_no);
@@ -1261,6 +1267,7 @@ impl<A: App> Runtime<A> {
             handlers,
             behavior,
             focusable,
+            autofocus,
             disabled,
             hit_slop,
             pointer_events,
@@ -1347,7 +1354,7 @@ impl<A: App> Runtime<A> {
                 st.text_align = frame.nodes[p].style.text_align;
             }
         }
-        let pointer = inh_pointer && pointer_events;
+        let pointer = pointer_events.unwrap_or(inh_pointer);
 
         let mut dropdown_spec: Option<DropdownSpec> = None;
         let mut virtual_spec: Option<VirtualSpec<A::Msg>> = None;
@@ -1389,6 +1396,7 @@ impl<A: App> Runtime<A> {
             handlers,
             behavior,
             focusable,
+            autofocus,
             disabled,
             hit_slop,
             pointer_events: pointer,
@@ -1581,6 +1589,9 @@ impl<A: App> Runtime<A> {
                 };
                 if hidden {
                     s = s.hidden(true);
+                } else {
+                    // Arrow keys resize (WAI-ARIA window splitter).
+                    s = s.focusable().aria_label("Resize");
                 }
                 s.behavior = Behavior::Splitter { split: id, index: i - 1, axis };
                 self.flatten(s.key(("splitter", i)), Some(idx), id, child_i, text, color, pointer, frame);
@@ -2474,62 +2485,9 @@ impl<A: App> Runtime<A> {
                 self.dirty = true;
             }
             Drag::Splitter { split, index, start, start_sizes, start_px, mut collapsed_emitted } => {
-                if let (Some(split_node), Some(st)) = (self.frame.by_id.get(&split).copied(), self.splits.get(&split)) {
-                    let axis = st.axis;
-                    let delta = axis.main(p) - axis.main(start);
-                    let sid = self.frame.nodes[split_node].id;
-                    let meta = |i: usize| self.pane_meta.get(&(sid, i)).copied().unwrap_or((0.0, f32::INFINITY, false));
-                    let fixed = st.fixed.clone();
-                    let container = st.container;
-                    let n = fixed.len();
-                    let mut sizes = st.sizes.clone();
-                    let mut collapse_msg = None;
-                    if index + 1 < n {
-                        if fixed[index] || fixed[index + 1] {
-                            let (target, sign) = if fixed[index] { (index, 1.0) } else { (index + 1, -1.0) };
-                            let (min, max, collapsible) = meta(target);
-                            let raw = start_sizes[target] + sign * delta;
-                            let others: f32 = (0..n).filter(|&j| j != target && fixed[j]).map(|j| sizes[j]).sum();
-                            let flex_min: f32 = (0..n).filter(|&j| !fixed[j]).map(|j| meta(j).0).sum();
-                            let room = (container - others - flex_min - (n as f32 - 1.0)).max(min);
-                            if collapsible && raw < min * 0.5 {
-                                if !collapsed_emitted {
-                                    collapsed_emitted = true;
-                                    // Re-expanding restores the size from before the drag.
-                                    sizes[target] = start_sizes[target];
-                                    collapse_msg = Some((target, true));
-                                }
-                            } else {
-                                if collapsed_emitted {
-                                    collapsed_emitted = false;
-                                    collapse_msg = Some((target, false));
-                                }
-                                sizes[target] = raw.clamp(min, max.min(room));
-                            }
-                        } else {
-                            // Two flex panes: move pixels between them, keeping their total weight.
-                            let (pa, pb) = (start_px[index], start_px[index + 1]);
-                            let (mina, maxa, _) = meta(index);
-                            let (minb, maxb, _) = meta(index + 1);
-                            let total = pa + pb;
-                            if total > 0.0 {
-                                let lo = mina.max(total - maxb);
-                                let hi = (total - minb).min(maxa);
-                                let na = if lo <= hi { (pa + delta).clamp(lo, hi) } else { pa };
-                                let w = start_sizes[index] + start_sizes[index + 1];
-                                sizes[index] = w * na / total;
-                                sizes[index + 1] = w - sizes[index];
-                            }
-                        }
-                    }
-                    if let Some(st) = self.splits.get_mut(&split) {
-                        st.sizes = sizes;
-                    }
-                    if let Some(m) = collapse_msg {
-                        if let Some(h) = self.frame.nodes[split_node].handlers.collapse.clone() {
-                            self.queue.push(h(m));
-                        }
-                    }
+                if let Some(st) = self.splits.get(&split) {
+                    let delta = st.axis.main(p) - st.axis.main(start);
+                    self.splitter_move(split, index, &start_sizes, &start_px, delta, &mut collapsed_emitted);
                 }
                 self.drag = Drag::Splitter { split, index, start, start_sizes, start_px, collapsed_emitted };
                 self.dirty = true;
@@ -3109,6 +3067,74 @@ impl<A: App> Runtime<A> {
         Some(map_display_index(spec, best.0))
     }
 
+    /// Move splitter `index` of `split` by `delta` px from `start_sizes`
+    /// (pointer drags and arrow keys).
+    fn splitter_move(
+        &mut self,
+        split: u64,
+        index: usize,
+        start_sizes: &[f32],
+        start_px: &[f32],
+        delta: f32,
+        collapsed_emitted: &mut bool,
+    ) {
+        if let (Some(split_node), Some(st)) = (self.frame.by_id.get(&split).copied(), self.splits.get(&split)) {
+            let sid = self.frame.nodes[split_node].id;
+            let meta = |i: usize| self.pane_meta.get(&(sid, i)).copied().unwrap_or((0.0, f32::INFINITY, false));
+            let fixed = st.fixed.clone();
+            let container = st.container;
+            let n = fixed.len();
+            let mut sizes = st.sizes.clone();
+            let mut collapse_msg = None;
+            if index + 1 < n {
+                if fixed[index] || fixed[index + 1] {
+                    let (target, sign) = if fixed[index] { (index, 1.0) } else { (index + 1, -1.0) };
+                    let (min, max, collapsible) = meta(target);
+                    let raw = start_sizes[target] + sign * delta;
+                    let others: f32 = (0..n).filter(|&j| j != target && fixed[j]).map(|j| sizes[j]).sum();
+                    let flex_min: f32 = (0..n).filter(|&j| !fixed[j]).map(|j| meta(j).0).sum();
+                    let room = (container - others - flex_min - (n as f32 - 1.0)).max(min);
+                    if collapsible && raw < min * 0.5 {
+                        if !*collapsed_emitted {
+                            *collapsed_emitted = true;
+                            // Re-expanding restores the size from before the drag.
+                            sizes[target] = start_sizes[target];
+                            collapse_msg = Some((target, true));
+                        }
+                    } else {
+                        if *collapsed_emitted {
+                            *collapsed_emitted = false;
+                            collapse_msg = Some((target, false));
+                        }
+                        sizes[target] = raw.clamp(min, max.min(room));
+                    }
+                } else {
+                    // Two flex panes: move pixels between them, keeping their total weight.
+                    let (pa, pb) = (start_px[index], start_px[index + 1]);
+                    let (mina, maxa, _) = meta(index);
+                    let (minb, maxb, _) = meta(index + 1);
+                    let total = pa + pb;
+                    if total > 0.0 {
+                        let lo = mina.max(total - maxb);
+                        let hi = (total - minb).min(maxa);
+                        let na = if lo <= hi { (pa + delta).clamp(lo, hi) } else { pa };
+                        let w = start_sizes[index] + start_sizes[index + 1];
+                        sizes[index] = w * na / total;
+                        sizes[index + 1] = w - sizes[index];
+                    }
+                }
+            }
+            if let Some(st) = self.splits.get_mut(&split) {
+                st.sizes = sizes;
+            }
+            if let Some(m) = collapse_msg {
+                if let Some(h) = self.frame.nodes[split_node].handlers.collapse.clone() {
+                    self.queue.push(h(m));
+                }
+            }
+        }
+    }
+
     fn focusables(&self) -> Vec<u64> {
         self.frame
             .nodes
@@ -3198,6 +3224,56 @@ impl<A: App> Runtime<A> {
                     if let Some(m) = n.handlers.click.clone() {
                         self.queue.push(m);
                         return;
+                    }
+                }
+                // Splitter keys: arrows move it (Shift: faster), Home/End to
+                // the limits.
+                if let Behavior::Splitter { split, index, axis } = n.behavior {
+                    let step = if k.mods.shift { 50.0 } else { 10.0 };
+                    let delta = match (axis, &k.key) {
+                        (Axis::Horizontal, Key::Left) | (Axis::Vertical, Key::Up) => Some(-step),
+                        (Axis::Horizontal, Key::Right) | (Axis::Vertical, Key::Down) => Some(step),
+                        (_, Key::Home) => Some(-1e6),
+                        (_, Key::End) => Some(1e6),
+                        _ => None,
+                    };
+                    if let (Some(d), Some(st)) = (delta, self.splits.get(&split)) {
+                        let (sizes, px) = (st.sizes.clone(), st.pane_px.clone());
+                        // A collapsed fixed pane re-expands when moved outward.
+                        let target = if st.fixed.get(index).copied().unwrap_or(false) { index } else { index + 1 };
+                        let mut collapsed = st.collapse.get(target).is_some_and(|a| a.value(self.now) < 0.5);
+                        self.splitter_move(split, index, &sizes, &px, d, &mut collapsed);
+                        if let (Some(&j), Some(st)) = (self.frame.by_id.get(&split), self.splits.get(&split)) {
+                            if let Some(h) = self.frame.nodes[j].handlers.resize.clone() {
+                                self.queue.push(h(st.report()));
+                            }
+                        }
+                        return;
+                    }
+                }
+                // Menus: arrows move between the items of the focused one.
+                if n.sem.as_ref().is_some_and(|s| s.role == Some(crate::semantics::Role::MenuItem))
+                    && matches!(k.key, Key::Up | Key::Down | Key::Home | Key::End)
+                {
+                    if let Some(p) = n.parent {
+                        let items: Vec<u64> = self.frame.nodes[p]
+                            .children
+                            .iter()
+                            .map(|&c| &self.frame.nodes[c])
+                            .filter(|c| c.focusable && !c.disabled)
+                            .map(|c| c.id)
+                            .collect();
+                        if let Some(pos) = items.iter().position(|&x| x == fid) {
+                            let next = match k.key {
+                                Key::Up => (pos + items.len() - 1) % items.len(),
+                                Key::Down => (pos + 1) % items.len(),
+                                Key::Home => 0,
+                                _ => items.len() - 1,
+                            };
+                            self.focused = Some(items[next]);
+                            self.focus_visible = true;
+                            return;
+                        }
                     }
                 }
                 // Slider keys
@@ -3971,6 +4047,32 @@ struct PaintCtx<'a, M> {
     preedit: Option<&'a Preedit>,
 }
 
+/// How far an element's painting can reach outside its box (shadows,
+/// outlines, focus ring, glyph overhang).
+fn paint_margin(s: &Style) -> f32 {
+    let shadow = s.shadows.iter().map(|sh| sh.blur * 1.5 + sh.spread + sh.x.abs().max(sh.y.abs())).fold(0.0, f32::max);
+    let outline = s.outline.map_or(0.0, |o| o.offset + o.width);
+    shadow.max(outline) + 6.0
+}
+
+/// The area painted by node `i` and its descendants (portals excluded:
+/// they paint separately).
+fn subtree_bounds<M>(ctx: &PaintCtx<M>, i: usize) -> Rect {
+    let n = &ctx.nodes[i];
+    let mut b = n.rect.outset(paint_margin(&n.style));
+    if n.style.overflow != Overflow::Visible {
+        return b;
+    }
+    for &ch in &n.children {
+        let c = &ctx.nodes[ch];
+        if c.style.z_index > 0 || c.style.display == Display::None {
+            continue;
+        }
+        b = b.union(&subtree_bounds(ctx, ch));
+    }
+    b
+}
+
 fn paint_node<M>(
     ctx: &PaintCtx<M>,
     i: usize,
@@ -4005,15 +4107,11 @@ fn paint_node<M>(
             collect_portals(ctx, i, deferred);
             return;
         }
-        // Bound the layer to the element (plus room for shadows/outlines) when it clips its children.
-        let bounds = if s.overflow != Overflow::Visible {
-            Some(r.outset(
-                s.shadows.iter().map(|sh| sh.blur * 1.5 + sh.spread + sh.x.abs().max(sh.y.abs())).fold(4.0, f32::max),
-            ))
-        } else {
-            None
-        };
-        c.push_layer(s.opacity, bounds);
+        // Bound the layer to what the element paints: itself (plus room for
+        // shadows and outlines), and its subtree unless it clips it. A
+        // whole-window layer per dimmed icon would make frames crawl.
+        let bounds = if s.overflow != Overflow::Visible { r.outset(paint_margin(s)) } else { subtree_bounds(ctx, i) };
+        c.push_layer(s.opacity, Some(bounds));
     }
     for sh in &s.shadows {
         c.box_shadow(r, s.radius, sh);
@@ -4035,7 +4133,8 @@ fn paint_node<M>(
             }
             _ => 0.0,
         };
-        let alpha = if dragging { 1.0 } else { hover_t };
+        let focused = ctx.focused == Some(n.id) && ctx.focus_visible;
+        let alpha = if dragging || focused { 1.0 } else { hover_t };
         if alpha > 0.0 {
             let hr = match axis {
                 Axis::Horizontal => Rect::new(r.center().x - 1.5, r.y, 3.0, r.h),

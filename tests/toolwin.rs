@@ -122,16 +122,11 @@ fn one_per_side_and_switching_modes() {
     assert_eq!(h.rt.app.tools.open_on(Side::Left), Some(&Tool::Search), "replaced Files");
     let w_auto = center(&h).w;
     // Header pin button: dock it.
-    let search = h.rt.rect_of("tool/Search").unwrap();
-    // Pin sits left of the Hide button at the header's right end.
-    h.click(search.right() - 4.0 - 26.0 - 2.0 - 13.0, search.y + 16.0);
-    h.settle();
+    click_id(&mut h, "tool-pin/Search");
     assert_eq!(h.rt.app.tools.windows[1].mode, ToolMode::Pinned);
     assert!(w_auto - center(&h).w >= 255.0, "now takes space");
     // Hide button.
-    let search = h.rt.rect_of("tool/Search").unwrap();
-    h.click(search.right() - 4.0 - 13.0, search.y + 16.0);
-    h.settle();
+    click_id(&mut h, "tool-hide/Search");
     assert!(!h.rt.app.tools.is_open(&Tool::Search));
 }
 
@@ -156,4 +151,48 @@ fn resizing() {
     h.settle();
     let size = h.rt.app.tools.windows[0].size;
     assert!((size - 320.0).abs() < 3.0, "pinned resized to {size}");
+}
+
+fn right_click(h: &mut Headless<Ide>, p: Point) {
+    h.event(rust_ui::Event::PointerDown(p, rust_ui::MouseButton::Right));
+    h.event(rust_ui::Event::PointerUp(p, rust_ui::MouseButton::Right));
+    h.settle();
+}
+
+fn click_text(h: &mut Headless<Ide>, s: &str) {
+    let r = h.rt.rect_of_text(s).unwrap_or_else(|| panic!("no {s:?}"));
+    h.click(r.center().x, r.center().y);
+    h.settle();
+}
+
+#[test]
+fn commands_menu() {
+    let mut h = harness();
+    // Right-click a stripe button: move the tool window to the right edge.
+    let b = h.rt.rect_of("tool-stripe/Search").unwrap().center();
+    right_click(&mut h, b);
+    assert!(h.rt.rect_of_text("View Mode").is_some());
+    let sub = h.rt.rect_of_text("Move to").unwrap().center();
+    h.move_to(sub.x, sub.y);
+    h.settle();
+    click_text(&mut h, "Right");
+    assert_eq!(h.rt.app.tools.windows[1].side, Side::Right);
+    assert!(h.rt.rect_of_text("View Mode").is_none(), "menu closed");
+    let b = h.rt.rect_of("tool-stripe/Search").unwrap();
+    assert!(b.x > 900.0, "button moved to the right stripe: {b:?}");
+
+    // The header's Options button: switch the view mode.
+    click_id(&mut h, "tool-stripe/Terminal");
+    click_id(&mut h, "tool-options/Terminal");
+    click_text(&mut h, "Pinned");
+    assert_eq!(h.rt.app.tools.windows[2].mode, ToolMode::Pinned);
+    assert!(h.rt.app.tools.is_open(&Tool::Terminal), "still open, now docked");
+    assert!(center(&h).h < 500.0, "takes space now");
+
+    // Escape closes the menu (focus is in it).
+    click_id(&mut h, "tool-options/Terminal");
+    assert!(h.rt.rect_of_text("View Mode").is_some());
+    h.event(rust_ui::Event::Key(KeyEvent { key: Key::Escape, mods: Modifiers::default(), repeat: false }));
+    h.settle();
+    assert!(h.rt.rect_of_text("View Mode").is_none());
 }

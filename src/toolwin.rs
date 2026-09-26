@@ -47,11 +47,12 @@
 use std::rc::Rc;
 
 use crate::element::*;
+use crate::geometry::Point;
 use crate::icons::Icon;
 use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
-use crate::widgets::tooltip_icon_button;
+use crate::widgets::{backdrop, context_menu, menu_panel, tooltip_icon_button, MenuItem};
 
 /// The edge a tool window is attached to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -108,6 +109,10 @@ pub enum ToolMsg<T> {
     Resized(Side, f32),
     /// Resize drag on an auto-hide panel's edge.
     ResizeDrag(Side, DragEvent),
+    /// Open a tool window's menu (move, view mode, hide), at a window
+    /// position or (from the keyboard or its header button) anchored.
+    Menu(T, Option<Point>),
+    CloseMenu,
 }
 
 /// Tool windows around a main content area; see the [module docs](self).
@@ -123,13 +128,22 @@ pub struct ToolWindows<T> {
     last: [Option<T>; 3],
     #[cfg_attr(feature = "serde", serde(skip))]
     drag_start: Option<f32>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    menu: Option<(T, Option<Point>)>,
     /// Width of the stripes.
     pub stripe: f32,
 }
 
 impl<T: Clone + PartialEq> Default for ToolWindows<T> {
     fn default() -> Self {
-        Self { windows: Vec::new(), open: [None, None, None], last: [None, None, None], drag_start: None, stripe: 36.0 }
+        Self {
+            windows: Vec::new(),
+            open: [None, None, None],
+            last: [None, None, None],
+            drag_start: None,
+            menu: None,
+            stripe: 36.0,
+        }
     }
 }
 
@@ -181,7 +195,12 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
     }
 
     pub fn update(&mut self, msg: ToolMsg<T>) {
+        if !matches!(msg, ToolMsg::Menu(..)) {
+            self.menu = None;
+        }
         match msg {
+            ToolMsg::Menu(id, at) => self.menu = Some((id, at)),
+            ToolMsg::CloseMenu => {}
             ToolMsg::Toggle(id) => {
                 if self.is_open(&id) {
                     self.hide(&id)
@@ -247,6 +266,29 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
         (k.key == Key::Escape && auto_open).then_some(ToolMsg::HideAll)
     }
 
+    /// A tool window's commands, as menu items.
+    pub fn menu_items<M>(&self, id: &T, map: &dyn Fn(ToolMsg<T>) -> M) -> Vec<MenuItem<M>> {
+        let Some(w) = self.get(id) else { return Vec::new() };
+        let open = self.is_open(id);
+        let side = |label: &str, s: Side| MenuItem::check(label, w.side == s, map(ToolMsg::Move(id.clone(), s)));
+        vec![
+            MenuItem::action(if open { "Hide" } else { "Show" }, map(ToolMsg::Toggle(id.clone()))),
+            MenuItem::Separator,
+            MenuItem::Header("View Mode".into()),
+            MenuItem::check("Pinned", w.mode == ToolMode::Pinned, map(ToolMsg::SetMode(id.clone(), ToolMode::Pinned))),
+            MenuItem::check(
+                "Auto-hide",
+                w.mode == ToolMode::AutoHide,
+                map(ToolMsg::SetMode(id.clone(), ToolMode::AutoHide)),
+            ),
+            MenuItem::Separator,
+            MenuItem::submenu(
+                "Move to",
+                vec![side("Left", Side::Left), side("Right", Side::Right), side("Bottom", Side::Bottom)],
+            ),
+        ]
+    }
+
     /// Render the tool windows around `center`.
     ///
     /// * `title`, `icon`: a tool window's name (header and tooltip) and icon.
@@ -288,12 +330,26 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
             for w in self.windows.iter().filter(|w| w.side == side) {
                 let open = self.is_open(&w.id);
                 let name = title(&w.id);
+                let (m1, m2, id1, id2) = (map.clone(), map.clone(), w.id.clone(), w.id.clone());
                 let mut b = tooltip_icon_button(icon_of(&w.id), &name)
                     .id(&format!("tool-stripe/{name}"))
                     .aria_selected(open)
-                    .on_click(map(ToolMsg::Toggle(w.id.clone())));
+                    .on_click(map(ToolMsg::Toggle(w.id.clone())))
+                    .on_context_menu(move |p| m1(ToolMsg::Menu(id1.clone(), Some(p))))
+                    .on_key(move |k| {
+                        (k.key == Key::F(10) && k.mods.shift).then(|| m2(ToolMsg::Menu(id2.clone(), None)))
+                    });
                 if open {
                     b = b.bg(c.accent_soft).color(c.accent);
+                }
+                if self.menu.as_ref().is_some_and(|(m, at)| m == &w.id && at.is_none()) {
+                    let pop = anchored_menu(self.menu_items(&w.id, &*map), map(ToolMsg::CloseMenu));
+                    b = b.child(match side {
+                        Side::Left => pop.left(pct(100.0)).top(0.0).ml(6.0),
+                        Side::Right => pop.right(pct(100.0)).top(0.0).mr(6.0),
+                        Side::Bottom => pop.bottom(pct(100.0)).left(0.0).mb(6.0),
+                    });
+                    b = b.child(backdrop(map(ToolMsg::CloseMenu), false));
                 }
                 s = s.child(b);
             }
@@ -312,16 +368,39 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
                 .border_b(1.0, c.border)
                 .child(text(name.clone()).semibold().font_size(th.font_size_sm).nowrap().grow(1.0))
                 .child({
-                    let mut b =
-                        tooltip_icon_button(Icon::Pin, if pinned { "Auto-hide" } else { "Pin (dock)" }).on_click(map(
-                            ToolMsg::SetMode(w.id.clone(), if pinned { ToolMode::AutoHide } else { ToolMode::Pinned }),
-                        ));
+                    let mut b = tooltip_icon_button(Icon::Pin, if pinned { "Auto-hide" } else { "Pin (dock)" })
+                        .id(&format!("tool-pin/{name}"))
+                        .on_click(map(ToolMsg::SetMode(
+                            w.id.clone(),
+                            if pinned { ToolMode::AutoHide } else { ToolMode::Pinned },
+                        )));
                     if pinned {
                         b = b.color(c.accent);
                     }
                     b
                 })
-                .child(tooltip_icon_button(Icon::Minus, "Hide").on_click(map(ToolMsg::Hide(w.id.clone()))));
+                .child({
+                    // Options: the tool window's menu, under the button.
+                    let mut b = tooltip_icon_button(Icon::More, "Options")
+                        .id(&format!("tool-options/{name}"))
+                        .on_click(map(ToolMsg::Menu(w.id.clone(), None)));
+                    if shown && self.menu.as_ref().is_some_and(|(m, at)| m == &w.id && at.is_none()) {
+                        b = b.child(backdrop(map(ToolMsg::CloseMenu), false)).child(
+                            anchored_menu(self.menu_items(&w.id, &*map), map(ToolMsg::CloseMenu))
+                                .top(pct(100.0))
+                                .right(0.0)
+                                .mt(4.0),
+                        );
+                    }
+                    b
+                })
+                .child(
+                    tooltip_icon_button(Icon::Minus, "Hide")
+                        .id(&format!("tool-hide/{name}"))
+                        .on_click(map(ToolMsg::Hide(w.id.clone()))),
+                );
+            let (m3, id3) = (map.clone(), w.id.clone());
+            let header = header.on_context_menu(move |p| m3(ToolMsg::Menu(id3.clone(), Some(p))));
             let m = map.clone();
             let id = w.id.clone();
             col()
@@ -432,6 +511,17 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
             .child_if(has(Side::Left), || stripe(Side::Left))
             .child(area)
             .child_if(has(Side::Right), || stripe(Side::Right));
-        col().grow(1.0).min_w(0.0).min_h(0.0).child(middle).child_if(has(Side::Bottom), || stripe(Side::Bottom))
+        let mut root =
+            col().grow(1.0).min_w(0.0).min_h(0.0).child(middle).child_if(has(Side::Bottom), || stripe(Side::Bottom));
+        if let Some((id, Some(at))) = &self.menu {
+            root = root.child(context_menu(*at, self.menu_items(id, &*map), map(ToolMsg::CloseMenu)));
+        }
+        root
     }
+}
+
+/// A menu panel positioned by the caller relative to its parent, closed
+/// by Escape.
+fn anchored_menu<M: Clone + 'static>(items: Vec<MenuItem<M>>, dismiss: M) -> Element<M> {
+    menu_panel(items).absolute().z_index(100).on_key(move |k| (k.key == Key::Escape).then(|| dismiss.clone()))
 }

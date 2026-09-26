@@ -35,14 +35,20 @@ use std::rc::Rc;
 use crate::element::*;
 use crate::geometry::{Axis, Point, Rect};
 use crate::icons::Icon;
+use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
+use crate::widgets::{backdrop, context_menu, menu_panel, MenuItem};
 
 /// Identifies a tab group inside a [`Dock`].
 pub type GroupId = u64;
 
 /// Drag source marker for drags that started in another dock.
 const REMOTE: GroupId = GroupId::MAX;
+
+/// Drop target meaning "the dock's outer edge" (with a side zone): the tab
+/// gets a full-height or full-width panel along that edge.
+pub const DOCK_EDGE: GroupId = GroupId::MAX - 1;
 
 /// Where a dragged tab will land relative to a group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +221,25 @@ pub enum DockMsg {
     PopOut(GroupId),
     /// Move the group's tabs back into the main window ([`DockSpace`] only).
     DockBack(GroupId),
+    /// A drag moved over one of the dock-edge guides (zone: the side).
+    EdgeTarget(DropZone, DropEvent),
+    /// Open a tab's context menu, at a window position or (from the
+    /// keyboard) under the tab.
+    TabMenu(GroupId, usize, Option<Point>),
+    /// Close the tab context menu.
+    CloseMenu,
+    /// Close every other tab of the group.
+    CloseOthers(GroupId, usize),
+    /// Close every tab of the group.
+    CloseGroup(GroupId),
+    /// Move a tab into a new group beside its own (zone: the side).
+    Split(GroupId, usize, DropZone),
+    /// Move a tab to a new panel along the dock's outer edge (zone: the side).
+    MoveToEdge(GroupId, usize, DropZone),
+    /// Move a tab into a new window ([`DockSpace`] only).
+    FloatTab(GroupId, usize),
+    /// Move a floating window's tab back into the main window ([`DockSpace`] only).
+    DockBackTab(GroupId, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +247,13 @@ struct DockDrag {
     from: (GroupId, usize),
     pos: Point,
     over: Option<(GroupId, DropZone)>,
+    /// The hovered group's rect (sizes the compass).
+    over_rect: Rect,
+}
+
+#[cfg(feature = "serde")]
+fn yes() -> bool {
+    true
 }
 
 /// A dock layout: splits of tab groups that users can rearrange.
@@ -243,6 +275,14 @@ pub struct Dock<T> {
     pub tab_height: f32,
     /// Show close buttons on tabs.
     pub closable: bool,
+    /// While dragging a tab, show a compass of drop targets in the hovered
+    /// group and guides at the dock's outer edges (Visual Studio style).
+    /// Edge bands work either way.
+    #[cfg_attr(feature = "serde", serde(default = "yes"))]
+    pub compass: bool,
+    /// The open tab context menu.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    menu: Option<(GroupId, usize, Option<Point>)>,
 }
 
 impl<T> Dock<T> {
@@ -257,6 +297,8 @@ impl<T> Dock<T> {
             maximized: None,
             tab_height: 0.0,
             closable: true,
+            compass: true,
+            menu: None,
         }
     }
 
@@ -309,6 +351,10 @@ impl<T> Dock<T> {
 
     /// Apply a UI message.
     pub fn update(&mut self, msg: DockMsg) {
+        // Any action closes the tab menu.
+        if !matches!(msg, DockMsg::TabMenu(..)) {
+            self.menu = None;
+        }
         match msg {
             DockMsg::Activate(g, i) => {
                 if let Some(g) = self.root.as_mut().and_then(|r| r.group_mut(g)) {
@@ -331,7 +377,9 @@ impl<T> Dock<T> {
                 self.prune();
             }
             DockMsg::Drag(g, i, ev) => match ev.phase {
-                DragPhase::Start => self.drag = Some(DockDrag { from: (g, i), pos: ev.pos, over: None }),
+                DragPhase::Start => {
+                    self.drag = Some(DockDrag { from: (g, i), pos: ev.pos, over: None, over_rect: Rect::default() })
+                }
                 DragPhase::Move => {
                     if let Some(d) = &mut self.drag {
                         d.pos = ev.pos;
@@ -360,7 +408,25 @@ impl<T> Dock<T> {
                     }
                 }
             }
-            DockMsg::PopOut(_) | DockMsg::DockBack(_) => {}
+            DockMsg::PopOut(_) | DockMsg::DockBack(_) | DockMsg::FloatTab(..) | DockMsg::DockBackTab(..) => {}
+            DockMsg::TabMenu(g, i, at) => self.menu = Some((g, i, at)),
+            DockMsg::CloseMenu => {}
+            DockMsg::CloseOthers(g, i) => self.close_others(g, i),
+            DockMsg::CloseGroup(g) => self.close_group(g),
+            DockMsg::Split(g, i, zone) => self.move_tab(g, i, g, zone),
+            DockMsg::MoveToEdge(g, i, zone) => self.move_tab(g, i, DOCK_EDGE, zone),
+            DockMsg::EdgeTarget(zone, ev) => {
+                if let Some(d) = &mut self.drag {
+                    match ev.phase {
+                        DropPhase::Over | DropPhase::Drop => d.over = Some((DOCK_EDGE, zone)),
+                        DropPhase::Leave => {
+                            if d.over == Some((DOCK_EDGE, zone)) {
+                                d.over = None;
+                            }
+                        }
+                    }
+                }
+            }
             DockMsg::ToggleMaximize(g) => {
                 self.maximized = if self.maximized == Some(g) { None } else { Some(g) };
             }
@@ -388,9 +454,13 @@ impl<T> Dock<T> {
             }
             DockMsg::Target(g, ev) => {
                 let tab_h = if self.tab_height > 0.0 { self.tab_height } else { theme().tab_height };
+                let compass = self.compass;
                 if let Some(d) = &mut self.drag {
                     match ev.phase {
-                        DropPhase::Over | DropPhase::Drop => d.over = Some((g, zone_for(ev.pos, ev.rect, tab_h))),
+                        DropPhase::Over | DropPhase::Drop => {
+                            d.over = zone_for(ev.pos, ev.rect, tab_h, compass).map(|z| (g, z));
+                            d.over_rect = ev.rect;
+                        }
                         DropPhase::Leave => {
                             if d.over.is_some_and(|o| o.0 == g) {
                                 d.over = None;
@@ -439,6 +509,11 @@ impl<T> Dock<T> {
     /// Insert a tab relative to group `g` (joining it, at a tab position, or
     /// splitting it at an edge). Opens it in the first group when `g` is gone.
     pub fn insert_tab(&mut self, tab: T, g: GroupId, zone: DropZone) {
+        if g == DOCK_EDGE {
+            self.insert_at_edge(tab, zone);
+            self.prune();
+            return;
+        }
         let Some(root) = self.root.as_mut() else {
             self.open(tab);
             return;
@@ -468,6 +543,62 @@ impl<T> Dock<T> {
         self.prune();
     }
 
+    /// Close every tab of group `g` except tab `keep`.
+    pub fn close_others(&mut self, g: GroupId, keep: usize) {
+        if let Some(grp) = self.root.as_mut().and_then(|r| r.group_mut(g)) {
+            if keep < grp.tabs.len() {
+                let t = grp.tabs.swap_remove(keep);
+                grp.tabs = vec![t];
+                grp.active = 0;
+            }
+        }
+    }
+
+    /// Close every tab of group `g` (the group goes away, unless it's the
+    /// last one).
+    pub fn close_group(&mut self, g: GroupId) {
+        if let Some(grp) = self.root.as_mut().and_then(|r| r.group_mut(g)) {
+            grp.tabs.clear();
+            grp.active = 0;
+        }
+        self.prune();
+    }
+
+    /// Add a new group holding `tab` along the dock's outer edge (`zone`:
+    /// the side), a quarter of the dock's size.
+    fn insert_at_edge(&mut self, tab: T, zone: DropZone) {
+        self.next_id += 1;
+        let new = DockNode::Group(TabGroup { id: self.next_id, tabs: vec![tab], active: 0 });
+        let axis = match zone {
+            DropZone::Left | DropZone::Right => Axis::Horizontal,
+            DropZone::Top | DropZone::Bottom => Axis::Vertical,
+            _ => {
+                self.root = Some(match self.root.take() {
+                    None => new,
+                    Some(old) => DockNode::Split { axis: Axis::Horizontal, children: vec![(3.0, old), (1.0, new)] },
+                });
+                return;
+            }
+        };
+        let before = matches!(zone, DropZone::Left | DropZone::Top);
+        self.root = Some(match self.root.take() {
+            None => new,
+            Some(DockNode::Split { axis: a, mut children }) if a == axis => {
+                let w = children.iter().map(|c| c.0).sum::<f32>() / 3.0;
+                if before {
+                    children.insert(0, (w, new));
+                } else {
+                    children.push((w, new));
+                }
+                DockNode::Split { axis, children }
+            }
+            Some(old) => {
+                let children = if before { vec![(1.0, new), (3.0, old)] } else { vec![(3.0, old), (1.0, new)] };
+                DockNode::Split { axis, children }
+            }
+        });
+    }
+
     /// Is the dock empty (no tabs anywhere)?
     pub fn is_empty(&self) -> bool {
         self.groups().iter().all(|g| g.tabs.is_empty())
@@ -476,7 +607,12 @@ impl<T> Dock<T> {
     /// A tab from another dock is being dragged: show drop previews here.
     fn begin_remote_drag(&mut self) {
         if self.drag.is_none() {
-            self.drag = Some(DockDrag { from: (REMOTE, 0), pos: Point::new(-1.0, -1.0), over: None });
+            self.drag = Some(DockDrag {
+                from: (REMOTE, 0),
+                pos: Point::new(-1.0, -1.0),
+                over: None,
+                over_rect: Rect::default(),
+            });
         }
     }
 
@@ -489,7 +625,29 @@ impl<T> Dock<T> {
     }
 
     /// Move tab `index` of group `from` to group `to` at `zone`.
+    /// `to` can be [`DOCK_EDGE`] (with a side zone) for the dock's outer edge.
     pub fn move_tab(&mut self, from: GroupId, index: usize, to: GroupId, zone: DropZone) {
+        if to == DOCK_EDGE {
+            // Moving a lone group's only tab to the edge changes nothing.
+            if self.groups().len() == 1 && self.groups()[0].tabs.len() == 1 {
+                return;
+            }
+            let Some(g) = self.root.as_mut().and_then(|r| r.group_mut(from)) else { return };
+            if index >= g.tabs.len() {
+                return;
+            }
+            let t = g.tabs.remove(index);
+            if g.active >= g.tabs.len() {
+                g.active = g.tabs.len().saturating_sub(1);
+            } else if index < g.active {
+                g.active -= 1;
+            }
+            // Drop the emptied source first so the new panel spans the whole edge.
+            self.root = self.root.take().and_then(|r| r.prune());
+            self.insert_at_edge(t, zone);
+            self.fix_maximized();
+            return;
+        }
         let Some(root) = self.root.as_mut() else { return };
         let Some(src) = root.group(from) else { return };
         if index >= src.tabs.len() {
@@ -596,6 +754,57 @@ impl<T> Dock<T> {
             (Some(r), None) => root.child(ctx.node(r).grow(1.0)),
             (None, None) => root,
         };
+        // Tab menu opened with the pointer.
+        if let Some((g, i, Some(at))) = self.menu {
+            if let Some(items) = ctx.tab_menu(g, i) {
+                root = root.child(context_menu(at, items, (ctx.map)(DockMsg::CloseMenu)));
+            }
+        }
+        // Guides for docking along the dock's outer edges.
+        let drag = self.drag.as_ref().filter(|d| d.pos != Point::ZERO);
+        if let (Some(d), true, None) = (drag, self.compass && self.groups().len() > 1, maximized) {
+            let th = theme();
+            let c = &th.colors;
+            let tab_h = if self.tab_height > 0.0 { self.tab_height } else { th.tab_height };
+            if let Some((DOCK_EDGE, zone)) = d.over {
+                let p = div()
+                    .absolute()
+                    .pointer_events(false)
+                    .z_index(55)
+                    .bg(c.accent.with_alpha(0.16))
+                    .border(2.0, c.accent.with_alpha(0.8))
+                    .rounded(th.radius)
+                    .top(4.0)
+                    .left(4.0)
+                    .right(4.0)
+                    .bottom(4.0);
+                root = root.child(match zone {
+                    DropZone::Left => p.right(pct(75.0)),
+                    DropZone::Right => p.left(pct(75.0)),
+                    DropZone::Top => p.bottom(pct(75.0)),
+                    _ => p.top(pct(75.0)),
+                });
+            }
+            for zone in [DropZone::Left, DropZone::Right, DropZone::Top, DropZone::Bottom] {
+                let m = ctx.map.clone();
+                let on = d.over == Some((DOCK_EDGE, zone));
+                let button = compass_button(zone, on)
+                    .id(&format!("{id}/edge-guide/{zone:?}"))
+                    .pointer_events(true)
+                    .on_drop_target(move |ev| m(DockMsg::EdgeTarget(zone, ev)));
+                let lane = div().absolute().z_index(60).pointer_events(false).center();
+                root = root.child(
+                    match zone {
+                        DropZone::Left => lane.left(6.0).top(0.0).bottom(0.0),
+                        DropZone::Right => lane.right(6.0).top(0.0).bottom(0.0),
+                        // Below the tab strips, which are drop targets too.
+                        DropZone::Top => lane.top(tab_h + 6.0).left(0.0).right(0.0),
+                        _ => lane.bottom(6.0).left(0.0).right(0.0),
+                    }
+                    .child(button),
+                );
+            }
+        }
         // Drag ghost following the pointer.
         if let Some(d) = &self.drag {
             if d.pos != Point::ZERO {
@@ -764,6 +973,12 @@ impl<T> DockSpace<T> {
     }
 
     pub fn update(&mut self, msg: DockSpaceMsg) {
+        // Any action closes the tab menus (one may be open in another window).
+        if !matches!(msg, DockSpaceMsg::Dock(_, DockMsg::TabMenu(..))) {
+            for (_, d) in self.docks_mut() {
+                d.menu = None;
+            }
+        }
         match msg {
             DockSpaceMsg::CloseWindow(id) => self.dock_back(id, None),
             DockSpaceMsg::Dock(id, m) => match m {
@@ -793,6 +1008,14 @@ impl<T> DockSpace<T> {
                     }
                 }
                 DockMsg::DockBack(g) => self.dock_back(id, Some(g)),
+                DockMsg::FloatTab(g, i) => self.float_tab(id, g, i, None),
+                DockMsg::DockBackTab(g, i) => {
+                    if id != 0 {
+                        if let Some(t) = self.dock_mut(id).and_then(|d| d.take_tab(g, i)) {
+                            self.main.open(t);
+                        }
+                    }
+                }
                 other => {
                     if let Some(d) = self.dock_mut(id) {
                         d.update(other);
@@ -890,19 +1113,92 @@ impl<T> DockSpace<T> {
         let (dock, action) = match self.floating.iter().find(|f| f.id == id) {
             Some(f) => (
                 &f.dock,
-                HeaderAction { icon: Icon::DockIn, tip: "Dock back into the main window", msg: DockMsg::DockBack },
+                HeaderAction {
+                    icon: Icon::DockIn,
+                    tip: "Dock back into the main window",
+                    msg: DockMsg::DockBack,
+                    tab_label: "Dock Back into Main Window",
+                    tab_msg: DockMsg::DockBackTab,
+                },
             ),
-            None => (&self.main, HeaderAction { icon: Icon::PopOut, tip: "Open in new window", msg: DockMsg::PopOut }),
+            None => (
+                &self.main,
+                HeaderAction {
+                    icon: Icon::PopOut,
+                    tip: "Open in new window",
+                    msg: DockMsg::PopOut,
+                    tab_label: "Open in New Window",
+                    tab_msg: DockMsg::FloatTab,
+                },
+            ),
         };
         let map: Rc<dyn Fn(DockMsg) -> M> = Rc::new(move |m| map(DockSpaceMsg::Dock(id, m)));
         dock.view_full(&format!("dockspace-{id}"), &title, &tab_icon, &content, map, Some(action))
     }
 }
 
-fn zone_for(pos: Point, rect: Rect, tab_h: f32) -> DropZone {
-    let body = Rect::new(rect.x, rect.y + tab_h, rect.w, (rect.h - tab_h).max(1.0));
+/// A compass or edge-guide button: a little pane with the target part lit.
+fn compass_button<M: 'static>(zone: DropZone, on: bool) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let fill = div().absolute().bg(if on { c.accent } else { c.accent.with_alpha(0.55) }).rounded(1.0);
+    let fill = match zone {
+        DropZone::Left => fill.top(0.0).bottom(0.0).left(0.0).w(pct(50.0)),
+        DropZone::Right => fill.top(0.0).bottom(0.0).right(0.0).w(pct(50.0)),
+        DropZone::Top => fill.left(0.0).right(0.0).top(0.0).h(pct(50.0)),
+        DropZone::Bottom => fill.left(0.0).right(0.0).bottom(0.0).h(pct(50.0)),
+        _ => fill.top(0.0).bottom(0.0).left(0.0).right(0.0),
+    };
+    div()
+        .center()
+        .square(COMPASS_B)
+        .rounded(th.radius_sm)
+        .bg(if on { c.accent_soft } else { c.elevated })
+        .border(1.0, if on { c.accent } else { c.border_strong })
+        .shadows(th.shadow_popover.clone())
+        .aria_hidden()
+        .child(div().w(20.0).h(15.0).rounded(2.0).border(1.5, c.text_muted).clip().child(fill))
+}
+
+/// Compass button size and gap.
+const COMPASS_B: f32 = 34.0;
+const COMPASS_GAP: f32 = 4.0;
+
+/// The compass's buttons for a group body, when it fits.
+fn compass_buttons(body: Rect) -> Option<[(Rect, DropZone); 5]> {
+    let span = 3.0 * COMPASS_B + 2.0 * COMPASS_GAP;
+    if body.w < span + 16.0 || body.h < span + 16.0 {
+        return None;
+    }
+    let c = body.center();
+    let at = |dx: f32, dy: f32| {
+        let step = COMPASS_B + COMPASS_GAP;
+        Rect::new(c.x - COMPASS_B / 2.0 + dx * step, c.y - COMPASS_B / 2.0 + dy * step, COMPASS_B, COMPASS_B)
+    };
+    Some([
+        (at(0.0, 0.0), DropZone::Center),
+        (at(-1.0, 0.0), DropZone::Left),
+        (at(1.0, 0.0), DropZone::Right),
+        (at(0.0, -1.0), DropZone::Top),
+        (at(0.0, 1.0), DropZone::Bottom),
+    ])
+}
+
+fn body_rect(rect: Rect, tab_h: f32) -> Rect {
+    Rect::new(rect.x, rect.y + tab_h, rect.w, (rect.h - tab_h).max(1.0))
+}
+
+/// Where a tab dropped at `pos` on a group lands: the compass button under
+/// the pointer, else the edge band or center.
+fn zone_for(pos: Point, rect: Rect, tab_h: f32, compass: bool) -> Option<DropZone> {
+    let body = body_rect(rect, tab_h);
     if pos.y < body.y {
-        return DropZone::Center;
+        return Some(DropZone::Center);
+    }
+    if compass {
+        if let Some(b) = compass_buttons(body).and_then(|bs| bs.into_iter().find(|b| b.0.outset(2.0).contains(pos))) {
+            return Some(b.1);
+        }
     }
     let fx = (pos.x - body.x) / body.w.max(1.0);
     let fy = (pos.y - body.y) / body.h.max(1.0);
@@ -910,19 +1206,18 @@ fn zone_for(pos: Point, rect: Rect, tab_h: f32) -> DropZone {
     // Pick the closest edge within the edge band.
     let cands = [(fx, DropZone::Left), (1.0 - fx, DropZone::Right), (fy, DropZone::Top), (1.0 - fy, DropZone::Bottom)];
     let (d, z) = cands.into_iter().fold((f32::MAX, DropZone::Center), |acc, c| if c.0 < acc.0 { c } else { acc });
-    if d < edge {
-        z
-    } else {
-        DropZone::Center
-    }
+    Some(if d < edge { z } else { DropZone::Center })
 }
 
-/// An extra button in each group's header (pop out / dock back).
+/// An extra button in each group's header (pop out / dock back), and its
+/// per-tab command in the tab menu.
 #[derive(Clone)]
 struct HeaderAction {
     icon: Icon,
     tip: &'static str,
     msg: fn(GroupId) -> DockMsg,
+    tab_label: &'static str,
+    tab_msg: fn(GroupId, usize) -> DockMsg,
 }
 
 struct ViewCtx<'a, T, M> {
@@ -954,7 +1249,7 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
         let gid = g.id;
         let drag = self.dock.drag.as_ref().filter(|d| d.pos != Point::ZERO);
         let tab_h = if self.dock.tab_height > 0.0 { self.dock.tab_height } else { th.tab_height };
-        let mut strip = row().h(tab_h).grow(1.0).min_w(0.0).scroll_x().items(Align::Stretch);
+        let mut strip = row().h(tab_h).grow(1.0).min_w(0.0).scroll_x().items(Align::Stretch).role(Role::TabList);
         let insert_at = match drag.and_then(|d| d.over) {
             Some((og, DropZone::Insert(k))) if og == gid => Some(k),
             _ => None,
@@ -976,7 +1271,29 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
                 .on_click((self.map)(DockMsg::Activate(gid, i)))
                 .on_double_click((self.map)(DockMsg::ToggleMaximize(gid)))
                 .on_drag(move |ev| m(DockMsg::Drag(gid, i, ev)))
-                .cursor(Cursor::Default);
+                .cursor(Cursor::Default)
+                .focusable()
+                .role(Role::Tab)
+                .aria_selected(active);
+            // Tab commands: right-click, or Shift+F10 on the focused tab.
+            let (m1, m2) = (self.map.clone(), self.map.clone());
+            tab = tab
+                .on_context_menu(move |p| m1(DockMsg::TabMenu(gid, i, Some(p))))
+                .on_key(move |k| (k.key == Key::F(10) && k.mods.shift).then(|| m2(DockMsg::TabMenu(gid, i, None))));
+            if self.dock.menu == Some((gid, i, None)) {
+                if let Some(items) = self.tab_menu(gid, i) {
+                    let esc = (self.map)(DockMsg::CloseMenu);
+                    tab = tab.child(backdrop((self.map)(DockMsg::CloseMenu), false)).child(
+                        menu_panel(items)
+                            .absolute()
+                            .top(pct(100.0))
+                            .left(0.0)
+                            .mt(2.0)
+                            .z_index(100)
+                            .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone())),
+                    );
+                }
+            }
             let m2 = self.map.clone();
             tab = tab.on_drop_target(move |ev| m2(DockMsg::TabTarget(gid, i, ev)));
             // Insertion marker while reordering.
@@ -1095,7 +1412,82 @@ impl<T, M: Clone + 'static> ViewCtx<'_, T, M> {
             };
             group = group.child(ov);
         }
+        // Compass: precise targets for joining or splitting this group.
+        if let Some(d) = drag.filter(|d| self.dock.compass && d.over.is_some_and(|o| o.0 == gid)) {
+            if compass_buttons(body_rect(d.over_rect, tab_h)).is_some() {
+                let on = d.over.map(|o| o.1);
+                let cell = |z: Option<DropZone>| match z {
+                    Some(z) => compass_button(z, on == Some(z)),
+                    None => div().square(COMPASS_B),
+                };
+                let line = |a, b, c| row().gap(COMPASS_GAP).child(cell(a)).child(cell(b)).child(cell(c));
+                group = group.child(
+                    div()
+                        .absolute()
+                        .top(tab_h)
+                        .left(0.0)
+                        .right(0.0)
+                        .bottom(0.0)
+                        .center()
+                        .pointer_events(false)
+                        .z_index(20)
+                        .child(
+                            col()
+                                .gap(COMPASS_GAP)
+                                .child(line(None, Some(DropZone::Top), None))
+                                .child(line(Some(DropZone::Left), Some(DropZone::Center), Some(DropZone::Right)))
+                                .child(line(None, Some(DropZone::Bottom), None)),
+                        ),
+                );
+            }
+        }
         group
+    }
+
+    /// The tab context menu's commands.
+    fn tab_menu(&self, g: GroupId, i: usize) -> Option<Vec<MenuItem<M>>> {
+        let grp = self.dock.root.as_ref()?.group(g)?;
+        if i >= grp.tabs.len() {
+            return None;
+        }
+        let m = &self.map;
+        let single = grp.tabs.len() == 1;
+        let alone = single && self.dock.groups().len() == 1;
+        let dis = |it: MenuItem<M>, d: bool| match it {
+            MenuItem::Action { label, shortcut, icon, msg, .. } => {
+                MenuItem::Action { label, shortcut, icon, msg, disabled: d }
+            }
+            other => other,
+        };
+        let mut items = Vec::new();
+        if self.dock.closable {
+            items.push(MenuItem::action("Close", m(DockMsg::Close(g, i))));
+            items.push(dis(MenuItem::action("Close Others", m(DockMsg::CloseOthers(g, i))), single));
+            items.push(MenuItem::action("Close All in Group", m(DockMsg::CloseGroup(g))));
+            items.push(MenuItem::Separator);
+        }
+        items.push(dis(MenuItem::action("Split Right", m(DockMsg::Split(g, i, DropZone::Right))), single));
+        items.push(dis(MenuItem::action("Split Down", m(DockMsg::Split(g, i, DropZone::Bottom))), single));
+        let edge = |label: &str, z| dis(MenuItem::action(label, m(DockMsg::MoveToEdge(g, i, z))), alone);
+        items.push(MenuItem::submenu(
+            "Move to Edge",
+            vec![
+                edge("Left", DropZone::Left),
+                edge("Right", DropZone::Right),
+                edge("Top", DropZone::Top),
+                edge("Bottom", DropZone::Bottom),
+            ],
+        ));
+        if let Some(a) = &self.action {
+            items.push(MenuItem::action(a.tab_label, m((a.tab_msg)(g, i))));
+        }
+        items.push(MenuItem::Separator);
+        let max = self.dock.maximized == Some(g);
+        items.push(MenuItem::action(
+            if max { "Restore Group" } else { "Maximize Group" },
+            m(DockMsg::ToggleMaximize(g)),
+        ));
+        Some(items)
     }
 }
 
@@ -1146,6 +1538,43 @@ mod tests {
     }
 
     #[test]
+    fn commands() {
+        let mut d = Dock::new(DockNode::hsplit(vec![
+            (1.0, DockNode::tabs(vec!["a", "b", "c"])),
+            (2.0, DockNode::tabs(vec!["d"])),
+        ]));
+        let g1 = d.groups()[0].id;
+        d.update(DockMsg::Split(g1, 1, DropZone::Right));
+        assert_eq!(tabs(&d), vec![vec!["a", "c"], vec!["b"], vec!["d"]]);
+        d.update(DockMsg::CloseOthers(g1, 1));
+        assert_eq!(tabs(&d), vec![vec!["c"], vec!["b"], vec!["d"]]);
+        // To the dock's bottom edge: a full-width panel under everything.
+        let g3 = d.groups()[2].id;
+        d.update(DockMsg::MoveToEdge(g3, 0, DropZone::Bottom));
+        assert_eq!(tabs(&d), vec![vec!["c"], vec!["b"], vec!["d"]]);
+        match d.root().unwrap() {
+            DockNode::Split { axis: Axis::Vertical, children } => {
+                assert!(matches!(children[0].1, DockNode::Split { axis: Axis::Horizontal, .. }));
+                assert!(matches!(&children[1].1, DockNode::Group(g) if g.tabs == vec!["d"]));
+                assert!((children[0].0 / children[1].0 - 3.0).abs() < 0.01, "a quarter of the height");
+            }
+            other => panic!("unexpected layout {other:?}"),
+        }
+        // Same axis as the root: a new first child.
+        let g = d.groups()[1].id;
+        d.update(DockMsg::MoveToEdge(g, 0, DropZone::Top));
+        assert_eq!(tabs(&d), vec![vec!["b"], vec!["c"], vec!["d"]]);
+        assert!(matches!(d.root().unwrap(), DockNode::Split { axis: Axis::Vertical, children } if children.len() == 3));
+        let g = d.groups()[0].id;
+        d.update(DockMsg::CloseGroup(g));
+        assert_eq!(tabs(&d), vec![vec!["c"], vec!["d"]]);
+        // Splitting a group's only tab does nothing.
+        let g = d.groups()[0].id;
+        d.update(DockMsg::Split(g, 0, DropZone::Left));
+        assert_eq!(tabs(&d), vec![vec!["c"], vec!["d"]]);
+    }
+
+    #[test]
     fn close_last_tab_prunes_group() {
         let mut d = sample();
         let g2 = d.groups()[1].id;
@@ -1160,11 +1589,23 @@ mod tests {
     #[test]
     fn zones() {
         let r = Rect::new(0.0, 0.0, 400.0, 334.0);
-        assert_eq!(zone_for(Point::new(200.0, 10.0), r, 34.0), DropZone::Center);
-        assert_eq!(zone_for(Point::new(20.0, 180.0), r, 34.0), DropZone::Left);
-        assert_eq!(zone_for(Point::new(390.0, 180.0), r, 34.0), DropZone::Right);
-        assert_eq!(zone_for(Point::new(200.0, 330.0), r, 34.0), DropZone::Bottom);
-        assert_eq!(zone_for(Point::new(200.0, 50.0), r, 34.0), DropZone::Top);
-        assert_eq!(zone_for(Point::new(200.0, 180.0), r, 34.0), DropZone::Center);
+        let z = |x, y, compass| zone_for(Point::new(x, y), r, 34.0, compass).unwrap();
+        for compass in [false, true] {
+            assert_eq!(z(200.0, 10.0, compass), DropZone::Center);
+            assert_eq!(z(20.0, 180.0, compass), DropZone::Left);
+            assert_eq!(z(390.0, 180.0, compass), DropZone::Right);
+            assert_eq!(z(200.0, 330.0, compass), DropZone::Bottom);
+            assert_eq!(z(200.0, 50.0, compass), DropZone::Top);
+            assert_eq!(z(200.0, 184.0, compass), DropZone::Center);
+        }
+        // Compass buttons around the body's center (200, 184), 38 px apart.
+        assert_eq!(z(162.0, 184.0, true), DropZone::Left);
+        assert_eq!(z(238.0, 184.0, true), DropZone::Right);
+        assert_eq!(z(200.0, 146.0, true), DropZone::Top);
+        assert_eq!(z(200.0, 222.0, true), DropZone::Bottom);
+        assert_eq!(z(162.0, 184.0, false), DropZone::Center, "no compass: the middle joins");
+        // Too small for a compass: edge bands only.
+        let small = Rect::new(0.0, 0.0, 120.0, 150.0);
+        assert!(compass_buttons(body_rect(small, 34.0)).is_none());
     }
 }

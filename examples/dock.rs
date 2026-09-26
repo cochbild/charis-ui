@@ -367,6 +367,19 @@ fn main() {
             println!("saved {out}");
             return;
         }
+        if state.as_deref() == Some("tabmenu") {
+            // Right-click the "app.rs" tab (the editor group's second), hover "Move to Edge".
+            let t = Point::new(421.0, 56.0);
+            h.event(rust_ui::Event::PointerDown(t, rust_ui::MouseButton::Right));
+            h.event(rust_ui::Event::PointerUp(t, rust_ui::MouseButton::Right));
+            h.settle();
+            let sub = h.rt.rect_of_text("Move to Edge").unwrap().center();
+            h.move_to(sub.x, sub.y);
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
         if state.as_deref() == Some("maximize") {
             let t = h.rt.rect_of_text("Terminal").unwrap().center();
             h.click(t.x, t.y);

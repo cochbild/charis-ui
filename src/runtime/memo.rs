@@ -148,6 +148,7 @@ fn take_node<M>(n: &mut Node<M>) -> Node<M> {
         handlers: std::mem::take(&mut n.handlers),
         behavior: std::mem::replace(&mut n.behavior, Behavior::None),
         focusable: n.focusable,
+        autofocus: n.autofocus,
         disabled: n.disabled,
         hit_slop: n.hit_slop,
         pointer_events: n.pointer_events,
@@ -294,7 +295,7 @@ impl<A: App> Runtime<A> {
             n.reused = t == n.text;
             n.text = t;
             n.color = n.style.color.unwrap_or(pn.color);
-            n.pointer_events = pn.pointer_events && n.own_pointer;
+            n.pointer_events = n.own_pointer.unwrap_or(pn.pointer_events);
             if n.inherit_align {
                 n.style.text_align = pn.style.text_align;
             }

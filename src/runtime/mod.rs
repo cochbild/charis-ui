@@ -3299,6 +3299,15 @@ impl<A: App> Runtime<A> {
         ]
     }
 
+    /// Load a font (TTF/OTF/TTC bytes); use it by its family name with
+    /// `FontFamily::Named`.
+    pub fn load_font(&mut self, data: Vec<u8>) {
+        self.text.load_font(data);
+        self.lnodes.clear();
+        self.ltree = tf::TaffyTree::new();
+        self.dirty = true;
+    }
+
     /// Number of elements in the current frame (for profiling).
     pub fn node_count(&self) -> usize {
         self.frame.nodes.len()

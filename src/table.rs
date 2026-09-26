@@ -215,7 +215,7 @@ impl<M: 'static> Table<M> {
                     ColumnWidth::Weight(g) => w.grow(g).shrink(1.0).basis(0.0),
                 };
                 w.behavior = Behavior::TableCell { table: tid, col: ci };
-                w.role(Role::Cell).child(e)
+                w.role(Role::Cell).class("table-cell").child(e)
             }
         };
 
@@ -266,7 +266,7 @@ impl<M: 'static> Table<M> {
                 grip = grip.aria_label(format!("Resize {} column", col.title));
                 cell = cell.child(grip);
             }
-            header = header.child(cell);
+            header = header.child(cell.class("table-header-cell"));
         }
 
         let body: Element<M> = if self.rows == 0 && self.empty.is_some() {
@@ -294,6 +294,7 @@ impl<M: 'static> Table<M> {
                 if let Some(f) = &click {
                     tr = tr.on_click(f(r));
                 }
+                tr = tr.class("table-row").when(sel == Some(r), |e| e.class("table-row-selected"));
                 for ci in 0..ncols {
                     tr = tr.child(sized(cell_fn(r, ci), ci));
                 }
@@ -305,7 +306,7 @@ impl<M: 'static> Table<M> {
             .gap(1.0)
             .grow(1.0)
         };
-        col().role(Role::Table).min_h(0.0).min_w(0.0).child(header).child(body)
+        col().role(Role::Table).min_h(0.0).min_w(0.0).child(header.class("table-header")).child(body).class("table")
     }
 }
 

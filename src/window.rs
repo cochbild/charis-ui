@@ -30,6 +30,8 @@ pub struct WindowOptions {
     pub resizable: bool,
     /// Window icon as straight RGBA8 pixels (width, height, data).
     pub icon: Option<(u32, u32, Vec<u8>)>,
+    /// Extra fonts (TTF/OTF/TTC bytes) loaded before the first frame.
+    pub fonts: Vec<Vec<u8>>,
 }
 
 impl Default for WindowOptions {
@@ -43,6 +45,7 @@ impl Default for WindowOptions {
             frameless: false,
             resizable: true,
             icon: None,
+            fonts: Vec::new(),
         }
     }
 }
@@ -50,6 +53,14 @@ impl Default for WindowOptions {
 impl WindowOptions {
     pub fn new(title: impl Into<String>) -> Self {
         Self { title: title.into(), ..Default::default() }
+    }
+    /// Load a font (TTF/OTF/TTC bytes) before the first frame, e.g.
+    /// `include_bytes!("Geist.ttf")`. Use it by family name: set
+    /// `ThemeConfig::font` to `FontFamily::Named("Geist".into())`, or
+    /// `.font(...)` on any element.
+    pub fn font(mut self, data: impl Into<Vec<u8>>) -> Self {
+        self.fonts.push(data.into());
+        self
     }
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = w;
@@ -121,12 +132,15 @@ struct Shell<A: App> {
 }
 
 /// Open a window and run the app until it is closed.
-pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let loop_proxy = event_loop.create_proxy();
     #[cfg(feature = "accessibility")]
     let a11y_proxy = event_loop.create_proxy();
     let mut rt = Runtime::new(app);
+    for f in std::mem::take(&mut opts.fonts) {
+        rt.load_font(f);
+    }
     rt.frameless = opts.frameless;
     let mut shell = Shell {
         rt,

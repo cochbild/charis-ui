@@ -91,7 +91,7 @@ pub use style::*;
 pub use subscription::Subscriptions;
 pub use table::{cell_text, table, Column, ColumnWidth, SortDir, Table};
 pub use text::{span, Span};
-pub use theme::{theme, Accent, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
+pub use theme::{theme, Accent, ClassFn, Density, GrayTint, Palette, Scale, Scales, StyleClasses, Theme, ThemeConfig};
 pub use widgets::*;
 #[cfg(feature = "window")]
 pub use window::{run, WindowOptions};

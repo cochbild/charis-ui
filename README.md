@@ -110,6 +110,10 @@ Use `.apply(fn)` and `.when(cond, fn)` for reusable style mixins.
 
 ### Themes
 
+See [`docs/CUSTOMIZING.md`](docs/CUSTOMIZING.md) for the full set of customization layers, from
+theme settings down to custom drawing, and [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for
+scaling numbers and guidelines.
+
 Themes are organized like modern web design systems (Radix Colors / shadcn/ui):
 
 1. **Primitive scales**: 12-step OKLCH color scales generated from a seed color.
@@ -139,6 +143,18 @@ has one (Settings → Appearance).
 
 Button text on the accent stays white unless that falls below WCAG's 3:1, e.g. on orange,
 amber or lime; then it switches to near-black. A test checks every preset in both modes.
+
+**Style classes** restyle every instance of a built-in widget from the theme, like CSS classes:
+
+```rust
+Theme::dark()
+    .style_class("button", |e| e.pill().px(18.0))
+    .style_class("input", |e| e.rounded(0.0))
+```
+
+Built-in widgets tag themselves (`button`, `button-primary`, `input`, `tab-active`,
+`table-row`, …). Your own elements can use `.class("name")`. Precedence works like CSS: widget
+defaults, then theme classes, then the app's own styling on the element.
 
 Every token on the resulting `Theme` is public, so you can still override single values.
 The raw scales are there for your own components: `theme().scales.accent.step(3)`.

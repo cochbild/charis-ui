@@ -1009,6 +1009,11 @@ impl<M: 'static> Element<M> {
         self.style.shadows.push(s);
         self
     }
+    /// Remove all box shadows (e.g. to flatten a widget from a style class).
+    pub fn no_shadow(mut self) -> Self {
+        self.style.shadows.clear();
+        self
+    }
     pub fn shadows(mut self, s: impl IntoIterator<Item = Shadow>) -> Self {
         self.style.shadows.extend(s);
         self
@@ -1258,6 +1263,29 @@ impl<M: 'static> Element<M> {
     /// re-pins it.
     pub fn follow_end(mut self) -> Self {
         self.follow_end = true;
+        self
+    }
+
+    /// Apply the current theme's style class `name` (see
+    /// [`Theme::style_class`](crate::Theme::style_class)). Unknown names do
+    /// nothing, so widgets and apps can tag elements freely.
+    pub fn class(mut self, name: &str) -> Self {
+        let th = crate::theme::theme();
+        let Some(fns) = th.classes.get(name) else { return self };
+        for f in fns {
+            let mut proxy: Element<()> = Element::new(Content::None);
+            proxy.style = std::mem::take(&mut self.style);
+            proxy.hover = self.hover.take();
+            proxy.active = self.active.take();
+            proxy.focus = self.focus.take();
+            proxy.disabled_style = self.disabled_style.take();
+            let out = f(proxy);
+            self.style = out.style;
+            self.hover = out.hover;
+            self.active = out.active;
+            self.focus = out.focus;
+            self.disabled_style = out.disabled_style;
+        }
         self
     }
 

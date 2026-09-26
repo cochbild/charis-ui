@@ -132,6 +132,56 @@ fn log_line(n: usize) -> LogLine {
     LogLine { secs: 9 * 3600 + 41 * 60 + (n / 4) as u32, level, msg }
 }
 
+/// Whole-app looks built only from theme style classes.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum StylePreset {
+    Default,
+    Pill,
+    Sharp,
+    Flat,
+}
+
+impl StylePreset {
+    const ALL: [(&'static str, StylePreset); 4] = [
+        ("Default", StylePreset::Default),
+        ("Pill", StylePreset::Pill),
+        ("Sharp", StylePreset::Sharp),
+        ("Flat", StylePreset::Flat),
+    ];
+
+    fn apply(self, t: Theme) -> Theme {
+        match self {
+            StylePreset::Default => t,
+            StylePreset::Pill => t
+                .style_class("button", |e| e.pill().px(16.0))
+                .style_class("icon-button", |e| e.pill())
+                .style_class("input", |e| e.pill().px(14.0))
+                .style_class("text-area", |e| e.rounded(18.0))
+                .style_class("segmented", |e| e.pill())
+                .style_class("segmented-item", |e| e.pill())
+                .style_class("card", |e| e.rounded(18.0))
+                .style_class("tree-row", |e| e.pill()),
+            StylePreset::Sharp => t
+                .style_class("button", |e| e.rounded(0.0).no_shadow().border(1.0, theme().colors.text_faint))
+                .style_class("button-primary", |e| e.border(1.0, theme().colors.accent))
+                .style_class("icon-button", |e| e.rounded(0.0))
+                .style_class("input", |e| e.rounded(0.0))
+                .style_class("segmented", |e| e.rounded(0.0))
+                .style_class("segmented-item", |e| e.rounded(0.0))
+                .style_class("card", |e| e.rounded(0.0).no_shadow().border(1.0, theme().colors.border_strong))
+                .style_class("tree-row", |e| e.rounded(0.0))
+                .style_class("badge", |e| e.rounded(0.0))
+                .style_class("table-row", |e| e.rounded(0.0)),
+            StylePreset::Flat => t
+                .style_class("button", |e| e.no_shadow().border(0.0, Color::TRANSPARENT))
+                .style_class("button-secondary", |e| e.bg(theme().colors.hover))
+                .style_class("input", |e| e.border(0.0, Color::TRANSPARENT).bg(theme().colors.hover))
+                .style_class("card", |e| e.no_shadow().border(0.0, Color::TRANSPARENT).bg(theme().colors.panel))
+                .style_class("segmented", |e| e.border(0.0, Color::TRANSPARENT)),
+        }
+    }
+}
+
 /// The user's appearance choices (what lmfast would persist in settings).
 #[derive(Clone, Debug, PartialEq)]
 struct Appearance {
@@ -141,6 +191,7 @@ struct Appearance {
     radius: f32,
     density: Density,
     scaling: f32,
+    preset: StylePreset,
 }
 
 impl Default for Appearance {
@@ -152,6 +203,7 @@ impl Default for Appearance {
             radius: 6.0,
             density: Density::Default,
             scaling: 1.0,
+            preset: StylePreset::Default,
         }
     }
 }
@@ -230,6 +282,7 @@ enum Msg {
     Density(Density),
     Scaling(f32),
     ResetLook,
+    Preset(StylePreset),
     LogTick,
     LibSearch(String),
     LibSort(usize, SortDir),
@@ -252,7 +305,7 @@ impl App for LmFast {
     fn theme(&self) -> Theme {
         // Every color, radius and size below is generated from these knobs.
         let l = &self.look;
-        Theme::from_config(ThemeConfig {
+        let t = Theme::from_config(ThemeConfig {
             dark: l.dark,
             accent: l.accent.color(l.dark),
             gray: l.gray,
@@ -260,7 +313,8 @@ impl App for LmFast {
             density: l.density,
             scaling: l.scaling,
             ..ThemeConfig::dark()
-        })
+        });
+        l.preset.apply(t)
     }
 
     fn subscriptions(&self) -> Subscriptions<Msg> {
@@ -347,6 +401,7 @@ impl App for LmFast {
             Msg::Density(d) => self.look.density = d,
             Msg::Scaling(k) => self.look.scaling = k,
             Msg::ResetLook => self.look = Appearance::default(),
+            Msg::Preset(p) => self.look.preset = p,
             Msg::LibSearch(q) => self.lib_search = q,
             Msg::LibSort(c, d) => self.lib_sort = (c, d),
             Msg::LibSelect(i) => self.lib_selected = Some(i),
@@ -772,56 +827,64 @@ impl LmFast {
                     .child(progress(0.62).grow(1.0)),
             )
             .child(text_input(String::new(), |_| Msg::Noop).placeholder("Ask anything…"));
-        col()
-            .grow(1.0)
-            .min_w(0.0)
-            .scroll_y()
-            .child(
-                col()
-                    .w_full()
-                    .max_w(860.0)
-                    .px(32.0)
-                    .py(28.0)
-                    .gap(6.0)
-                    .child(
-                        row()
-                            .items_center()
-                            .child(
-                                col()
-                                    .grow(1.0)
-                                    .gap(4.0)
-                                    .child(text("Appearance").font_size(th.font_size_lg * 1.4).bold())
-                                    .child(
-                                        text("Everything is generated from these six knobs; nothing in the app hard-codes a color.")
-                                            .color(c.text_muted),
-                                    ),
-                            )
-                            .child(ghost_button("Reset").on_click(Msg::ResetLook)),
-                    )
-                    .child(setting(
-                        "Mode",
-                        "Light or dark surfaces",
-                        segmented(vec![
-                            ("Dark".into(), l.dark, Msg::Dark(true)),
-                            ("Light".into(), !l.dark, Msg::Dark(false)),
-                        ]),
-                    ))
-                    .child(setting("Accent", "Buttons, focus, selection", swatches))
-                    .child(setting("Neutrals", "Tint of backgrounds and borders", grays))
-                    .child(setting(
-                        "Corners",
-                        "Base radius in px",
-                        row()
-                            .items_center()
-                            .gap(12.0)
-                            .child(slider(l.radius, 0.0, 12.0).step(0.5).on_change(Msg::Radius).w(220.0))
-                            .child(text(format!("{:.1}px", l.radius)).mono().color(c.text_muted)),
-                    ))
-                    .child(setting("Density", "Control and row heights", densities))
-                    .child(setting("Text size", "Scales text and controls", sizes))
-                    .child(div().h(18.0))
-                    .child(preview),
-            )
+        col().grow(1.0).min_w(0.0).scroll_y().child(
+            col()
+                .w_full()
+                .max_w(860.0)
+                .px(32.0)
+                .py(28.0)
+                .gap(6.0)
+                .child(
+                    row()
+                        .items_center()
+                        .child(
+                            col()
+                                .grow(1.0)
+                                .gap(4.0)
+                                .child(text("Appearance").font_size(th.font_size_lg * 1.4).bold())
+                                .child(
+                                text(
+                                    "Everything is generated from these knobs; nothing in the app hard-codes a color.",
+                                )
+                                .color(c.text_muted),
+                            ),
+                        )
+                        .child(ghost_button("Reset").on_click(Msg::ResetLook)),
+                )
+                .child(setting(
+                    "Mode",
+                    "Light or dark surfaces",
+                    segmented(vec![
+                        ("Dark".into(), l.dark, Msg::Dark(true)),
+                        ("Light".into(), !l.dark, Msg::Dark(false)),
+                    ]),
+                ))
+                .child(setting(
+                    "Style",
+                    "Widget shapes, from theme style classes",
+                    segmented(
+                        StylePreset::ALL
+                            .iter()
+                            .map(|(n, p)| (n.to_string(), *p == l.preset, Msg::Preset(*p)))
+                            .collect(),
+                    ),
+                ))
+                .child(setting("Accent", "Buttons, focus, selection", swatches))
+                .child(setting("Neutrals", "Tint of backgrounds and borders", grays))
+                .child(setting(
+                    "Corners",
+                    "Base radius in px",
+                    row()
+                        .items_center()
+                        .gap(12.0)
+                        .child(slider(l.radius, 0.0, 12.0).step(0.5).on_change(Msg::Radius).w(220.0))
+                        .child(text(format!("{:.1}px", l.radius)).mono().color(c.text_muted)),
+                ))
+                .child(setting("Density", "Control and row heights", densities))
+                .child(setting("Text size", "Scales text and controls", sizes))
+                .child(div().h(18.0))
+                .child(preview),
+        )
     }
 
     fn chat(&self) -> Element<Msg> {
@@ -1108,6 +1171,9 @@ fn main() {
         }
         if let Some(g) = arg("--gray") {
             app.look.gray = GRAYS.iter().find(|(n, _)| n.to_lowercase() == g).expect("unknown gray").1;
+        }
+        if let Some(p) = arg("--style") {
+            app.look.preset = StylePreset::ALL.iter().find(|(n, _)| n.to_lowercase() == p).expect("unknown style").1;
         }
         if let Some(r) = arg("--radius") {
             app.look.radius = r.parse().expect("radius");

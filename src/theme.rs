@@ -24,10 +24,12 @@
 //! still be overridden after generation.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::anim::Easing;
 use crate::color::{hex, Color};
+use crate::element::Element;
 use crate::style::{FontFamily, Shadow};
 
 /// A 12-step color scale (Radix convention). Steps are 1-based:
@@ -352,6 +354,42 @@ pub struct Theme {
     pub splitter_hit: f32,
     /// Delay before a hovered splitter highlights (VS Code uses 300ms).
     pub splitter_hover_delay: f32,
+    /// Named style classes (see [`Theme::style_class`]).
+    pub classes: StyleClasses,
+}
+
+/// A style class: restyles an element with the regular builder methods.
+pub type ClassFn = Rc<dyn Fn(Element<()>) -> Element<()>>;
+
+/// Named style classes of a theme, like CSS classes. Every built-in widget
+/// tags itself with classes (`"button"`, `"button-primary"`, `"input"`,
+/// `"tab-active"`, …), so a theme can restyle all of them at once; apps can
+/// define their own and apply them with [`Element::class`].
+#[derive(Clone, Default)]
+pub struct StyleClasses(Rc<HashMap<String, Vec<ClassFn>>>);
+
+impl StyleClasses {
+    pub fn get(&self, name: &str) -> Option<&[ClassFn]> {
+        self.0.get(name).map(Vec::as_slice)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+}
+
+impl PartialEq for StyleClasses {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for StyleClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
 }
 
 impl Default for Theme {
@@ -492,18 +530,47 @@ impl Theme {
             titlebar_height: (38.0 * k).round(),
             splitter_hit: 4.0,
             splitter_hover_delay: 0.3,
+            classes: StyleClasses::default(),
             config: cfg,
         }
     }
 
+    /// Add a style class. Built-in widgets use these names (see
+    /// `docs/CUSTOMIZING.md` for the full list): `button`, `button-primary`,
+    /// `button-secondary`, `button-ghost`, `button-danger`, `icon-button`,
+    /// `input`, `text-area`, `checkbox`, `switch`, `slider`, `progress`,
+    /// `badge`, `tag`, `card`, `tab`, `tab-active`, `menu`, `menu-item`,
+    /// `modal`, `table-row`, … Registering the same name again adds to it.
+    ///
+    /// ```
+    /// # use rust_ui::prelude::*;
+    /// let t = Theme::dark()
+    ///     .style_class("button", |e| e.pill().px(18.0))
+    ///     .style_class("card", |e| e.rounded(16.0).no_shadow());
+    /// ```
+    ///
+    /// Class styles apply after the widget's defaults and before anything the
+    /// app chains on the element itself, like CSS specificity. Only style
+    /// and state styles (`hover`, `active`, `focus_style`) are taken; children
+    /// added by a class function are ignored.
+    pub fn style_class(mut self, name: impl Into<String>, f: impl Fn(Element<()>) -> Element<()> + 'static) -> Self {
+        Rc::make_mut(&mut self.classes.0).entry(name.into()).or_default().push(Rc::new(f));
+        self
+    }
+
+    /// Rebuild from new knobs, keeping the style classes.
+    fn rebuilt(&self, cfg: ThemeConfig) -> Self {
+        Self { classes: self.classes.clone(), ..Self::from_config(cfg) }
+    }
+
     /// Same theme with a different accent color.
     pub fn with_accent(self, accent: Color) -> Self {
-        Self::from_config(ThemeConfig { accent, ..self.config })
+        self.rebuilt(ThemeConfig { accent, ..self.config.clone() })
     }
 
     /// Same theme with a different density.
     pub fn with_density(self, density: Density) -> Self {
-        Self::from_config(ThemeConfig { density, ..self.config })
+        self.rebuilt(ThemeConfig { density, ..self.config.clone() })
     }
 
     /// Same theme with an accent preset (resolved for this theme's mode).
@@ -514,22 +581,22 @@ impl Theme {
 
     /// Same knobs, switched between dark and light mode.
     pub fn with_dark(self, dark: bool) -> Self {
-        Self::from_config(ThemeConfig { dark, ..self.config })
+        self.rebuilt(ThemeConfig { dark, ..self.config.clone() })
     }
 
     /// Same theme with a different base corner radius.
     pub fn with_radius(self, radius: f32) -> Self {
-        Self::from_config(ThemeConfig { radius, ..self.config })
+        self.rebuilt(ThemeConfig { radius, ..self.config.clone() })
     }
 
     /// Same theme with a different size multiplier.
     pub fn with_scaling(self, scaling: f32) -> Self {
-        Self::from_config(ThemeConfig { scaling, ..self.config })
+        self.rebuilt(ThemeConfig { scaling, ..self.config.clone() })
     }
 
     /// Same theme with a different gray tint.
     pub fn with_gray(self, gray: GrayTint) -> Self {
-        Self::from_config(ThemeConfig { gray, ..self.config })
+        self.rebuilt(ThemeConfig { gray, ..self.config.clone() })
     }
 }
 

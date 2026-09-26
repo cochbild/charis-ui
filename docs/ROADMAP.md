@@ -91,6 +91,18 @@ final name.
 **Exit:** a manual QA checklist signed off on Windows 11, macOS 15 and Ubuntu (GNOME Wayland plus
 X11). Screenshots go in the docs.
 
+### M1.5: App plumbing (parity with iced)
+
+Real apps need these before they need more widgets. iced has them; see `docs/FROM_ICED.md`.
+
+- [ ] Async tasks: `cx.spawn(future)` and `cx.spawn_blocking(fn)` that deliver a message when
+      done, on a small runtime.
+- [ ] Subscriptions: `App::subscriptions()` for timers and intervals, window events, and a
+      `Sender<Msg>` handle that background threads can use to push messages.
+- [ ] Widgets: pick list/dropdown, combo box, radio group, image, SVG, number input.
+
+**Exit:** one of your own apps (currently built with iced) ported with no loss of function.
+
 ### M2: Text and input
 
 - [ ] Multi-line text editor widget:

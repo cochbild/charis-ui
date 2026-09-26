@@ -53,4 +53,12 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 - [ ] Accessibility Insights for Windows (optional) shows the tree with sensible names and no
       unnamed buttons.
 
+**High contrast and reduced motion**
+- [ ] Turn on a contrast theme (Settings → Accessibility → Contrast themes → Aquatic), then switch
+      back to the lmfast demo: it starts (or, after refocusing, reports) high contrast. Settings →
+      Appearance → Contrast → High looks the same.
+- [ ] Turn off Settings → Accessibility → Visual effects → Animation effects, then refocus the
+      demo: wheel scrolling jumps instead of gliding, and collapsing a sidebar is instant. Hover
+      color fades still work.
+
 Report anything that fails, with a screenshot if possible.

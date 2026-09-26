@@ -120,8 +120,13 @@ impl Anim {
         self.to
     }
 
-    /// Retarget, starting from the current animated value.
+    /// Retarget, starting from the current animated value. Jumps instead
+    /// when the user prefers reduced motion (see [`reduced_motion`]).
     pub fn set(&mut self, target: f32, now: f64, dur: f32) {
+        if reduced_motion() {
+            self.snap(target);
+            return;
+        }
         if (target - self.to).abs() > f32::EPSILON {
             self.from = self.value(now);
             self.to = target;
@@ -147,4 +152,31 @@ impl Anim {
     pub fn is_animating(&self, now: f64) -> bool {
         self.dur > 0.0 && ((now - self.start) as f32) < self.dur
     }
+}
+
+thread_local! {
+    static REDUCED_MOTION: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether motion should be reduced: the app's override if set (see
+/// [`set_reduced_motion`]), otherwise the OS setting
+/// ([`system_prefs`](crate::system::system_prefs)).
+///
+/// When true, the runtime makes movement instant: smooth scrolling, pane
+/// collapse slides, layout animations and `translate` transitions. Color
+/// and opacity transitions still fade, since they don't move anything.
+/// Custom animations should check this too.
+pub fn reduced_motion() -> bool {
+    REDUCED_MOTION.with(|r| r.get()).unwrap_or_else(|| crate::system::system_prefs().reduced_motion)
+}
+
+/// Override the OS reduced-motion setting on this (UI) thread, e.g. from an
+/// in-app accessibility setting; `None` follows the OS again.
+pub fn set_reduced_motion(on: Option<bool>) {
+    REDUCED_MOTION.with(|r| r.set(on));
+}
+
+/// The app's reduced-motion override on this thread, if any.
+pub fn reduced_motion_override() -> Option<bool> {
+    REDUCED_MOTION.with(|r| r.get())
 }

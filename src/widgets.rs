@@ -75,7 +75,7 @@ pub fn button_kind<M: 'static>(kind: ButtonKind, label: impl Into<String>) -> El
         ),
         ButtonKind::Danger => (
             base.bg(c.danger)
-                .color(Color::WHITE)
+                .color(c.danger_text)
                 .hover(|s| s.bg(c.danger.lighten(0.1)))
                 .active(|s| s.bg(c.danger.darken(0.1)).translate(0.0, 0.5)),
             "button-danger",

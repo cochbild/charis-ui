@@ -192,6 +192,7 @@ struct Appearance {
     density: Density,
     scaling: f32,
     preset: StylePreset,
+    contrast: Contrast,
 }
 
 impl Default for Appearance {
@@ -204,6 +205,8 @@ impl Default for Appearance {
             density: Density::Default,
             scaling: 1.0,
             preset: StylePreset::Default,
+            // Follow the OS (Windows contrast themes, macOS Increase contrast…).
+            contrast: if system_prefs().high_contrast { Contrast::High } else { Contrast::Normal },
         }
     }
 }
@@ -328,6 +331,7 @@ enum Msg {
     Scaling(f32),
     ResetLook,
     Preset(StylePreset),
+    Contrast(Contrast),
     LogTick,
     LibSearch(String),
     LibSort(usize, SortDir),
@@ -357,6 +361,7 @@ impl App for LmFast {
             radius: l.radius,
             density: l.density,
             scaling: l.scaling,
+            contrast: l.contrast,
             ..ThemeConfig::dark()
         });
         l.preset.apply(t)
@@ -440,6 +445,7 @@ impl App for LmFast {
             Msg::Scaling(k) => self.look.scaling = k,
             Msg::ResetLook => self.look = Appearance::default(),
             Msg::Preset(p) => self.look.preset = p,
+            Msg::Contrast(c) => self.look.contrast = c,
             Msg::LibSearch(q) => self.lib_search = q,
             Msg::LibSort(c, d) => self.lib_sort = (c, d),
             Msg::LibSelect(i) => self.lib_selected = Some(i),
@@ -898,6 +904,14 @@ impl LmFast {
                     ]),
                 ))
                 .child(setting(
+                    "Contrast",
+                    "High contrast: AAA text, opaque borders, no shadows",
+                    segmented(vec![
+                        ("Normal".into(), l.contrast == Contrast::Normal, Msg::Contrast(Contrast::Normal)),
+                        ("High".into(), l.contrast == Contrast::High, Msg::Contrast(Contrast::High)),
+                    ]),
+                ))
+                .child(setting(
                     "Style",
                     "Widget shapes, from theme style classes",
                     segmented(
@@ -1213,6 +1227,9 @@ fn main() {
         }
         if let Some(g) = arg("--gray") {
             app.look.gray = GRAYS.iter().find(|(n, _)| n.to_lowercase() == g).expect("unknown gray").1;
+        }
+        if args.iter().any(|a| a == "--high-contrast") {
+            app.look.contrast = Contrast::High;
         }
         if let Some(p) = arg("--style") {
             app.look.preset = StylePreset::ALL.iter().find(|(n, _)| n.to_lowercase() == p).expect("unknown style").1;

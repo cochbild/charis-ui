@@ -282,6 +282,25 @@ div().role(Role::Switch).aria_checked(on).aria_label("Wi-Fi").on_click(Msg::Togg
 
 `Runtime::accessibility_tree()` returns the tree, so tests can assert on it headlessly.
 
+**High contrast.** `ThemeConfig { contrast: Contrast::High, .. }` (or `.with_contrast(…)`)
+derives a high-contrast version of any theme, in the style of Windows contrast themes:
+- near-black or white surfaces;
+- opaque borders, and no shadows;
+- text at 7:1 contrast, and accents and state colors at 4.5:1 or more.
+
+Tests check these ratios for every accent, gray tint and mode. `system_prefs().high_contrast`
+reports the OS setting, so apps can follow it.
+
+![Normal, high contrast dark, high contrast light](docs/high-contrast.png)
+
+**Reduced motion.** The runtime follows the OS setting ("Animation effects" on Windows, "Reduce
+motion" on macOS, "Animations" on GNOME):
+- smooth scrolling, pane slides, layout animations and `translate` transitions become instant;
+- color and opacity fades still fade.
+
+`anim::reduced_motion()` lets custom animations check the setting, and `set_reduced_motion`
+overrides it from an in-app setting.
+
 ### Custom window chrome
 
 ```rust
@@ -335,10 +354,8 @@ timings.
 
 This is an early but working foundation. Known gaps and planned work:
 
-- Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
-  CPU backend
+- Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
-- High-contrast theme and reduced-motion support
 - Multiple windows, native menus, file dialogs
 - Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows
   (needs multi-window support)

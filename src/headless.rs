@@ -10,7 +10,13 @@ pub struct Headless<A: App> {
 }
 
 impl<A: App> Headless<A> {
+    /// Headless runs don't follow the OS reduced-motion setting (so tests
+    /// behave the same on every machine) unless the thread has an explicit
+    /// [`set_reduced_motion`](crate::anim::set_reduced_motion).
     pub fn new(app: A, width: f32, height: f32, scale: f32) -> Self {
+        if crate::anim::reduced_motion_override().is_none() {
+            crate::anim::set_reduced_motion(Some(false));
+        }
         let mut rt = Runtime::new(app);
         rt.resize(Size::new(width, height), scale);
         rt.render();

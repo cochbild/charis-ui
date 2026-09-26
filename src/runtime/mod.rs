@@ -1255,7 +1255,11 @@ impl<A: App> Runtime<A> {
             if t < 1.0 {
                 self.memo_build.animating += 1;
             }
-            let v = tr.from.lerp(&tr.to, st.easing.apply(t));
+            let mut v = tr.from.lerp(&tr.to, st.easing.apply(t));
+            if crate::anim::reduced_motion() {
+                // Movement is instant; colors and opacity still fade.
+                v.translate = tr.to.translate;
+            }
             v.write(&mut st);
         }
 
@@ -1885,6 +1889,7 @@ impl<A: App> Runtime<A> {
 
         // Absolute rects, clips and scroll offsets (pre-order: parents first).
         let now = self.now;
+        let reduced = crate::anim::reduced_motion();
         for i in 0..frame.nodes.len() {
             let l = tree.layout(frame.nodes[i].tnode).copied().unwrap_or_default();
             let (origin, clip, portal) = match frame.nodes[i].parent {
@@ -1918,7 +1923,7 @@ impl<A: App> Runtime<A> {
                 l.size.width,
                 l.size.height,
             );
-            if n.style.layout_transition > 0.0 {
+            if n.style.layout_transition > 0.0 && !reduced {
                 // FLIP-style layout animation of the element's box relative to its parent.
                 let dur = n.style.layout_transition;
                 let easing = n.style.easing;

@@ -26,6 +26,7 @@ fn theme(&self) -> Theme {
         radius: 8.0,
         scaling: 1.1,
         density: Density::Compact,
+        contrast: Contrast::Normal,       // or High: AAA text, opaque borders, no shadows
         font: FontFamily::Named("Geist".into()),
         ..ThemeConfig::dark()
     })

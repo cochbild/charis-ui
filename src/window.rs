@@ -568,7 +568,15 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                     Ime::Enabled => {}
                 }
             }
-            WindowEvent::Focused(f) => self.rt.handle(Event::WindowFocus(f)),
+            WindowEvent::Focused(f) => {
+                if f {
+                    // OS accessibility settings may have changed while away.
+                    if crate::system::system_prefs() != crate::system::refresh_system_prefs() {
+                        self.rt.invalidate();
+                    }
+                }
+                self.rt.handle(Event::WindowFocus(f))
+            }
             _ => {}
         }
         self.apply_requests(el);

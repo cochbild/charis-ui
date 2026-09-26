@@ -223,6 +223,18 @@ pub enum Density {
     Comfortable,
 }
 
+/// How strongly colors are separated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Contrast {
+    #[default]
+    Normal,
+    /// For low vision and bright environments (like Windows contrast
+    /// themes): near-black or white surfaces, opaque borders, no shadows, and
+    /// text at WCAG AAA (7:1) contrast, secondary text, accents and state
+    /// colors at 4.5:1 or more, and borders at 3:1 or more.
+    High,
+}
+
 /// The global knobs a theme is generated from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeConfig {
@@ -237,6 +249,7 @@ pub struct ThemeConfig {
     pub density: Density,
     pub font: FontFamily,
     pub mono_font: FontFamily,
+    pub contrast: Contrast,
 }
 
 impl ThemeConfig {
@@ -250,6 +263,7 @@ impl ThemeConfig {
             density: Density::Default,
             font: FontFamily::Ui,
             mono_font: FontFamily::Mono,
+            contrast: Contrast::Normal,
         }
     }
     pub fn light() -> Self {
@@ -315,6 +329,54 @@ pub struct Palette {
     pub status_text: Color,
     /// Inline code and other "literal" text (accent-tinted, readable on surfaces).
     pub code_text: Color,
+    /// Text on `danger` backgrounds.
+    pub danger_text: Color,
+}
+
+/// Derive the high-contrast palette: flat near-black (or white) surfaces,
+/// opaque borders, and every foreground pushed to its contrast target.
+fn high_contrast(base: &Palette, dark: bool, gray: &Scale, accent: &Scale) -> Palette {
+    let (ink, paper) = if dark { (Color::WHITE, Color::BLACK) } else { (Color::BLACK, Color::WHITE) };
+    let bg = gray.step(1).lerp(paper, 0.85);
+    // Menus and dialogs stand apart by a border, plus a slight lift.
+    let elevated = gray.step(2).lerp(paper, 0.6);
+    // Foregrounds must hold up on every surface they sit on.
+    let fg = |c: Color, ratio: f32| c.with_contrast(bg, ratio).with_contrast(elevated, ratio);
+    let text_muted = fg(gray.step(11), 7.0);
+    let text_faint = fg(gray.step(10), 4.5);
+    let accent_c = fg(accent.step(9), 4.5);
+    let danger = fg(base.danger, 4.5);
+    let readable = |c: Color| c.most_readable(ink, paper);
+    Palette {
+        background: bg,
+        surface: bg,
+        panel: bg,
+        chrome: bg,
+        elevated,
+        input: bg,
+        border: fg(gray.step(8), 3.0),
+        border_strong: fg(gray.step(10), 4.5),
+        text: ink,
+        text_muted,
+        text_faint,
+        accent: accent_c,
+        accent_hover: accent_c.lerp(ink, 0.25),
+        accent_text: readable(accent_c),
+        accent_soft: accent_c.with_alpha(0.28),
+        danger,
+        success: fg(base.success, 4.5),
+        warning: fg(base.warning, 4.5),
+        hover: ink.with_alpha(0.14),
+        pressed: ink.with_alpha(0.24),
+        selection: accent_c.with_alpha(0.45),
+        focus_ring: accent_c,
+        scrollbar: text_faint,
+        scrollbar_hover: text_muted,
+        status_bar: bg,
+        status_text: text_muted,
+        code_text: fg(accent.step(11), 7.0),
+        danger_text: readable(danger),
+    }
 }
 
 /// A complete theme: palette plus shape, typography and motion tokens.
@@ -421,12 +483,15 @@ impl Theme {
         let a = |n| accent.step(n);
         // White on the accent unless that drops below WCAG's 3:1 for UI components
         // (e.g. orange, amber, lime, near-white "mono"); then near-black.
-        let a9 = accent.step(9);
-        let on_accent = if a9.contrast(Color::WHITE) >= 3.0 {
-            Color::WHITE
-        } else {
-            a9.most_readable(Color::WHITE, hex("#111113"))
+        let on = |bg: Color| {
+            if bg.contrast(Color::WHITE) >= 3.0 {
+                Color::WHITE
+            } else {
+                bg.most_readable(Color::WHITE, hex("#111113"))
+            }
         };
+        let on_accent = on(accent.step(9));
+        let on_danger = on(red.step(9));
         let colors = if dark {
             Palette {
                 background: g(1),
@@ -457,6 +522,7 @@ impl Theme {
                 status_bar: g(1).darken(0.12),
                 status_text: g(11),
                 code_text: a(11),
+                danger_text: on_danger,
             }
         } else {
             Palette {
@@ -487,8 +553,11 @@ impl Theme {
                 status_bar: g(2).lerp(g(3), 0.5),
                 status_text: g(11),
                 code_text: a(11),
+                danger_text: on_danger,
             }
         };
+        let high = cfg.contrast == Contrast::High;
+        let colors = if high { high_contrast(&colors, dark, &gray, &accent) } else { colors };
         let k = cfg.scaling.max(0.5);
         let (control, row, tab) = match cfg.density {
             Density::Compact => (26.0, 22.0, 30.0),
@@ -498,8 +567,14 @@ impl Theme {
         // Tailwind-style layered shadows; stronger in dark mode where the
         // background is already dark.
         let sh = if dark { 0.35 } else { 0.1 };
+        let shadows = |v: Vec<Shadow>| if high { Vec::new() } else { v };
         Theme {
-            name: if dark { "Dark".into() } else { "Light".into() },
+            name: match (dark, high) {
+                (true, false) => "Dark".into(),
+                (false, false) => "Light".into(),
+                (true, true) => "High Contrast Dark".into(),
+                (false, true) => "High Contrast Light".into(),
+            },
             dark,
             scales: Scales { gray, accent, red, green, amber },
             colors,
@@ -518,15 +593,15 @@ impl Theme {
             transition: 0.15,
             easing: Easing::Standard,
             focus_ring_width: 3.0,
-            shadow_popover: vec![
+            shadow_popover: shadows(vec![
                 Shadow::new(0.0, 10.0, 15.0, -3.0, Color::BLACK.with_alpha(sh * 1.3)),
                 Shadow::new(0.0, 4.0, 6.0, -4.0, Color::BLACK.with_alpha(sh * 1.3)),
                 Shadow::new(0.0, 20.0, 40.0, -8.0, Color::BLACK.with_alpha(sh)),
-            ],
-            shadow_sm: vec![
+            ]),
+            shadow_sm: shadows(vec![
                 Shadow::new(0.0, 1.0, 3.0, 0.0, Color::BLACK.with_alpha(sh)),
                 Shadow::new(0.0, 1.0, 2.0, -1.0, Color::BLACK.with_alpha(sh)),
-            ],
+            ]),
             titlebar_height: (38.0 * k).round(),
             splitter_hit: 4.0,
             splitter_hover_delay: 0.3,
@@ -597,6 +672,11 @@ impl Theme {
     /// Same theme with a different gray tint.
     pub fn with_gray(self, gray: GrayTint) -> Self {
         self.rebuilt(ThemeConfig { gray, ..self.config.clone() })
+    }
+
+    /// Same theme with a different contrast level.
+    pub fn with_contrast(self, contrast: Contrast) -> Self {
+        self.rebuilt(ThemeConfig { contrast, ..self.config.clone() })
     }
 }
 

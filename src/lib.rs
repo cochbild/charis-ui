@@ -71,6 +71,7 @@ pub mod scene;
 pub mod semantics;
 pub mod style;
 pub mod subscription;
+pub mod system;
 pub mod table;
 pub mod text;
 pub mod theme;
@@ -93,7 +94,9 @@ pub use style::*;
 pub use subscription::Subscriptions;
 pub use table::{cell_text, table, Column, ColumnWidth, SortDir, Table};
 pub use text::{span, Span};
-pub use theme::{theme, Accent, ClassFn, Density, GrayTint, Palette, Scale, Scales, StyleClasses, Theme, ThemeConfig};
+pub use theme::{
+    theme, Accent, ClassFn, Contrast, Density, GrayTint, Palette, Scale, Scales, StyleClasses, Theme, ThemeConfig,
+};
 pub use widgets::*;
 #[cfg(feature = "window")]
 pub use window::{run, WindowOptions};
@@ -122,8 +125,10 @@ pub mod prelude {
         TextAlign, Track, Weight,
     };
     pub use crate::subscription::Subscriptions;
+    pub use crate::system::{system_prefs, SystemPrefs};
     pub use crate::table::{cell_text, table, Column, ColumnWidth, SortDir};
     pub use crate::text::{span, Span};
+    pub use crate::theme::Contrast;
     pub use crate::theme::{theme, Accent, Density, GrayTint, Palette, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]

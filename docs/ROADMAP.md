@@ -126,7 +126,9 @@ systems; a 100k-line file scrolls at 120fps.
   - the tree is rebuilt each frame while a screen reader is active (incremental updates later);
   - focus follows keyboard focus; click, focus, set value, increment, decrement, scroll and
     expand/collapse actions are supported.
-- [ ] High-contrast theme generated from the token system; respect the OS reduced-motion setting.
+- [x] High-contrast theme generated from the token system (`Contrast::High`, WCAG ratios tested
+  for every accent, gray and mode); the OS reduced-motion setting is respected (movement snaps,
+  fades stay); OS preferences detected on Windows, macOS and GNOME (`system_prefs()`).
 - [x] Headless tests assert on the accessibility tree (`tests/accessibility.rs`).
 
 **Exit:** the showcase is usable with NVDA (Windows), VoiceOver (macOS) and Orca (Linux).

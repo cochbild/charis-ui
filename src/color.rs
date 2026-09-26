@@ -167,6 +167,37 @@ impl Color {
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
 
+    /// The same hue, lightened or darkened (in OKLCH, keeping chroma where
+    /// possible) until it has at least `ratio` contrast against `bg`.
+    /// Opaque colors only; returns `self` if it already qualifies.
+    pub fn with_contrast(self, bg: Color, ratio: f32) -> Color {
+        if self.contrast(bg) >= ratio {
+            return self;
+        }
+        let (l, c, h) = self.to_oklch();
+        let up = bg.contrast(Color::WHITE) > bg.contrast(Color::BLACK);
+        let mut best = if up { Color::WHITE } else { Color::BLACK };
+        // Binary search the lightness closest to the original that passes.
+        let (mut lo, mut hi) = if up { (l, 1.0) } else { (0.0, l) };
+        for _ in 0..24 {
+            let mid = (lo + hi) / 2.0;
+            let cand = Color::oklch(mid, c, h).with_alpha(self.a);
+            if cand.contrast(bg) >= ratio {
+                best = cand;
+                if up {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            } else if up {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        best
+    }
+
     /// Whichever of `a` / `b` reads better on top of this color.
     pub fn most_readable(&self, a: Color, b: Color) -> Color {
         if self.contrast(a) >= self.contrast(b) {

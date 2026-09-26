@@ -30,7 +30,7 @@ frameworks don't provide.
 **Missing for production:**
 - Platforms other than Linux have never been tested.
 - No accessibility.
-- IME composition (pre-edit) isn't shown.
+- IME composition has only been tested by simulating the events (no real IME on Linux CI).
 - Only one window per app.
 - Layout is fully rebuilt every frame.
 - 34 `unwrap`/`expect` calls in library code.
@@ -104,12 +104,13 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
 
 ### M2: Text and input
 
-- [ ] Multi-line text editor widget:
+- [~] Multi-line text editor widget (`text_area`; still to do: undo/redo, 100k-line documents):
   - selection, undo/redo, word wrap, scrolling;
   - large documents (100k lines) that only shape what is visible.
-- [ ] IME: show pre-edit (the text being composed) with its underline, and position the candidate
-      window.
-- [ ] Rich text spans (bold, color, links) and selectable read-only text.
+- [x] IME: show pre-edit (the text being composed) with its underline, and position the candidate
+      window. IME is enabled only while a text input has focus; editing keys go to the IME while
+      composing.
+- [x] Rich text spans (bold, color, links) and selectable read-only text.
 - [ ] System clipboard on all platforms, including images (optional).
 - [ ] Keyboard shortcut and command system: an app-level keymap, rebindable, shown in menus.
 

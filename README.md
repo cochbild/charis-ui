@@ -281,7 +281,7 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
   CPU backend
-- IME pre-edit display
+- Undo/redo in text inputs
 - Virtualized trees (lists and tables are done)
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs

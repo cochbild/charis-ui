@@ -229,6 +229,12 @@ pub enum Event {
     Key(KeyEvent),
     /// Committed text input (typed characters, IME commits).
     Text(String),
+    /// IME composition in progress (shown inline, underlined, at the caret).
+    /// `cursor` is a byte range within `text`; an empty `text` ends composition.
+    Preedit {
+        text: String,
+        cursor: Option<(usize, usize)>,
+    },
     /// Paste from the system clipboard.
     Paste(String),
     WindowFocus(bool),
@@ -431,6 +437,41 @@ struct DropdownState {
     searchable: bool,
 }
 
+/// An IME composition shown inside the focused input.
+struct Preedit {
+    node: u64,
+    text: String,
+    cursor: Option<(usize, usize)>,
+}
+
+/// What an input displays: its value (masked for passwords) with any IME
+/// composition spliced in at the caret.
+struct Composed {
+    text: String,
+    caret: usize,
+    /// Byte range of the composition (underlined).
+    underline: Option<(usize, usize)>,
+}
+
+fn compose(spec: &InputSpec, sel: Selection, pre: Option<&Preedit>) -> Composed {
+    let shown = if spec.multiline { spec.value.clone() } else { display_value(spec) };
+    let caret = if spec.multiline { sel.cursor } else { map_value_index(spec, sel.cursor) };
+    match pre {
+        Some(p) if !spec.password && shown.is_char_boundary(caret) => {
+            let mut text = String::with_capacity(shown.len() + p.text.len());
+            text.push_str(&shown[..caret]);
+            text.push_str(&p.text);
+            text.push_str(&shown[caret..]);
+            let mut pc = p.cursor.map_or(p.text.len(), |c| c.1).min(p.text.len());
+            while !p.text.is_char_boundary(pc) {
+                pc -= 1;
+            }
+            Composed { text, caret: caret + pc, underline: Some((caret, caret + p.text.len())) }
+        }
+        _ => Composed { text: shown, caret, underline: None },
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 struct InputState {
     sel: Selection,
@@ -572,6 +613,7 @@ pub struct Runtime<A: App> {
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
+    preedit: Option<Preedit>,
     /// User-resized table column widths, by table id.
     tables: HashMap<u64, Vec<Option<f32>>>,
     tooltip: Option<(u64, f64, Point)>,
@@ -633,6 +675,7 @@ impl<A: App> Runtime<A> {
             pending_values: HashMap::new(),
             dropdowns: HashMap::new(),
             virt: HashMap::new(),
+            preedit: None,
             tables: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
@@ -908,11 +951,12 @@ impl<A: App> Runtime<A> {
             let NodeContent::Input(spec) = &n.content else { continue };
             let Some(st) = self.inputs.get_mut(&n.id) else { continue };
             let cr = content_rect(n);
+            st.sel.clamp(&spec.value);
+            let comp = compose(spec, st.sel, self.preedit.as_ref().filter(|p| p.node == n.id));
             if spec.multiline {
-                st.sel.clamp(&spec.value);
                 let w = Some(cr.w.max(1.0));
-                let caret = self.text.caret_rect(&spec.value, &n.text, w, self.scale, st.sel.cursor);
-                let total = self.text.measure(&spec.value, &n.text, w, self.scale).h;
+                let caret = self.text.caret_rect(&comp.text, &n.text, w, self.scale, comp.caret);
+                let total = self.text.measure(&comp.text, &n.text, w, self.scale).h;
                 let mut sy = st.scroll_y;
                 if caret.bottom() - sy > cr.h {
                     sy = caret.bottom() - cr.h;
@@ -923,10 +967,8 @@ impl<A: App> Runtime<A> {
                 st.scroll_y = sy.clamp(0.0, (total - cr.h).max(0.0));
                 continue;
             }
-            let shown = display_value(spec);
-            let stops = self.text.caret_stops(&shown, &n.text, self.scale);
-            st.sel.clamp(&spec.value);
-            let cb = map_value_index(spec, st.sel.cursor);
+            let stops = self.text.caret_stops(&comp.text, &n.text, self.scale);
+            let cb = comp.caret;
             let caret_x = stops.iter().find(|s| s.0 >= cb).map(|s| s.1).unwrap_or(0.0);
             let total = stops.last().map(|s| s.1).unwrap_or(0.0);
             let mut scroll = st.scroll;
@@ -1775,6 +1817,7 @@ impl<A: App> Runtime<A> {
             text_sel: self.text_sel,
             theme: &th,
             window_focused: self.window_focused,
+            preedit: self.preedit.as_ref(),
         };
         let mut deferred: Vec<(i32, usize)> = Vec::new();
         paint_node(&ctx, 0, &mut canvas, &mut deferred, &mut order, true);
@@ -1955,7 +1998,23 @@ impl<A: App> Runtime<A> {
             }
             Event::Wheel(p, d) => self.wheel(p, d),
             Event::Key(k) => self.key(k),
-            Event::Text(t) => self.text_input(&t),
+            Event::Text(t) => {
+                self.preedit = None;
+                self.text_input(&t);
+            }
+            Event::Preedit { text, cursor } => {
+                let target = self.focused.filter(|f| {
+                    self.node_by_id(*f).is_some_and(|n| matches!(&n.content, NodeContent::Input(s) if !s.password))
+                });
+                self.preedit = match target {
+                    Some(node) if !text.is_empty() => Some(Preedit { node, text, cursor }),
+                    _ => None,
+                };
+                if let Some(st) = target.and_then(|f| self.inputs.get_mut(&f)) {
+                    st.blink_start = self.now;
+                }
+                self.dirty = true;
+            }
             Event::Paste(t) => self.paste(&t),
             Event::WindowFocus(f) => {
                 self.window_focused = f;
@@ -1966,6 +2025,11 @@ impl<A: App> Runtime<A> {
             }
         }
         self.flush();
+        // A composition belongs to the input that had focus when it started.
+        if self.preedit.as_ref().is_some_and(|p| Some(p.node) != self.focused) {
+            self.preedit = None;
+            self.dirty = true;
+        }
     }
 
     fn flush(&mut self) {
@@ -2632,6 +2696,10 @@ impl<A: App> Runtime<A> {
 
     fn key(&mut self, k: KeyEvent) {
         self.dirty = true;
+        // While composing, editing keys belong to the IME (like the web's `isComposing`).
+        if self.preedit.as_ref().is_some_and(|p| Some(p.node) == self.focused) {
+            return;
+        }
         if let Some(d) = self.open_dropdown() {
             if self.dropdown_key(d, &k) {
                 return;
@@ -3021,6 +3089,42 @@ impl<A: App> Runtime<A> {
         self.virt.get(&n.id).map(|v| v.built.1 - v.built.0)
     }
 
+    /// True while a text input has keyboard focus. Platform shells enable the
+    /// IME only then, so shortcuts elsewhere aren't swallowed by an input method.
+    pub fn text_input_focused(&self) -> bool {
+        self.focused
+            .and_then(|f| self.node_by_id(f))
+            .is_some_and(|n| matches!(&n.content, NodeContent::Input(s) if !s.password))
+    }
+
+    /// The caret of the focused text input in window coordinates, so the OS
+    /// can place the IME candidate window next to it.
+    pub fn ime_cursor_area(&mut self) -> Option<Rect> {
+        let f = self.focused?;
+        let i = *self.frame.by_id.get(&f)?;
+        let n = &self.frame.nodes[i];
+        let NodeContent::Input(spec) = &n.content else { return None };
+        let st = self.inputs.get(&f).copied().unwrap_or_default();
+        let mut sel = st.sel;
+        sel.clamp(&spec.value);
+        let comp = compose(spec, sel, self.preedit.as_ref().filter(|p| p.node == f));
+        let cr = content_rect(n);
+        let line_h = n.text.size * n.text.line_height;
+        if spec.multiline {
+            let r = self.text.caret_rect(&comp.text, &n.text, Some(cr.w.max(1.0)), self.scale, comp.caret);
+            return Some(Rect::new(cr.x + r.x, cr.y - st.scroll_y + r.y, 1.0, r.h));
+        }
+        let stops = self.text.caret_stops(&comp.text, &n.text, self.scale);
+        let x = stops.iter().find(|s| s.0 >= comp.caret).or(stops.last()).map_or(0.0, |s| s.1);
+        let ty = cr.y + ((cr.h - line_h) / 2.0).max(0.0);
+        Some(Rect::new(cr.x + x - st.scroll, ty, 1.0, line_h))
+    }
+
+    /// The IME composition currently shown, if any (for tests and tooling).
+    pub fn preedit_text(&self) -> Option<&str> {
+        self.preedit.as_ref().map(|p| p.text.as_str())
+    }
+
     /// User-resized column widths of the [`table`] with this id (`None` = the
     /// column's declared width), e.g. to persist them.
     pub fn column_widths(&self, id: &str) -> Vec<Option<f32>> {
@@ -3354,6 +3458,7 @@ struct PaintCtx<'a, M> {
     text_sel: Option<(u64, usize, usize)>,
     theme: &'a Theme,
     window_focused: bool,
+    preedit: Option<&'a Preedit>,
 }
 
 fn paint_node<M>(
@@ -3569,27 +3674,35 @@ fn paint_input<M>(ctx: &PaintCtx<M>, n: &Node<M>, spec: &InputSpec, cr: Rect, c:
     let th = ctx.theme;
     let focused = ctx.focused == Some(n.id);
     let st = ctx.inputs.get(&n.id).copied().unwrap_or_default();
+    let mut sel = st.sel;
+    sel.clamp(&spec.value);
+    let comp = compose(spec, sel, ctx.preedit.filter(|p| focused && p.node == n.id));
+    let blink_on = focused && ctx.window_focused && ((ctx.now - st.blink_start) / 0.53).floor() as i64 % 2 == 0;
     if spec.multiline {
         let scale = c.scale;
         let wrap = Some(cr.w.max(1.0));
         c.push_clip(cr.outset(1.0), Corners::ZERO);
         let origin = Rect::new(cr.x, cr.y - st.scroll_y, cr.w, cr.h + st.scroll_y);
-        if spec.value.is_empty() && !spec.placeholder.is_empty() {
+        if comp.text.is_empty() && !spec.placeholder.is_empty() {
             c.text_block(&spec.placeholder, &n.text, origin, wrap, th.colors.text_faint, false);
         }
-        let mut sel = st.sel;
-        sel.clamp(&spec.value);
-        if focused && !sel.is_empty() {
+        if focused && !sel.is_empty() && comp.underline.is_none() {
             let (a, b) = sel.range();
-            for r in c.text.selection_rects(&spec.value, None, &n.text, wrap, scale, a, b) {
+            for r in c.text.selection_rects(&comp.text, None, &n.text, wrap, scale, a, b) {
                 c.fill_rect(r.translate(origin.x, origin.y), th.colors.selection);
             }
         }
-        if !spec.value.is_empty() {
-            c.text_block(&spec.value, &n.text, origin, wrap, n.color, false);
+        if !comp.text.is_empty() {
+            c.text_block(&comp.text, &n.text, origin, wrap, n.color, false);
         }
-        if focused && ctx.window_focused && ((ctx.now - st.blink_start) / 0.53).floor() as i64 % 2 == 0 {
-            let r = c.text.caret_rect(&spec.value, &n.text, wrap, scale, sel.cursor);
+        if let Some((a, b)) = comp.underline {
+            for r in c.text.selection_rects(&comp.text, None, &n.text, wrap, scale, a, b) {
+                let r = r.translate(origin.x, origin.y);
+                c.fill_rect(Rect::new(r.x, r.bottom() - 2.0, r.w, 1.0), n.color);
+            }
+        }
+        if blink_on {
+            let r = c.text.caret_rect(&comp.text, &n.text, wrap, scale, comp.caret);
             c.fill_rect(
                 Rect::new((origin.x + r.x).round() - 0.5, origin.y + r.y + 2.0, 1.5, r.h - 4.0),
                 th.colors.accent,
@@ -3598,41 +3711,34 @@ fn paint_input<M>(ctx: &PaintCtx<M>, n: &Node<M>, spec: &InputSpec, cr: Rect, c:
         c.pop_clip();
         return;
     }
-    let shown = display_value(spec);
     let scale = c.scale;
     c.push_clip(cr.outset(1.0), Corners::ZERO);
     let line_h = n.text.size * n.text.line_height;
     let ty = cr.y + ((cr.h - line_h) / 2.0).max(0.0);
-    if shown.is_empty() && !spec.placeholder.is_empty() {
+    if comp.text.is_empty() && !spec.placeholder.is_empty() {
         c.text_block(&spec.placeholder, &n.text, Rect::new(cr.x, ty, cr.w, line_h), None, th.colors.text_faint, true);
     }
-    let stops = c.text.caret_stops(&shown, &n.text, scale);
+    let stops = c.text.caret_stops(&comp.text, &n.text, scale);
     let x_of = |b: usize| {
         stops.iter().find(|s| s.0 >= b).map(|s| s.1).unwrap_or_else(|| stops.last().map(|s| s.1).unwrap_or(0.0))
     };
-    let mut sel = st.sel;
-    sel.clamp(&spec.value);
-    let caret_b = map_value_index(spec, sel.cursor);
-    let anchor_b = map_value_index(spec, sel.anchor);
-    let caret_x = x_of(caret_b);
+    let caret_x = x_of(comp.caret);
     let scroll = st.scroll;
     let total = stops.last().map(|s| s.1).unwrap_or(0.0);
-    if focused && sel.cursor != sel.anchor {
-        let (a, b) = (caret_b.min(anchor_b), caret_b.max(anchor_b));
-        let (xa, xb) = (x_of(a), x_of(b));
+    if focused && sel.cursor != sel.anchor && comp.underline.is_none() {
+        let (ca, cb) = (map_value_index(spec, sel.cursor), map_value_index(spec, sel.anchor));
+        let (xa, xb) = (x_of(ca.min(cb)), x_of(ca.max(cb)));
         c.fill_rect(Rect::new(cr.x + xa - scroll, ty, xb - xa, line_h), th.colors.selection);
     }
-    if !shown.is_empty() {
-        c.text_block(&shown, &n.text, Rect::new(cr.x - scroll, ty, total + 4.0, line_h), None, n.color, false);
+    if !comp.text.is_empty() {
+        c.text_block(&comp.text, &n.text, Rect::new(cr.x - scroll, ty, total + 4.0, line_h), None, n.color, false);
     }
-    if focused && ctx.window_focused {
-        let blink_on = ((ctx.now - st.blink_start) / 0.53).floor() as i64 % 2 == 0;
-        if blink_on {
-            c.fill_rect(
-                Rect::new((cr.x + caret_x - scroll).round() - 0.5, ty + 1.0, 1.5, line_h - 2.0),
-                th.colors.accent,
-            );
-        }
+    if let Some((a, b)) = comp.underline {
+        let (xa, xb) = (x_of(a), x_of(b));
+        c.fill_rect(Rect::new(cr.x + xa - scroll, ty + line_h - 2.0, xb - xa, 1.0), n.color);
+    }
+    if blink_on {
+        c.fill_rect(Rect::new((cr.x + caret_x - scroll).round() - 0.5, ty + 1.0, 1.5, line_h - 2.0), th.colors.accent);
     }
     c.pop_clip();
 }

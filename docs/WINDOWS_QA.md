@@ -36,6 +36,10 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 **Input**
 - [ ] Typing in text inputs works, including Ctrl+C, Ctrl+V, Ctrl+A and Ctrl+Backspace.
 - [ ] IME input (e.g. Microsoft Pinyin or Japanese IME) commits text into inputs.
+- [ ] While composing, the text being composed shows inside the input with an underline, and the
+      IME candidate window opens next to the caret (not at the window's corner).
+- [ ] With focus outside a text input (e.g. after clicking a button), single-letter shortcuts are
+      not swallowed by the IME.
 - [ ] Wheel and touchpad scrolling are smooth.
 
 Report anything that fails, with a screenshot if possible.

@@ -111,6 +111,8 @@ struct Shell<A: App> {
     chrome: crate::platform::SharedChrome,
     native_chrome: bool,
     dark: Option<bool>,
+    /// Last IME state sent to the OS (enabled, caret area).
+    ime: (bool, Option<crate::geometry::Rect>),
 }
 
 /// Open a window and run the app until it is closed.
@@ -133,6 +135,7 @@ pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error
         chrome: Default::default(),
         native_chrome: false,
         dark: None,
+        ime: (false, None),
     };
     shell.rt.set_waker(move || {
         let _ = loop_proxy.send_event(Wake);
@@ -284,6 +287,24 @@ impl<A: App> Shell<A> {
             }
         }
         g.window.set_cursor(map_cursor(self.rt.cursor()));
+        // IME only while a text input is focused; keep the candidate window at the caret.
+        let allowed = self.rt.text_input_focused();
+        if allowed != self.ime.0 {
+            g.window.set_ime_allowed(allowed);
+            self.ime = (allowed, None);
+        }
+        if allowed {
+            let area = self.rt.ime_cursor_area();
+            if area != self.ime.1 {
+                if let Some(r) = area {
+                    g.window.set_ime_cursor_area(
+                        winit::dpi::LogicalPosition::new(r.x as f64, r.y as f64),
+                        winit::dpi::LogicalSize::new(r.w.max(1.0) as f64, r.h as f64),
+                    );
+                }
+                self.ime.1 = area;
+            }
+        }
         self.last_frame = Instant::now();
         if self.native_chrome {
             if let Ok(mut m) = self.chrome.lock() {
@@ -372,7 +393,8 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
                 return;
             }
         };
-        window.set_ime_allowed(true);
+        // Enabled on demand when a text input gets focus (see `redraw`).
+        window.set_ime_allowed(false);
         if self.opts.frameless && crate::platform::install_frameless(&window, self.chrome.clone()) {
             self.native_chrome = true;
             // The OS now handles edge resizing and dragging.
@@ -462,8 +484,11 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
                 if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
                     eprintln!("ime {ime:?}");
                 }
-                if let Ime::Commit(t) = ime {
-                    self.rt.handle(Event::Text(t));
+                match ime {
+                    Ime::Commit(t) => self.rt.handle(Event::Text(t)),
+                    Ime::Preedit(text, cursor) => self.rt.handle(Event::Preedit { text, cursor }),
+                    Ime::Disabled => self.rt.handle(Event::Preedit { text: String::new(), cursor: None }),
+                    Ime::Enabled => {}
                 }
             }
             WindowEvent::Focused(f) => self.rt.handle(Event::WindowFocus(f)),

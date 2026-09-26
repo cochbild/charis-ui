@@ -803,6 +803,10 @@ fn main() {
     if args.iter().any(|a| a == "--system-font") {
         opts = opts.system_font(true);
     }
+    // Windows: the app menu as a native Win32 menu bar instead of the in-window one.
+    if args.iter().any(|a| a == "--native-menu") {
+        opts = opts.native_menu(true);
+    }
     if let Some(i) = args.iter().position(|a| a == "--stylesheet") {
         opts = opts.stylesheet(args.get(i + 1).cloned().unwrap_or_else(|| "examples/dock.css".into()));
     }

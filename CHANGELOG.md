@@ -27,6 +27,10 @@ All notable changes to rust-ui are listed here. The format follows
 - `Runtime::accessibility_update` and `Runtime::reset_accessibility`: incremental accessibility
   updates. The window now sends screen readers only the nodes that changed.
 - `HeadlessApp::drag_to_window`, for testing drags between windows without screen positions.
+- `WGPU_ADAPTER_NAME` picks the GPU adapter (falls back to the default if none matches).
+- `examples/editor.rs` (large files), a clipboard-image section in the gallery, and
+  `--native-menu` in the dock example.
+- `docs/HOME_TEST_PLAN.md`: the Windows 11 and WSL test plan.
 
 ### Changed
 

@@ -1,5 +1,8 @@
 # Windows QA checklist
 
+For a full pass on a home Windows 11 machine (and WSL), use
+[`HOME_TEST_PLAN.md`](HOME_TEST_PLAN.md): it includes this list and everything added since.
+
 This container can only type-check the Windows code, so these checks need a real Windows 10 or 11
 machine. Run:
 

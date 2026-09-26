@@ -32,6 +32,7 @@ Useful environment variables while working:
 | `RUI_NO_DAMAGE=1` | Turn off CPU damage tracking (full redraw every frame). |
 | `RUI_DARK=1`, `RUI_HIGH_CONTRAST=1`, `RUI_REDUCED_MOTION=1` | Override the OS preferences. |
 | `RUI_DEBUG_EVENTS=1` | Log window events. |
+| `WGPU_ADAPTER_NAME=…` | Render with the GPU whose name contains this (e.g. `Microsoft Basic Render Driver` for WARP). |
 
 In debug builds, F12 (or Ctrl+Shift+I, or Cmd+Alt+I on macOS) opens the element inspector.
 

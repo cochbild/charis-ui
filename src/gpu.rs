@@ -157,7 +157,7 @@ impl GpuRenderer {
     /// (for tests and screenshots). Returns `None` when no GPU is available.
     pub fn headless() -> Option<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
+        let adapter = pick_adapter(&instance, None, wgpu::RequestAdapterOptions::default())?;
         Self::with_adapter(&adapter, wgpu::TextureFormat::Rgba8Unorm)
     }
 
@@ -763,13 +763,16 @@ impl GpuSurface {
         }
         let instance = wgpu::Instance::new(desc);
         let surface = instance.create_surface(window).ok()?;
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            power_preference: wgpu::PowerPreference::LowPower,
-            force_fallback_adapter: false,
-            apply_limit_buckets: false,
-        }))
-        .ok()?;
+        let adapter = pick_adapter(
+            &instance,
+            Some(&surface),
+            wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                power_preference: wgpu::PowerPreference::LowPower,
+                force_fallback_adapter: false,
+                apply_limit_buckets: false,
+            },
+        )?;
         let caps = surface.get_capabilities(&adapter);
         // Blend in sRGB-encoded space like browsers do: prefer a non-sRGB format.
         let format = caps
@@ -828,4 +831,26 @@ impl GpuSurface {
         self.renderer.queue.present(frame);
         true
     }
+}
+
+/// The adapter to render with: the one whose name contains `WGPU_ADAPTER_NAME`
+/// (case-insensitive) when that's set, e.g. "Microsoft Basic Render Driver"
+/// for WARP; otherwise wgpu's choice for `opts`.
+fn pick_adapter(
+    instance: &wgpu::Instance,
+    surface: Option<&wgpu::Surface<'_>>,
+    opts: wgpu::RequestAdapterOptions<'_, '_>,
+) -> Option<wgpu::Adapter> {
+    if let Ok(want) = std::env::var("WGPU_ADAPTER_NAME") {
+        let want = want.to_lowercase();
+        let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+        let found = adapters.into_iter().find(|a| {
+            a.get_info().name.to_lowercase().contains(&want) && surface.is_none_or(|s| a.is_surface_supported(s))
+        });
+        match found {
+            Some(a) => return Some(a),
+            None => eprintln!("rust-ui: no GPU adapter matches WGPU_ADAPTER_NAME={want:?}; using the default"),
+        }
+    }
+    pollster::block_on(instance.request_adapter(&opts)).ok()
 }

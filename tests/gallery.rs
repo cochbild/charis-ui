@@ -113,3 +113,15 @@ fn theme_knobs_apply_live() {
     h.settle();
     assert!(h.rt.rect_of_text(&format!("accent {}", Accent::ALL[5].name())).is_some());
 }
+
+#[test]
+fn pasting_an_image_shows_it() {
+    let mut h = open();
+    click_id(&mut h, "page-media");
+    click_id(&mut h, "paste-target");
+    let img = rust_ui::image::Image::from_rgba(4, 3, &[200u8; 48]).unwrap();
+    h.event(rust_ui::Event::PasteImage(img));
+    h.settle();
+    assert!(h.rt.app.pasted.is_some());
+    assert!(h.rt.rect_of_text("Pasted a 4×3 image").is_some());
+}

@@ -10,6 +10,7 @@ use std::rc::Rc;
 use rust_ui::image::{Fit, Image, Svg};
 use rust_ui::prelude::*;
 use rust_ui::tree::{TreeModel, TreeMsg, TreeState};
+use rust_ui::ClipboardContent;
 
 /// The gallery's pages, in sidebar order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +129,7 @@ pub struct Gallery {
     pub last_action: String,
 
     pub photo: Image,
+    pub pasted: Option<Image>,
     pub logo: Option<Svg>,
     pub mark: Option<Svg>,
 }
@@ -166,6 +168,10 @@ pub enum Msg {
     Context(Option<Point>),
     Dialog(bool),
     Action(&'static str),
+    CopyPhoto,
+    Pasted(Image),
+    ReadClipboard,
+    Clipboard(ClipboardContent),
 }
 
 const PEOPLE: [(&str, &str, u32, &str); 8] = [
@@ -246,6 +252,7 @@ impl Default for Gallery {
             dialog: false,
             last_action: "None yet".into(),
             photo: make_photo(),
+            pasted: None,
             logo: Svg::parse(LOGO),
             mark: Svg::parse(MARK),
         }
@@ -300,6 +307,28 @@ impl App for Gallery {
             Msg::Menu(m) => self.menu = m,
             Msg::Context(p) => self.context = p,
             Msg::Dialog(open) => self.dialog = open,
+            Msg::CopyPhoto => {
+                cx.copy_image(self.photo.clone());
+                self.last_action = "Copied the image".into();
+            }
+            Msg::Pasted(img) => {
+                self.last_action = format!("Pasted a {}×{} image", img.width(), img.height());
+                self.pasted = Some(img);
+            }
+            Msg::ReadClipboard => cx.read_clipboard(Msg::Clipboard),
+            Msg::Clipboard(c) => {
+                self.last_action = match c {
+                    ClipboardContent::Text(t) => {
+                        format!("Clipboard text: {:?}", t.chars().take(40).collect::<String>())
+                    }
+                    ClipboardContent::Image(img) => {
+                        let s = format!("Clipboard image: {}×{}", img.width(), img.height());
+                        self.pasted = Some(img);
+                        s
+                    }
+                    _ => "The clipboard is empty".into(),
+                };
+            }
             Msg::Action(a) => {
                 self.last_action = a.to_string();
                 self.menu = None;
@@ -753,6 +782,34 @@ impl Gallery {
                 "SVG",
                 "svg renders vector images at any size; tint recolors one-color art such as icons and logos.",
                 svg_row,
+            ),
+            section(
+                "Clipboard images",
+                "Copy the photo, then click the box and paste it (or a screenshot) with Ctrl+V.",
+                row()
+                    .gap(16.0)
+                    .items_center()
+                    .child(
+                        col()
+                            .gap(8.0)
+                            .child(button("Copy image").id("copy-image").on_click(Msg::CopyPhoto))
+                            .child(button("Read clipboard").on_click(Msg::ReadClipboard)),
+                    )
+                    .child(
+                        div()
+                            .id("paste-target")
+                            .size(220.0, 130.0)
+                            .center()
+                            .rounded(10.0)
+                            .border(1.0, th.colors.border_strong)
+                            .focusable()
+                            .on_paste_image(Msg::Pasted)
+                            .child(match &self.pasted {
+                                Some(img) => image(img.clone()).fit(Fit::Contain).size(200.0, 110.0),
+                                None => text("Click, then Ctrl+V").color(th.colors.text_muted),
+                            }),
+                    )
+                    .child(text(self.last_action.clone()).color(th.colors.text_muted)),
             ),
             section(
                 "Icons",

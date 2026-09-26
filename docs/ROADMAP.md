@@ -132,7 +132,8 @@ systems; a 100k-line file scrolls at 120fps.
 - [ ] Incremental layout: keep the taffy tree between frames and re-lay out only changed nodes.
 - [x] Virtualized list (`virtual_list`: variable heights, anchored scrolling, follow-end,
   scroll-to-item).
-- [ ] Virtualized table and tree.
+- [x] Virtualized table (`table`: sortable headers, resizable columns, selection).
+- [ ] Virtualized tree.
 - [ ] Damage tracking on the CPU backend (repaint only dirty regions).
 - [ ] Frame budget targets:
   - under 4 ms of CPU per frame for the showcase;

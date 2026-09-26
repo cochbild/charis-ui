@@ -363,6 +363,17 @@ pub(crate) enum Behavior {
     DropdownToggle(u64),
     DropdownClose(u64),
     DropdownPick(u64, usize),
+    /// A table cell: its width follows the table's user-resized column width.
+    TableCell {
+        table: u64,
+        col: usize,
+    },
+    /// Drag handle that resizes a table column (double-click resets it).
+    ColumnResize {
+        table: u64,
+        col: usize,
+        min: f32,
+    },
 }
 
 /// A node in the UI tree. Build them with [`div`], [`row`], [`col`],

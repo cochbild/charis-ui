@@ -70,7 +70,8 @@ Discover, Models, Tune, Developer, Settings).
 | Clipboard write | ✅ |
 | Themes switched at runtime | ✅ |
 | Buttons with hover, press and disabled states; tooltips; checkbox; progress bar | ✅ |
-| Wrapping rows and grid tracks (tables) | ✅ |
+| Wrapping rows and grid tracks | ✅ |
+| Tables: fixed and weighted columns, clipped cells, sortable headers, clickable rows (`table`); columns are also user-resizable | ✅ |
 | Clickable rows | ✅ |
 
 **P2: nice to have**
@@ -102,7 +103,15 @@ up and the view holds still while lines keep arriving, and a "Jump to latest" bu
 
 ![developer log](lmfast-developer.png)
 
-Screenshot flags: `--developer [--scrolled]`, `--settings`, `--light`, `--accent <name>`, `--gray <name>`, `--radius <px>`.
+The **Models** screen is lmfast's model library on `table`:
+- the same six columns and weights as lmfast's `TABLE`, with click-to-sort headers;
+- arch and capability chips, and a green dot on the loaded model;
+- search filtering;
+- a collapsible detail pane in a split.
+
+![models table](lmfast-models.png)
+
+Screenshot flags: `--models`, `--developer [--scrolled]`, `--settings`, `--light`, `--accent <name>`, `--gray <name>`, `--radius <px>`.
 
 It uses:
 - A fully generated theme with no hard-coded colors. **Settings → Appearance** changes mode,

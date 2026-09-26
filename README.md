@@ -215,6 +215,13 @@ the scroll position stays anchored while estimates are replaced by real heights.
 `.follow_end()`, `.on_scroll()`, `cx.scroll_to_end(id)` and `cx.scroll_to_item(id, i)`. A frame
 with 200k rows costs about the same as one with 100.
 
+`table(id, columns, rows, |row, col| cell)` is a data grid. It supports fixed and weighted
+columns (`Column::new("Size").fixed(90.0).align_end().sortable()`), a header that stays put with
+sort indicators, and a virtualized body. Rows are clickable and can be selected and striped, and
+there's an empty state. Users can resize columns by dragging the header dividers (double-click
+resets). The runtime keeps those widths, so the app needs no state for them. Read or restore
+them with `Runtime::column_widths`.
+
 Icons are crisp vectors. There's a built-in set, and any 24×24 SVG path works via
 `Icon::svg("M…")`, so you can paste in Lucide or Feather icons. For fully custom drawing, use
 `canvas(|cv, rect| …)`.
@@ -275,7 +282,7 @@ This is an early but working foundation. Known gaps and planned work:
 - Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
   CPU backend
 - IME pre-edit display
-- Virtualized tables and trees (the list is done)
+- Virtualized trees (lists and tables are done)
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs
 - Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows

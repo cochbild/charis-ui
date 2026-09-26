@@ -472,6 +472,14 @@ enum Drag {
     ReadSelect {
         node: u64,
     },
+    /// Resizing a table column.
+    Column {
+        table: u64,
+        col: usize,
+        min: f32,
+        start: Point,
+        start_w: f32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +572,8 @@ pub struct Runtime<A: App> {
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
+    /// User-resized table column widths, by table id.
+    tables: HashMap<u64, Vec<Option<f32>>>,
     tooltip: Option<(u64, f64, Point)>,
     splitter_hover: Option<(u64, f64)>,
     /// Read-only text selection: (node id, anchor byte, cursor byte).
@@ -623,6 +633,7 @@ impl<A: App> Runtime<A> {
             pending_values: HashMap::new(),
             dropdowns: HashMap::new(),
             virt: HashMap::new(),
+            tables: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
             text_sel: None,
@@ -1019,6 +1030,15 @@ impl<A: App> Runtime<A> {
             match &disabled_style {
                 Some(p) => st.apply_patch(p, 1.0),
                 None => st.opacity *= 0.5,
+            }
+        }
+        // Table cells follow their column's user-resized width.
+        if let Behavior::TableCell { table, col } = behavior {
+            if let Some(w) = self.tables.get(&table).and_then(|t| t.get(col).copied().flatten()) {
+                st.width = Length::Px(w);
+                st.basis = Length::Auto;
+                st.grow = 0.0;
+                st.shrink = 0.0;
             }
         }
         // CSS-like transitions.
@@ -2077,6 +2097,17 @@ impl<A: App> Runtime<A> {
                 self.slider_set(node, p);
                 self.drag = Drag::Slider { node };
             }
+            Drag::Column { table, col, min, start, start_w } => {
+                let w = (start_w + p.x - start.x).max(min).round();
+                let widths = self.tables.entry(table).or_default();
+                if widths.len() <= col {
+                    widths.resize(col + 1, None);
+                }
+                widths[col] = Some(w);
+                self.cursor = Cursor::ResizeCol;
+                self.drag = Drag::Column { table, col, min, start, start_w };
+                self.dirty = true;
+            }
             Drag::ScrollThumb { node, vertical, start, start_offset } => {
                 if let Some(n) = self.node_by_id(node) {
                     let (view, content) =
@@ -2290,6 +2321,20 @@ impl<A: App> Runtime<A> {
                         start_px: st.pane_px.clone(),
                         collapsed_emitted: false,
                     };
+                    return;
+                }
+                Behavior::ColumnResize { table, col, min } => {
+                    let (table, col, min) = (*table, *col, *min);
+                    if clicks >= 2 {
+                        if let Some(slot) = self.tables.get_mut(&table).and_then(|t| t.get_mut(col)) {
+                            *slot = None;
+                        }
+                        self.dirty = true;
+                        return;
+                    }
+                    // The handle sits inside the header cell it resizes.
+                    let start_w = n.parent.map_or(0.0, |p| self.frame.nodes[p].rect.w);
+                    self.drag = Drag::Column { table, col, min, start: p, start_w };
                     return;
                 }
                 Behavior::WindowDrag => {
@@ -2974,6 +3019,18 @@ impl<A: App> Runtime<A> {
         let gid = global_id(id);
         let n = self.frame.nodes.iter().find(|n| n.key == Some(gid))?;
         self.virt.get(&n.id).map(|v| v.built.1 - v.built.0)
+    }
+
+    /// User-resized column widths of the [`table`] with this id (`None` = the
+    /// column's declared width), e.g. to persist them.
+    pub fn column_widths(&self, id: &str) -> Vec<Option<f32>> {
+        self.tables.get(&global_id(id)).cloned().unwrap_or_default()
+    }
+
+    /// Restore column widths saved with [`Runtime::column_widths`].
+    pub fn set_column_widths(&mut self, id: &str, widths: Vec<Option<f32>>) {
+        self.tables.insert(global_id(id), widths);
+        self.dirty = true;
     }
 
     /// Current rectangle of the element with the given `.id` (for tests and tooling).

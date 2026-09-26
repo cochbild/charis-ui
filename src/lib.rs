@@ -68,6 +68,7 @@ pub mod runtime;
 pub mod scene;
 pub mod style;
 pub mod subscription;
+pub mod table;
 pub mod text;
 pub mod theme;
 pub mod widgets;
@@ -86,6 +87,7 @@ pub use paint::Canvas;
 pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
 pub use subscription::Subscriptions;
+pub use table::{cell_text, table, Column, ColumnWidth, SortDir, Table};
 pub use text::{span, Span};
 pub use theme::{theme, Accent, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;
@@ -114,8 +116,9 @@ pub mod prelude {
         TextAlign, Track, Weight,
     };
     pub use crate::subscription::Subscriptions;
+    pub use crate::table::{cell_text, table, Column, ColumnWidth, SortDir};
     pub use crate::text::{span, Span};
-    pub use crate::theme::{theme, Accent, Density, GrayTint, Theme, ThemeConfig};
+    pub use crate::theme::{theme, Accent, Density, GrayTint, Palette, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]
     pub use crate::window::{run, WindowOptions};

@@ -59,6 +59,53 @@ impl Level {
     }
 }
 
+/// A model on disk (what lmfast's Models screen lists).
+struct ModelInfo {
+    name: String,
+    arch: &'static str,
+    params: f32,
+    publisher: &'static str,
+    quant: &'static str,
+    size_gb: f32,
+    caps: &'static [&'static str],
+}
+
+fn mock_models() -> Vec<ModelInfo> {
+    let base: [(&str, &str, f32, &str, &[&str]); 12] = [
+        ("Qwen2.5-7B-Instruct", "qwen2", 7.6, "Qwen", &["Tools"]),
+        ("Qwen2.5-VL-7B-Instruct", "qwen2vl", 8.3, "Qwen", &["Vision", "Tools"]),
+        ("Llama-3.1-8B-Instruct", "llama", 8.0, "meta-llama", &["Tools"]),
+        ("Llama-3.2-3B-Instruct", "llama", 3.2, "meta-llama", &[]),
+        ("gemma-3-12b-it", "gemma3", 12.2, "google", &["Vision"]),
+        ("gemma-3-27b-it", "gemma3", 27.4, "google", &["Vision"]),
+        ("DeepSeek-R1-Distill-Qwen-14B", "qwen2", 14.8, "deepseek-ai", &["Reasoning"]),
+        ("Mistral-Small-3.1-24B-Instruct", "mistral3", 24.0, "mistralai", &["Vision", "Tools"]),
+        ("Phi-4-mini-instruct", "phi3", 3.8, "microsoft", &["Tools"]),
+        ("gpt-oss-20b", "gpt-oss", 20.9, "openai", &["Reasoning", "Tools"]),
+        ("Qwen3-30B-A3B", "qwen3moe", 30.5, "Qwen", &["Reasoning", "Tools"]),
+        ("whisper-large-v3-turbo", "whisper", 0.8, "openai", &["Audio"]),
+    ];
+    let quants = [("Q4_K_M", 0.60), ("Q5_K_M", 0.71), ("Q8_0", 1.06)];
+    let mut out = Vec::new();
+    for (qi, (q, bytes_per_param)) in quants.iter().enumerate() {
+        for (i, (name, arch, params, publisher, caps)) in base.iter().enumerate() {
+            if (i + qi) % 3 == 2 {
+                continue;
+            }
+            out.push(ModelInfo {
+                name: format!("{name}-{q}"),
+                arch,
+                params: *params,
+                publisher,
+                quant: q,
+                size_gb: params * bytes_per_param,
+                caps,
+            });
+        }
+    }
+    out
+}
+
 /// Deterministic fake llama-server output.
 fn log_line(n: usize) -> LogLine {
     const MSGS: [&str; 8] = [
@@ -151,6 +198,10 @@ struct LmFast {
     temperature: f32,
     look: Appearance,
     log: Rc<Vec<LogLine>>,
+    library: Rc<Vec<ModelInfo>>,
+    lib_search: String,
+    lib_sort: (usize, SortDir),
+    lib_selected: Option<usize>,
     log_filter: Option<Level>,
     log_live: bool,
     log_at_end: bool,
@@ -180,6 +231,9 @@ enum Msg {
     Scaling(f32),
     ResetLook,
     LogTick,
+    LibSearch(String),
+    LibSort(usize, SortDir),
+    LibSelect(usize),
     LogLive(bool),
     LogFilter(Option<Level>),
     LogScrolled(ScrollInfo),
@@ -293,6 +347,9 @@ impl App for LmFast {
             Msg::Density(d) => self.look.density = d,
             Msg::Scaling(k) => self.look.scaling = k,
             Msg::ResetLook => self.look = Appearance::default(),
+            Msg::LibSearch(q) => self.lib_search = q,
+            Msg::LibSort(c, d) => self.lib_sort = (c, d),
+            Msg::LibSelect(i) => self.lib_selected = Some(i),
             Msg::LogTick => {
                 // The whole buffer is kept (capped at 20k lines); only visible rows are built.
                 let log = Rc::make_mut(&mut self.log);
@@ -331,6 +388,7 @@ impl App for LmFast {
         let mut root = row().size_full().bg(c.background).child(self.nav()).child(match self.screen {
             Screen::Chat => self.chat(),
             Screen::Developer => self.developer(),
+            Screen::Models => self.models_screen(),
             Screen::Settings => self.settings(),
             _ => col().grow(1.0).center().color(c.text_faint).child(text("Not part of this demo")),
         });
@@ -402,6 +460,152 @@ impl LmFast {
             )
             .child(spacer())
             .child(status)
+    }
+
+    fn models_screen(&self) -> Element<Msg> {
+        let th = theme();
+        let c = th.colors.clone();
+        let lib = self.library.clone();
+        // Filter + sort indices (the data itself is never copied).
+        let q = self.lib_search.to_lowercase();
+        let mut shown: Vec<usize> = (0..lib.len())
+            .filter(|&i| {
+                q.is_empty() || lib[i].name.to_lowercase().contains(&q) || lib[i].publisher.to_lowercase().contains(&q)
+            })
+            .collect();
+        let (sc, dir) = self.lib_sort;
+        shown.sort_by(|&a, &b| {
+            let (a, b) = (&lib[a], &lib[b]);
+            let o = match sc {
+                0 => a.arch.cmp(b.arch),
+                1 => a.params.total_cmp(&b.params),
+                2 => a.publisher.to_lowercase().cmp(&b.publisher.to_lowercase()),
+                3 => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                _ => a.size_gb.total_cmp(&b.size_gb),
+            };
+            if dir == SortDir::Asc {
+                o
+            } else {
+                o.reverse()
+            }
+        });
+        let shown = Rc::new(shown);
+        let selected_row = self.lib_selected.and_then(|m| shown.iter().position(|&i| i == m));
+        let loaded = self.model.map(|m| self.models[m].to_lowercase());
+        let (rows, data, cc) = (shown.clone(), lib.clone(), c.clone());
+        let chip = move |label: String, cc: &Palette| {
+            div()
+                .px(7.0)
+                .py(1.0)
+                .rounded(4.0)
+                .bg(cc.accent_soft)
+                .color(cc.code_text)
+                .font_size(11.0)
+                .child(text(label).nowrap())
+        };
+        let t = table(
+            "library",
+            vec![
+                Column::new("Arch").weight(11.0).sortable(),
+                Column::new("Params").weight(8.0).sortable().align_end(),
+                Column::new("Publisher").weight(16.0).sortable(),
+                Column::new("Model").weight(30.0).sortable().min_width(160.0),
+                Column::new("Capabilities").weight(21.0),
+                Column::new("Size").weight(9.0).sortable().align_end(),
+            ],
+            shown.len(),
+            move |r, col| {
+                let m = &data[rows[r]];
+                match col {
+                    0 => chip(m.arch.to_string(), &cc),
+                    1 => cell_text(format!("{:.1}B", m.params)).color(cc.text_muted),
+                    2 => cell_text(m.publisher).color(cc.text_muted),
+                    3 => {
+                        let is_loaded = loaded.as_deref() == Some(m.name.to_lowercase().as_str());
+                        row()
+                            .gap(6.0)
+                            .items_center()
+                            .min_w(0.0)
+                            .child(cell_text(m.name.clone()))
+                            .child_if(is_loaded, || div().square(7.0).pill().bg(cc.success).shrink(0.0))
+                    }
+                    4 => row().gap(4.0).children(m.caps.iter().map(|cap| chip(cap.to_string(), &cc))),
+                    _ => cell_text(format!("{:.1} GB", m.size_gb)).mono().color(cc.text_muted),
+                }
+            },
+        )
+        .sort(sc, dir, Msg::LibSort)
+        .on_row_click({
+            let rows = shown.clone();
+            move |r| Msg::LibSelect(rows[r])
+        })
+        .selected(selected_row)
+        .empty_state(text("No models match the filter."));
+
+        let detail = match self.lib_selected {
+            Some(i) => {
+                let m = &lib[i];
+                let kv = |k: &str, v: String| {
+                    row()
+                        .gap(12.0)
+                        .py(6.0)
+                        .border_b(1.0, c.border)
+                        .child(text(k.to_string()).w(96.0).shrink(0.0).color(c.text_faint))
+                        .child(text(v).selectable().grow(1.0).min_w(0.0))
+                };
+                col()
+                    .gap(12.0)
+                    .p(18.0)
+                    .child(text(m.name.clone()).font_size(th.font_size_lg).bold())
+                    .child(
+                        row()
+                            .gap(8.0)
+                            .child(primary_button("Load model").with_icon(Icon::Play))
+                            .child(button("Show in folder").with_icon(Icon::Folder)),
+                    )
+                    .child(
+                        col()
+                            .child(kv("Architecture", m.arch.into()))
+                            .child(kv("Parameters", format!("{:.1}B", m.params)))
+                            .child(kv("Quantization", m.quant.into()))
+                            .child(kv("File size", format!("{:.2} GB", m.size_gb)))
+                            .child(kv("Publisher", m.publisher.into()))
+                            .child(kv(
+                                "Capabilities",
+                                if m.caps.is_empty() { "Text".into() } else { m.caps.join(", ") },
+                            )),
+                    )
+            }
+            None => col().grow(1.0).center().color(c.text_faint).child(text("Select a model to see details")),
+        };
+
+        hsplit(
+            "models-split",
+            vec![
+                Pane::fill(
+                    col()
+                        .min_w(0.0)
+                        .p(20.0)
+                        .gap(14.0)
+                        .child(
+                            row()
+                                .items_center()
+                                .gap(12.0)
+                                .child(text("Models").font_size(th.font_size_lg * 1.4).bold())
+                                .child(badge(format!("{} of {}", shown.len(), lib.len())))
+                                .child(spacer())
+                                .child(search_input(self.lib_search.clone(), Msg::LibSearch).w(260.0)),
+                        )
+                        .child(
+                            text("CPU 16 cores · RAM 64 GB · VRAM 24 GB (RTX 4090)")
+                                .font_size(th.font_size_sm)
+                                .color(c.text_faint),
+                        )
+                        .child(card().p(0.0).gap(0.0).grow(1.0).min_h(0.0).child(Element::from(t).grow(1.0))),
+                ),
+                Pane::fixed(340.0, detail.bg(c.panel).h_full()).min(260.0).max(520.0).collapsible(true),
+            ],
+        )
     }
 
     fn developer(&self) -> Element<Msg> {
@@ -877,6 +1081,10 @@ fn initial() -> LmFast {
         temperature: 0.7,
         look: Appearance::default(),
         log: Rc::new((0..LOG_CAP / 2).map(log_line).collect()),
+        library: Rc::new(mock_models()),
+        lib_search: String::new(),
+        lib_sort: (3, SortDir::Asc),
+        lib_selected: Some(0),
         log_filter: None,
         log_live: true,
         log_at_end: true,
@@ -904,6 +1112,9 @@ fn main() {
         }
         if args.iter().any(|a| a == "--settings") {
             app.screen = Screen::Settings;
+        }
+        if args.iter().any(|a| a == "--models") {
+            app.screen = Screen::Models;
         }
         if args.iter().any(|a| a == "--developer") {
             app.screen = Screen::Developer;

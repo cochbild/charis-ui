@@ -9,11 +9,18 @@
 //! Settings screen changes live: mode, accent, neutral tint, corners, density
 //! and text size. Nothing in the views hard-codes a color.
 
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use rust_ui::prelude::*;
 use rust_ui::TaskHandle;
+
+const LOG_CAP: usize = 20_000;
+
+fn clock(secs: u32) -> String {
+    format!("{:02}:{:02}:{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60)
+}
 
 const GRAYS: [(&str, GrayTint); 7] = [
     ("Zinc", GrayTint::Zinc),
@@ -24,6 +31,59 @@ const GRAYS: [(&str, GrayTint); 7] = [
     ("Sage", GrayTint::Sage),
     ("Tinted", GrayTint::Accent),
 ];
+
+/// One engine log line (`HH:MM:SS  [LEVEL]  message`).
+#[derive(Clone)]
+struct LogLine {
+    secs: u32,
+    level: Level,
+    msg: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Level {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Level {
+    fn label(self) -> &'static str {
+        match self {
+            Level::Debug => "DEBUG",
+            Level::Info => "INFO",
+            Level::Warn => "WARN",
+            Level::Error => "ERROR",
+        }
+    }
+}
+
+/// Deterministic fake llama-server output.
+fn log_line(n: usize) -> LogLine {
+    const MSGS: [&str; 8] = [
+        "slot update_slots: id 0 | task 412 | prompt processing progress, n_past = 2048, n_tokens = 512",
+        "srv  params_from_: Chat format: Hermes 2 Pro",
+        "slot launch_slot_: id 0 | task 413 | processing task",
+        "srv  log_server_r: request: POST /v1/chat/completions 127.0.0.1 200",
+        "llama_kv_cache_unified: CUDA0 KV buffer size = 448.00 MiB",
+        "slot print_timing: id 0 | task 412 | prompt eval time = 38.21 ms / 512 tokens (13399.6 tokens per second)",
+        "srv  update_slots: all slots are idle",
+        "ggml_cuda_init: found 1 CUDA devices: NVIDIA GeForce RTX 4090, compute capability 8.9",
+    ];
+    let level = match n % 23 {
+        0 => Level::Error,
+        5 | 13 => Level::Warn,
+        2 | 7 | 9 | 16 | 20 => Level::Debug,
+        _ => Level::Info,
+    };
+    let msg = match level {
+        Level::Error => "srv  send_error: task id = 414, error: context size exceeded (n_ctx = 8192)".to_string(),
+        Level::Warn => "common_init_from_params: warming up the model with an empty run - please wait".to_string(),
+        _ => MSGS[n % MSGS.len()].to_string(),
+    };
+    LogLine { secs: 9 * 3600 + 41 * 60 + (n / 4) as u32, level, msg }
+}
 
 /// The user's appearance choices (what lmfast would persist in settings).
 #[derive(Clone, Debug, PartialEq)]
@@ -90,6 +150,10 @@ struct LmFast {
     show_params: bool,
     temperature: f32,
     look: Appearance,
+    log: Rc<Vec<LogLine>>,
+    log_filter: Option<Level>,
+    log_live: bool,
+    log_at_end: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -115,6 +179,13 @@ enum Msg {
     Density(Density),
     Scaling(f32),
     ResetLook,
+    LogTick,
+    LogLive(bool),
+    LogFilter(Option<Level>),
+    LogScrolled(ScrollInfo),
+    LogJumpLatest,
+    LogClear,
+    LogCopy,
     CloseRequested,
     CancelQuit,
     Quit,
@@ -141,6 +212,7 @@ impl App for LmFast {
     fn subscriptions(&self) -> Subscriptions<Msg> {
         Subscriptions::none()
             .every_if(self.streaming.is_some(), Duration::from_millis(250), Msg::Tick)
+            .every_if(self.log_live && self.screen == Screen::Developer, Duration::from_millis(80), Msg::LogTick)
             .on_close_request(Msg::CloseRequested)
     }
 
@@ -221,6 +293,25 @@ impl App for LmFast {
             Msg::Density(d) => self.look.density = d,
             Msg::Scaling(k) => self.look.scaling = k,
             Msg::ResetLook => self.look = Appearance::default(),
+            Msg::LogTick => {
+                // The whole buffer is kept (capped at 20k lines); only visible rows are built.
+                let log = Rc::make_mut(&mut self.log);
+                let n = log.len();
+                log.extend((n..n + 3).map(log_line));
+                if log.len() > LOG_CAP {
+                    log.drain(..log.len() - LOG_CAP);
+                }
+            }
+            Msg::LogLive(on) => self.log_live = on,
+            Msg::LogFilter(f) => self.log_filter = f,
+            Msg::LogScrolled(info) => self.log_at_end = info.at_end,
+            Msg::LogJumpLatest => cx.scroll_to_end("engine-log"),
+            Msg::LogClear => self.log = Rc::new(Vec::new()),
+            Msg::LogCopy => {
+                let all: Vec<String> =
+                    self.log.iter().map(|l| format!("{} [{}] {}", clock(l.secs), l.level.label(), l.msg)).collect();
+                cx.copy_to_clipboard(all.join("\n"));
+            }
             Msg::CloseRequested => {
                 if self.streaming.is_some() {
                     self.confirm_quit = true;
@@ -239,6 +330,7 @@ impl App for LmFast {
         let c = &th.colors;
         let mut root = row().size_full().bg(c.background).child(self.nav()).child(match self.screen {
             Screen::Chat => self.chat(),
+            Screen::Developer => self.developer(),
             Screen::Settings => self.settings(),
             _ => col().grow(1.0).center().color(c.text_faint).child(text("Not part of this demo")),
         });
@@ -310,6 +402,106 @@ impl LmFast {
             )
             .child(spacer())
             .child(status)
+    }
+
+    fn developer(&self) -> Element<Msg> {
+        let th = theme();
+        let c = th.colors.clone();
+        // Indices of the lines passing the level filter (cheap even for 20k lines).
+        let shown: Rc<Vec<u32>> = Rc::new(
+            (0..self.log.len() as u32)
+                .filter(|&i| self.log_filter.is_none_or(|f| self.log[i as usize].level == f))
+                .collect(),
+        );
+        let log = self.log.clone();
+        let rows = shown.clone();
+        let cc = c.clone();
+        let list = virtual_list(shown.len(), move |i| {
+            let l = &log[rows[i] as usize];
+            let level_color = match l.level {
+                Level::Debug => cc.text_faint,
+                Level::Info => cc.accent,
+                Level::Warn => cc.warning,
+                Level::Error => cc.danger,
+            };
+            row()
+                .gap(12.0)
+                .px(12.0)
+                .min_h(20.0)
+                .items(Align::Start)
+                .rounded(3.0)
+                .hover(|s| s.bg(cc.hover))
+                .mono()
+                .font_size(12.0)
+                .child(text(clock(l.secs)).color(cc.text_faint).shrink(0.0))
+                .child(text(l.level.label()).color(level_color).w(44.0).shrink(0.0))
+                .child(text(l.msg.clone()).color(cc.text_muted).grow(1.0).min_w(0.0).selectable())
+        })
+        .id("engine-log")
+        .item_height(20.0)
+        .py(6.0)
+        .follow_end()
+        .on_scroll(Msg::LogScrolled)
+        .grow(1.0);
+        let filter = segmented(
+            [
+                ("All", None),
+                ("Debug", Some(Level::Debug)),
+                ("Info", Some(Level::Info)),
+                ("Warn", Some(Level::Warn)),
+                ("Error", Some(Level::Error)),
+            ]
+            .into_iter()
+            .map(|(n, f)| (n.to_string(), self.log_filter == f, Msg::LogFilter(f)))
+            .collect(),
+        );
+        let header = row()
+            .items_center()
+            .gap(10.0)
+            .px(14.0)
+            .h(48.0)
+            .border_b(1.0, c.border)
+            .child(text("Engine logs").medium())
+            .child(badge(format!("{} lines", shown.len())))
+            .child(spacer())
+            .child(filter)
+            .child(
+                row()
+                    .items_center()
+                    .gap(6.0)
+                    .child(switch(self.log_live).on_click(Msg::LogLive(!self.log_live)))
+                    .child(text("Live").font_size(th.font_size_sm).color(c.text_muted)),
+            )
+            .child(ghost_button("Copy").with_icon(Icon::Files).on_click(Msg::LogCopy))
+            .child(ghost_button("Clear").on_click(Msg::LogClear));
+        let jump = (!self.log_at_end).then(|| {
+            primary_button("Jump to latest")
+                .with_icon(Icon::ChevronDown)
+                .absolute()
+                .bottom(16.0)
+                .right(24.0)
+                .shadows(th.shadow_popover.clone())
+                .on_click(Msg::LogJumpLatest)
+        });
+        col()
+            .grow(1.0)
+            .min_w(0.0)
+            .p(24.0)
+            .gap(16.0)
+            .child(
+                col()
+                    .gap(4.0)
+                    .child(text("Developer · OpenAI-compatible server").font_size(th.font_size_lg * 1.4).bold())
+                    .child(
+                        row()
+                            .gap(8.0)
+                            .items_center()
+                            .child(div().square(7.0).pill().bg(c.success))
+                            .child(text("Running").color(c.text_muted))
+                            .child(text("http://127.0.0.1:1234/v1").mono().color(c.text_muted)),
+                    ),
+            )
+            .child(card().p(0.0).gap(0.0).grow(1.0).min_h(0.0).child(header).child(list).children(jump))
     }
 
     fn settings(&self) -> Element<Msg> {
@@ -684,6 +876,10 @@ fn initial() -> LmFast {
         show_params: false,
         temperature: 0.7,
         look: Appearance::default(),
+        log: Rc::new((0..LOG_CAP / 2).map(log_line).collect()),
+        log_filter: None,
+        log_live: true,
+        log_at_end: true,
     }
 }
 
@@ -709,6 +905,9 @@ fn main() {
         if args.iter().any(|a| a == "--settings") {
             app.screen = Screen::Settings;
         }
+        if args.iter().any(|a| a == "--developer") {
+            app.screen = Screen::Developer;
+        }
         let mut h = Headless::new(app, 1360.0, 860.0, 1.0);
         h.settle();
         if args.iter().any(|a| a == "--streaming") {
@@ -716,6 +915,14 @@ fn main() {
             h.rt.send(Msg::Send);
             h.wait_until(Duration::from_secs(5), |a| a.messages.last().is_some_and(|m| m.text.len() > 160));
             h.advance(0.3);
+        }
+        if args.iter().any(|a| a == "--scrolled") {
+            // Scroll the log up while it keeps streaming: the view must stay put.
+            for _ in 0..12 {
+                h.event(rust_ui::runtime::Event::Wheel(Point::new(700.0, 500.0), Point::new(0.0, -120.0)));
+                h.advance(0.05);
+            }
+            h.advance(1.0);
         }
         h.settle();
         h.save_png(&out).expect("save");

@@ -85,6 +85,8 @@ pub enum WindowRequest {
 pub(crate) enum ScrollCmd {
     ToEnd,
     To(f32),
+    /// Bring row `i` of a [`virtual_list`] to the top.
+    ToItem(usize),
 }
 
 /// Context passed to [`App::update`] for side effects.
@@ -126,6 +128,10 @@ impl<M> Cx<M> {
     /// Scroll the scroll container with this `.id(...)` to a vertical offset.
     pub fn scroll_to(&mut self, id: &str, y: f32) {
         self.scrolls.push((crate::element::global_id(id), ScrollCmd::To(y)));
+    }
+    /// Scroll a [`virtual_list`] with this `.id(...)` so row `index` is at the top.
+    pub fn scroll_to_item(&mut self, id: &str, index: usize) {
+        self.scrolls.push((crate::element::global_id(id), ScrollCmd::ToItem(index)));
     }
     /// A handle for sending messages from other threads.
     pub fn proxy(&self) -> Proxy<M> {
@@ -353,6 +359,65 @@ impl ScrollState {
     }
 }
 
+/// Retained state of a [`virtual_list`]: measured row heights.
+#[derive(Default)]
+struct VirtState {
+    /// Measured height per row; NaN = not measured yet (use `estimate`).
+    heights: Vec<f32>,
+    known_sum: f64,
+    known_n: usize,
+    estimate: f32,
+    gap: f32,
+    /// First row intersecting the viewport when the frame was built. Rows
+    /// above it that change height shift the scroll offset to compensate.
+    anchor: usize,
+    /// Rows built this frame: index range and list-space extent.
+    built: (usize, usize),
+    built_px: (f32, f32),
+    seen: u64,
+}
+
+impl VirtState {
+    fn resize(&mut self, n: usize) {
+        if n < self.heights.len() {
+            for &h in &self.heights[n..] {
+                if !h.is_nan() {
+                    self.known_sum -= h as f64;
+                    self.known_n -= 1;
+                }
+            }
+        }
+        self.heights.resize(n, f32::NAN);
+    }
+    fn h(&self, i: usize) -> f32 {
+        match self.heights.get(i) {
+            Some(h) if !h.is_nan() => *h,
+            _ => self.estimate,
+        }
+    }
+    fn set(&mut self, i: usize, h: f32) {
+        let Some(old) = self.heights.get_mut(i) else { return };
+        if old.is_nan() {
+            self.known_n += 1;
+        } else {
+            self.known_sum -= *old as f64;
+        }
+        self.known_sum += h as f64;
+        *old = h;
+    }
+    fn total(&self) -> f32 {
+        let n = self.heights.len();
+        if n == 0 {
+            return 0.0;
+        }
+        (self.known_sum + (n - self.known_n) as f64 * self.estimate as f64) as f32 + self.gap * (n - 1) as f32
+    }
+    /// List-space top of row `i`.
+    fn pos(&self, i: usize) -> f32 {
+        (0..i.min(self.heights.len())).map(|j| self.h(j) + self.gap).sum()
+    }
+}
+
 #[derive(Default)]
 struct DropdownState {
     open: bool,
@@ -448,6 +513,8 @@ pub(crate) struct Node<M> {
     pub split: Option<(u64, Axis)>,
     /// For split pane wrappers: (split id, pane index).
     pub pane: Option<(u64, usize)>,
+    /// For virtual list rows: (list id, row index).
+    pub virt_item: Option<(u64, usize)>,
 }
 
 struct Frame<M> {
@@ -496,6 +563,7 @@ pub struct Runtime<A: App> {
     /// build on each other rather than on the last rendered value.
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
+    virt: HashMap<u64, VirtState>,
     tooltip: Option<(u64, f64, Point)>,
     splitter_hover: Option<(u64, f64)>,
     /// Read-only text selection: (node id, anchor byte, cursor byte).
@@ -554,6 +622,7 @@ impl<A: App> Runtime<A> {
             inputs: HashMap::new(),
             pending_values: HashMap::new(),
             dropdowns: HashMap::new(),
+            virt: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
             text_sel: None,
@@ -888,6 +957,7 @@ impl<A: App> Runtime<A> {
         self.frame = frame;
         self.transitions.retain(|_, t| t.seen + 2 >= self.frame_no);
         self.rect_anims.retain(|_, t| t.seen + 2 >= self.frame_no);
+        self.virt.retain(|_, v| v.seen + 120 >= self.frame_no);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -995,6 +1065,7 @@ impl<A: App> Runtime<A> {
         let pointer = inh_pointer && pointer_events;
 
         let mut dropdown_spec: Option<DropdownSpec> = None;
+        let mut virtual_spec: Option<VirtualSpec<A::Msg>> = None;
         let (node_content, split_spec) = match content {
             Content::None => (NodeContent::None, None),
             Content::Text(t) => (NodeContent::Text(t), None),
@@ -1004,6 +1075,10 @@ impl<A: App> Runtime<A> {
             Content::Split(s) => (NodeContent::None, Some(s)),
             Content::Dropdown(d) => {
                 dropdown_spec = Some(d);
+                (NodeContent::None, None)
+            }
+            Content::Virtual(v) => {
+                virtual_spec = Some(v);
                 (NodeContent::None, None)
             }
         };
@@ -1035,6 +1110,7 @@ impl<A: App> Runtime<A> {
             scroll: Point::ZERO,
             split: None,
             pane: None,
+            virt_item: None,
         });
         frame.by_id.insert(id, idx);
         if let Some(p) = parent {
@@ -1045,12 +1121,95 @@ impl<A: App> Runtime<A> {
             self.flatten_split(idx, id, spec, &text, color, pointer, frame);
         } else if let Some(d) = dropdown_spec {
             self.flatten_dropdown(idx, id, d, &text, color, pointer, frame);
+        } else if let Some(v) = virtual_spec {
+            self.flatten_virtual(idx, id, v, &text, color, pointer, frame);
         } else {
             for (i, c) in children.into_iter().enumerate() {
                 self.flatten(c, Some(idx), id, i, &text, color, pointer, frame);
             }
         }
         idx
+    }
+
+    /// Build only the rows of a virtual list that are near the viewport,
+    /// absolutely positioned inside a spacer as tall as the whole list.
+    #[allow(clippy::too_many_arguments)]
+    fn flatten_virtual(
+        &mut self,
+        idx: usize,
+        id: u64,
+        spec: VirtualSpec<A::Msg>,
+        text: &TextStyle,
+        color: Color,
+        pointer: bool,
+        frame: &mut Frame<A::Msg>,
+    ) {
+        let now = self.now;
+        let n = &frame.nodes[idx];
+        let pad_top = n.style.padding.top;
+        let gap = n.style.gap.1;
+        let (key, follow) = (n.key, n.follow_end);
+        // Viewport from the previous frame (the window height on the first one).
+        let vh = self
+            .frame
+            .by_id
+            .get(&id)
+            .map(|&i| inner_rect(self.frame.nodes[i].rect, &self.frame.nodes[i].style.border_width).h)
+            .filter(|h| *h > 0.0)
+            .unwrap_or(self.size.h);
+        let ss = self.scrolls.get(&id);
+        let pinned = follow && ss.and_then(|s| s.pinned) != Some(false);
+        let pending = key.and_then(|k| self.pending_scrolls.iter().rev().find(|(g, _)| *g == k).map(|(_, c)| *c));
+        let offset = ss.map_or(0.0, |s| s.offset(now).y);
+        let vs = self.virt.entry(id).or_default();
+        vs.resize(spec.count);
+        vs.estimate = spec.estimate;
+        vs.gap = gap;
+        vs.seen = self.frame_no;
+        let total = vs.total();
+        // Where the viewport will be once layout applies scroll commands.
+        let top = match pending {
+            Some(ScrollCmd::ToEnd) => total - vh,
+            Some(ScrollCmd::To(y)) => y - pad_top,
+            Some(ScrollCmd::ToItem(i)) => vs.pos(i) - pad_top,
+            None if pinned => total - vh,
+            None => offset - pad_top,
+        }
+        .max(0.0);
+        let (lo, hi) = (top - spec.overscan, top + vh + spec.overscan);
+        let mut rows = Vec::new();
+        let mut anchor = None;
+        let mut y = 0.0;
+        for i in 0..spec.count {
+            if y > hi {
+                break;
+            }
+            let h = vs.h(i);
+            if y + h >= lo {
+                rows.push((i, y));
+            }
+            if anchor.is_none() && y + h > top {
+                anchor = Some(i);
+            }
+            y += h + gap;
+        }
+        vs.anchor = anchor.unwrap_or(spec.count);
+        vs.built = match (rows.first(), rows.last()) {
+            (Some(a), Some(b)) => (a.0, b.0 + 1),
+            _ => (0, 0),
+        };
+        vs.built_px = match (rows.first(), rows.last()) {
+            (Some(a), Some(b)) => (a.1, b.1 + vs.h(b.0)),
+            _ => (0.0, 0.0),
+        };
+        let spacer = div().w_full().h(total).shrink(0.0);
+        let inner = self.flatten(spacer, Some(idx), id, 0, text, color, pointer, frame);
+        let inner_id = frame.nodes[inner].id;
+        for (i, y) in rows {
+            let row = (spec.builder)(i).absolute().top(y).left(0.0).right(0.0);
+            let r = self.flatten(row, Some(inner), inner_id, i, text, color, pointer, frame);
+            frame.nodes[r].virt_item = Some((id, i));
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1406,6 +1565,32 @@ impl<A: App> Runtime<A> {
             }
         }
 
+        // Virtual lists: cache measured row heights. Rows were stacked using
+        // estimates, so re-stack the ones after a mis-estimated row, grow the
+        // list's extent, and shift the scroll offset by any change above the
+        // viewport's first row so what the user is looking at stays put.
+        let mut vdy: HashMap<usize, f32> = HashMap::new();
+        let mut vgrow: HashMap<u64, f32> = HashMap::new();
+        for i in 0..frame.nodes.len() {
+            let Some((lid, k)) = frame.nodes[i].virt_item else { continue };
+            let Some(vs) = self.virt.get_mut(&lid) else { continue };
+            let h = tree.layout(frame.nodes[i].tnode).map_or(0.0, |l| l.size.height);
+            let acc = vgrow.entry(lid).or_insert(0.0);
+            if *acc != 0.0 {
+                vdy.insert(i, *acc);
+            }
+            let delta = h - vs.h(k);
+            if delta.abs() > 0.01 {
+                *acc += delta;
+                if k < vs.anchor {
+                    if let Some(a) = self.scrolls.get_mut(&lid).and_then(|s| s.y.as_mut()) {
+                        a.shift(delta);
+                    }
+                }
+            }
+            vs.set(k, h);
+        }
+
         // Absolute rects, clips and scroll offsets (pre-order: parents first).
         let now = self.now;
         for i in 0..frame.nodes.len() {
@@ -1435,7 +1620,7 @@ impl<A: App> Runtime<A> {
             let n = &mut frame.nodes[i];
             let mut rel = Rect::new(
                 l.location.x + n.style.translate.0,
-                l.location.y + n.style.translate.1,
+                l.location.y + n.style.translate.1 + vdy.get(&i).copied().unwrap_or(0.0),
                 l.size.width,
                 l.size.height,
             );
@@ -1468,7 +1653,7 @@ impl<A: App> Runtime<A> {
                     }
                 }
                 cw += l.padding.right + l.border.right;
-                ch += l.padding.bottom + l.border.bottom;
+                ch += l.padding.bottom + l.border.bottom + vgrow.get(&n.id).copied().unwrap_or(0.0);
                 n.content_size = Size::new(cw, ch);
                 let max = Point::new((cw - l.size.width).max(0.0), (ch - l.size.height).max(0.0));
                 let ss = self.scrolls.entry(n.id).or_default();
@@ -1497,14 +1682,33 @@ impl<A: App> Runtime<A> {
                     let t = match cmd {
                         ScrollCmd::ToEnd => max.y,
                         ScrollCmd::To(v) => v.clamp(0.0, max.y),
+                        ScrollCmd::ToItem(k) => self.virt.get(&n.id).map_or(0.0, |vs| vs.pos(k)).clamp(0.0, max.y),
                     };
-                    a.set(t, now, 0.18);
+                    if self.virt.contains_key(&n.id) {
+                        // Virtual lists jump: the rows in between were never
+                        // built, so an animation would chase estimated heights.
+                        a.snap(t);
+                    } else {
+                        a.set(t, now, 0.18);
+                    }
                     if n.follow_end {
                         ss.pinned = Some(t >= max.y - 2.0);
                     }
                 }
                 let off = ss.offset(now);
                 n.scroll = Point::new(off.x.clamp(0.0, max.x), off.y.clamp(0.0, max.y));
+                if let Some(vs) = self.virt.get(&n.id) {
+                    // Rebuild next frame if the viewport has moved past the built rows.
+                    let grow = vgrow.get(&n.id).copied().unwrap_or(0.0);
+                    let top = n.scroll.y - n.style.padding.top;
+                    let bottom = top + l.size.height;
+                    let count = vs.heights.len();
+                    if (vs.built.0 > 0 && top < vs.built_px.0 - 0.5)
+                        || (vs.built.1 < count && bottom > vs.built_px.1 + grow + 0.5)
+                    {
+                        self.dirty = true;
+                    }
+                }
                 if let Some(h) = &n.handlers.scroll {
                     let t = ss.target();
                     if ss.last_reported != Some(t) {
@@ -2756,6 +2960,20 @@ impl<A: App> Runtime<A> {
             a.set(y.clamp(0.0, st.max.y), self.now, 0.2);
             self.dirty = true;
         }
+    }
+
+    /// Scroll a [`virtual_list`] (by `.id`) so row `index` is at the top.
+    pub fn scroll_to_item(&mut self, id: &str, index: usize) {
+        self.pending_scrolls.push((global_id(id), ScrollCmd::ToItem(index)));
+        self.dirty = true;
+    }
+
+    /// How many rows of the [`virtual_list`] with this `.id` are currently built
+    /// (for tests and tooling).
+    pub fn virtual_rows_built(&self, id: &str) -> Option<usize> {
+        let gid = global_id(id);
+        let n = self.frame.nodes.iter().find(|n| n.key == Some(gid))?;
+        self.virt.get(&n.id).map(|v| v.built.1 - v.built.0)
     }
 
     /// Current rectangle of the element with the given `.id` (for tests and tooling).

@@ -30,13 +30,12 @@ frameworks don't provide.
 **Missing for production:**
 - Platforms other than Linux have never been tested.
 - No accessibility.
-- Text input is single-line only, and IME composition (pre-edit) isn't shown.
+- IME composition (pre-edit) isn't shown.
 - Only one window per app.
-- No virtualized lists.
 - Layout is fully rebuilt every frame.
 - 34 `unwrap`/`expect` calls in library code.
 - The crate name is taken.
-- No CI, no LICENSE files, no API docs site.
+- No CI and no API docs site.
 
 ## Decisions (September 2026)
 
@@ -131,7 +130,9 @@ systems; a 100k-line file scrolls at 120fps.
 ### M4: Scale and performance
 
 - [ ] Incremental layout: keep the taffy tree between frames and re-lay out only changed nodes.
-- [ ] Virtualized list, table and tree (render only visible rows).
+- [x] Virtualized list (`virtual_list`: variable heights, anchored scrolling, follow-end,
+  scroll-to-item).
+- [ ] Virtualized table and tree.
 - [ ] Damage tracking on the CPU backend (repaint only dirty regions).
 - [ ] Frame budget targets:
   - under 4 ms of CPU per frame for the showcase;

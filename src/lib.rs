@@ -99,8 +99,8 @@ pub mod prelude {
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};
     pub use crate::effects::{Proxy, TaskHandle};
     pub use crate::element::{
-        canvas, col, div, hsplit, icon, rich_text, row, spacer, split, text, vsplit, DragEvent, DragPhase, DropEvent,
-        DropPhase, Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
+        canvas, col, div, hsplit, icon, rich_text, row, spacer, split, text, virtual_list, vsplit, DragEvent,
+        DragPhase, DropEvent, DropPhase, Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
     };
     pub use crate::geometry::{Axis, Point, Rect, Size};
     pub use crate::headless::Headless;

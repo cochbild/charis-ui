@@ -315,6 +315,17 @@ pub(crate) struct SplitSpec<M> {
     pub panes: Vec<Pane<M>>,
 }
 
+/// A virtualized list: only rows near the viewport are built.
+pub(crate) struct VirtualSpec<M> {
+    pub count: usize,
+    /// Row height used for rows that haven't been measured yet (exact for
+    /// uniform rows).
+    pub estimate: f32,
+    /// Extra pixels built above and below the viewport.
+    pub overscan: f32,
+    pub builder: Rc<dyn Fn(usize) -> Element<M>>,
+}
+
 pub(crate) enum Content<M> {
     None,
     Text(TextSpec),
@@ -323,6 +334,7 @@ pub(crate) enum Content<M> {
     Input(InputSpec),
     Split(SplitSpec<M>),
     Dropdown(DropdownSpec),
+    Virtual(VirtualSpec<M>),
 }
 
 /// Special interactive behaviours implemented by the runtime.
@@ -497,6 +509,21 @@ pub fn split<M: 'static>(id: &str, axis: Axis, panes: Vec<Pane<M>>) -> Element<M
     e
 }
 
+/// A vertically scrolling list that only builds the rows near the viewport,
+/// so it stays fast with 100k+ rows. `item(i)` builds row `i` on demand.
+///
+/// Rows may have different heights: each row is measured when it is first
+/// shown and cached, and scrolling stays anchored while estimates are
+/// replaced by real heights. Set [`Element::item_height`] to the typical (or
+/// exact) row height. Use `.gap()` / padding on the list as usual, and
+/// `.follow_end()`, `.on_scroll()`, `Cx::scroll_to_end` and
+/// `Cx::scroll_to_item` like any scroll container.
+pub fn virtual_list<M: 'static>(count: usize, item: impl Fn(usize) -> Element<M> + 'static) -> Element<M> {
+    let mut e = div().flex_col().scroll_y();
+    e.content = Content::Virtual(VirtualSpec { count, estimate: 28.0, overscan: 300.0, builder: Rc::new(item) });
+    e
+}
+
 /// Horizontal split (panes side by side).
 pub fn hsplit<M: 'static>(id: &str, panes: Vec<Pane<M>>) -> Element<M> {
     split(id, Axis::Horizontal, panes)
@@ -584,6 +611,15 @@ impl<M: 'static> Element<M> {
             Content::Canvas(c) => Content::Canvas(c),
             Content::Input(i) => Content::Input(i),
             Content::Dropdown(d) => Content::Dropdown(d),
+            Content::Virtual(v) => {
+                let (b, f) = (v.builder, f.clone());
+                Content::Virtual(VirtualSpec {
+                    count: v.count,
+                    estimate: v.estimate,
+                    overscan: v.overscan,
+                    builder: Rc::new(move |i| b(i).map_rc(f.clone())),
+                })
+            }
             Content::Split(s) => Content::Split(SplitSpec {
                 axis: s.axis,
                 panes: s
@@ -1201,6 +1237,24 @@ impl<M: 'static> Element<M> {
     /// re-pins it.
     pub fn follow_end(mut self) -> Self {
         self.follow_end = true;
+        self
+    }
+
+    /// For [`virtual_list`]: the height of rows that haven't been measured yet.
+    /// When every row has this exact height, scrolling never has to correct.
+    pub fn item_height(mut self, h: f32) -> Self {
+        if let Content::Virtual(v) = &mut self.content {
+            v.estimate = h.max(1.0);
+        }
+        self
+    }
+
+    /// For [`virtual_list`]: how many extra pixels of rows to build above and
+    /// below the viewport (default 300).
+    pub fn overscan(mut self, px: f32) -> Self {
+        if let Content::Virtual(v) = &mut self.content {
+            v.overscan = px.max(0.0);
+        }
         self
     }
 

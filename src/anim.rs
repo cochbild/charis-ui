@@ -130,6 +130,13 @@ impl Anim {
         }
     }
 
+    /// Move both the current value and the target by `d` (keeps any running
+    /// animation's shape; used to keep scroll content anchored).
+    pub fn shift(&mut self, d: f32) {
+        self.from += d;
+        self.to += d;
+    }
+
     /// Jump immediately.
     pub fn snap(&mut self, v: f32) {
         self.from = v;

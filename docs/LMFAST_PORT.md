@@ -74,7 +74,8 @@ Discover, Models, Tune, Developer, Settings).
 | Clickable rows | ✅ |
 
 **P2: nice to have**
-- Virtualized lists (long transcripts, a 500-line log).
+- ✅ Virtualized lists (long transcripts, a 500-line log). `virtual_list`; the demo's Developer
+  screen streams a 20k-line log.
 - Syntax highlighting in code blocks (lmfast doesn't use it yet).
 
 ## Proof
@@ -95,7 +96,13 @@ Appearance screen:
 
 ![appearance settings](lmfast-appearance.png)
 
-Screenshot flags: `--settings`, `--light`, `--accent <name>`, `--gray <name>`, `--radius <px>`.
+The **Developer** screen streams engine logs into a `virtual_list`. lmfast only kept the last 200
+lines; this keeps 20k. It has level filters, copy and clear, and follows the newest line. Scroll
+up and the view holds still while lines keep arriving, and a "Jump to latest" button appears:
+
+![developer log](lmfast-developer.png)
+
+Screenshot flags: `--developer [--scrolled]`, `--settings`, `--light`, `--accent <name>`, `--gray <name>`, `--radius <px>`.
 
 It uses:
 - A fully generated theme with no hard-coded colors. **Settings → Appearance** changes mode,

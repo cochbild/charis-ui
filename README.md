@@ -209,6 +209,12 @@ useful for indicators, previews and reordering.
 `card`, `badge`, `tag`, `kbd`, `avatar`, `section_header`, `separator`, and `.tooltip(..)` on any
 element.
 
+`virtual_list(count, |i| row)` scrolls through 100k+ rows while building only the rows near the
+viewport. Rows can have different heights: each one is measured the first time it's shown, and
+the scroll position stays anchored while estimates are replaced by real heights. It supports
+`.follow_end()`, `.on_scroll()`, `cx.scroll_to_end(id)` and `cx.scroll_to_item(id, i)`. A frame
+with 200k rows costs about the same as one with 100.
+
 Icons are crisp vectors. There's a built-in set, and any 24×24 SVG path works via
 `Icon::svg("M…")`, so you can paste in Lucide or Feather icons. For fully custom drawing, use
 `canvas(|cv, rect| …)`.
@@ -268,8 +274,8 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
   CPU backend
-- Multi-line text editing, IME pre-edit display, rich text spans
-- Virtualized lists for very large data sets
+- IME pre-edit display
+- Virtualized tables and trees (the list is done)
 - Accessibility (AccessKit) and screen-reader support
 - Multiple windows, native menus, file dialogs
 - Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows

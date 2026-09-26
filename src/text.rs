@@ -1,7 +1,5 @@
 //! Text shaping, measurement and rasterization (cosmic-text + swash).
 
-use std::collections::HashMap;
-
 use cosmic_text::{fontdb, Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Wrap};
 
 use crate::color::Color;
@@ -103,56 +101,7 @@ impl Default for TextStyle {
     }
 }
 
-/// FxHash-style hasher: much faster than SipHash for short keys, and the
-/// cache verifies entries anyway, so DoS resistance isn't needed.
-#[derive(Default)]
-struct FxHasher(u64);
-
-impl std::hash::Hasher for FxHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        for chunk in bytes.chunks(8) {
-            let mut b = [0u8; 8];
-            b[..chunk.len()].copy_from_slice(chunk);
-            self.write_u64(u64::from_le_bytes(b));
-        }
-    }
-    fn write_u64(&mut self, v: u64) {
-        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
-    }
-    fn write_u32(&mut self, v: u32) {
-        self.write_u64(v as u64);
-    }
-    fn write_u16(&mut self, v: u16) {
-        self.write_u64(v as u64);
-    }
-    fn write_u8(&mut self, v: u8) {
-        self.write_u64(v as u64);
-    }
-    fn write_usize(&mut self, v: usize) {
-        self.write_u64(v as u64);
-    }
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-/// Identity hasher for keys that are already hashes.
-#[derive(Default)]
-struct IdHasher(u64);
-
-impl std::hash::Hasher for IdHasher {
-    fn write(&mut self, _: &[u8]) {
-        unreachable!("IdHasher only hashes u64 keys")
-    }
-    fn write_u64(&mut self, v: u64) {
-        self.0 = v;
-    }
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-type IdMap<V> = HashMap<u64, V, std::hash::BuildHasherDefault<IdHasher>>;
+use crate::fxhash::{FxHasher, IdMap};
 
 /// Everything that affects shaping except the wrap width.
 #[derive(PartialEq, Clone)]

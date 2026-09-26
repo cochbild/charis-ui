@@ -157,6 +157,28 @@ pub(crate) struct Handlers<M> {
     pub select: Option<Cb<usize, M>>,
 }
 
+impl<M: Clone> Clone for Handlers<M> {
+    fn clone(&self) -> Self {
+        Self {
+            click: self.click.clone(),
+            double_click: self.double_click.clone(),
+            context_menu: self.context_menu.clone(),
+            hover: self.hover.clone(),
+            drag: self.drag.clone(),
+            key: self.key.clone(),
+            value: self.value.clone(),
+            input: self.input.clone(),
+            submit: self.submit.clone(),
+            collapse: self.collapse.clone(),
+            resize: self.resize.clone(),
+            drop_target: self.drop_target.clone(),
+            scroll: self.scroll.clone(),
+            link: self.link.clone(),
+            select: self.select.clone(),
+        }
+    }
+}
+
 impl<M> Default for Handlers<M> {
     fn default() -> Self {
         Self {
@@ -327,6 +349,14 @@ pub(crate) struct VirtualSpec<M> {
     pub builder: Rc<dyn Fn(usize) -> Element<M>>,
 }
 
+/// A memoized subtree (see [`lazy`]). `built` is `None` when the runtime
+/// will reuse last frame's subtree instead.
+pub(crate) struct LazySpec<M> {
+    pub key: u64,
+    pub deps: u64,
+    pub built: Option<Box<Element<M>>>,
+}
+
 pub(crate) enum Content<M> {
     None,
     Text(TextSpec),
@@ -336,6 +366,7 @@ pub(crate) enum Content<M> {
     Split(SplitSpec<M>),
     Dropdown(DropdownSpec),
     Virtual(VirtualSpec<M>),
+    Lazy(LazySpec<M>),
 }
 
 /// Special interactive behaviours implemented by the runtime.
@@ -544,6 +575,52 @@ pub fn virtual_list<M: 'static>(count: usize, item: impl Fn(usize) -> Element<M>
     e
 }
 
+/// A memoized part of the UI: `build` runs only when `deps` changed since
+/// the last frame. Otherwise the runtime reuses last frame's elements and
+/// their layout, skipping the view code, tree building and layout for the
+/// whole subtree.
+///
+/// ```
+/// # use rust_ui::prelude::*;
+/// # #[derive(Clone)] enum Msg {}
+/// # struct Message { id: u64, version: u32, text: String }
+/// fn message_view(m: &Message) -> Element<Msg> {
+///     lazy(("message", m.id), m.version, || card().child(text(m.text.clone())))
+/// }
+/// ```
+///
+/// - `key` identifies the subtree and must be unique among `lazy` elements
+///   in the window; it also gives the subtree stable identity, so moving it
+///   elsewhere in the tree keeps its state.
+/// - `deps` must cover everything `build` reads that can change: the
+///   subtree (including the messages its handlers send) is reused as long as
+///   `deps` hashes the same. Theme changes rebuild it automatically.
+/// - Hover, press, focus and running transitions inside the subtree rebuild
+///   it automatically, as do virtual lists, splits, dropdowns and tables
+///   inside it (those depend on live state). Nested `lazy`s are reused
+///   independently, so put them around the parts that change rarely.
+/// - The returned element is a column container you can style like any
+///   other (`.grow(1.0)`, `.w_full()`…); `build` runs right away (it can
+///   borrow the app state), or not at all.
+pub fn lazy<M: 'static>(
+    key: impl std::hash::Hash,
+    deps: impl std::hash::Hash,
+    build: impl FnOnce() -> Element<M>,
+) -> Element<M> {
+    use std::hash::Hasher;
+    let hash = |v: &dyn Fn(&mut std::collections::hash_map::DefaultHasher)| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        v(&mut h);
+        h.finish()
+    };
+    let key = hash(&|h| key.hash(h));
+    let deps = hash(&|h| deps.hash(h));
+    let built = if crate::runtime::memo::claim(key, deps) { None } else { Some(Box::new(build())) };
+    let mut e = div().flex_col();
+    e.content = Content::Lazy(LazySpec { key, deps, built });
+    e
+}
+
 /// Horizontal split (panes side by side).
 pub fn hsplit<M: 'static>(id: &str, panes: Vec<Pane<M>>) -> Element<M> {
     split(id, Axis::Horizontal, panes)
@@ -640,6 +717,11 @@ impl<M: 'static> Element<M> {
                     builder: Rc::new(move |i| b(i).map_rc(f.clone())),
                 })
             }
+            Content::Lazy(l) => Content::Lazy(LazySpec {
+                key: l.key,
+                deps: l.deps,
+                built: l.built.map(|b| Box::new(b.map_rc(f.clone()))),
+            }),
             Content::Split(s) => Content::Split(SplitSpec {
                 axis: s.axis,
                 panes: s

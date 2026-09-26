@@ -27,6 +27,34 @@ because only the rows near the viewport exist.
 - **Small elements.** Rarely used parts of an element (state styles, semantics) are boxed, so
   builder chains move less data.
 
+## Memoized subtrees: `lazy`
+
+`lazy(key, deps, || view)` skips its closure while `deps` hashes the same as last frame. The
+runtime then reuses last frame's elements, and layout reuses their cached results. It rebuilds
+the subtree automatically when:
+- the theme changes;
+- something inside is hovered, pressed or focused, or a transition inside is running;
+- it contains live-state widgets (virtual lists, splits, dropdowns, table columns).
+
+Nested `lazy`s are reused independently.
+
+```rust
+for (i, m) in messages.iter().enumerate() {
+    list = list.child(lazy(("message", i), (&m.text, m.expanded), || message_view(m)));
+}
+```
+
+Same benchmark with each row wrapped in `lazy` (unchanged frames):
+
+| Elements | Without `lazy` | With `lazy` |
+|---|---|---|
+| ~800 | 0.61 ms | 0.35 ms |
+| ~8,000 | 7.6 ms | 4.2 ms |
+| ~40,000 | 82 ms | 47 ms |
+
+The time left is mostly moving reused nodes into the new frame, and layout's per-node
+bookkeeping.
+
 ## Guidelines for apps
 
 1. **Virtualize long collections.** Use `virtual_list` or `table` for anything that can grow past
@@ -35,13 +63,13 @@ because only the rows near the viewport exist.
    then follows the item instead of its position.
 3. **Keep changing text small.** A per-second clock or a streaming token counter is cheap. Changing
    thousands of strings every frame means reshaping them all.
-4. **Profile** with `RUI_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
+4. **Wrap expensive, rarely-changing parts in `lazy`.** Chat messages, rendered markdown,
+   settings pages and sidebars are good candidates. The lmfast demo memoizes each chat message.
+5. **Profile** with `RUI_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
    paint.
 
 ## Next
 
-- Memoized subtrees (`lazy(key, deps, …)`): skip `view` and tree-building for unchanged
-  components, the remaining per-element cost of an unchanged frame.
 - Damage-region repaint on the CPU backend.
 - Incremental accessibility-tree updates (currently a full tree per frame while a screen reader
   is active).

@@ -42,6 +42,7 @@ style. This page covers:
 | `.style(|theme, status| …)` | `.bg(…).hover(|s| …).active(|s| …)`, or read tokens with `theme()` |
 | `Theme::custom(name, palette)` | `Theme::from_config(ThemeConfig { accent, gray, radius, density, … })` |
 | `Element::map` | `Element::map` |
+| `lazy(deps, \|deps\| view)` (the closure can't borrow the app) | `lazy(key, deps, \|\| view)`: the closure can borrow `&self`, and layout is reused too |
 | `canvas` / `Program` | `canvas(|cv, rect| …)` |
 
 ## Gaps: what iced has that we must match

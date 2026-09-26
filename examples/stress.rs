@@ -20,18 +20,27 @@ impl App for Stress {
     fn update(&mut self, _: Msg, _: &mut Cx<Msg>) {}
     fn view(&self) -> Element<Msg> {
         let c = theme().colors.clone();
+        let lazy_rows = std::env::var_os("LAZY").is_some();
+        let tick = self.tick;
         let list = col().gap(2.0).children((0..self.rows).map(|i| {
-            row()
-                .items_center()
-                .gap(8.0)
-                .h(28.0)
-                .px(8.0)
-                .rounded(4.0)
-                .hover(|s| s.bg(c.hover))
-                .child(icon(Icon::File).color(c.text_faint))
-                .child(text(format!("Item {i} · tick {}", self.tick)).grow(1.0))
-                .child(badge(format!("{}", i % 97)))
-                .child(button("Open").on_click(Msg::Noop))
+            let build = move || {
+                row()
+                    .items_center()
+                    .gap(8.0)
+                    .h(28.0)
+                    .px(8.0)
+                    .rounded(4.0)
+                    .hover(|s| s.bg(c.hover))
+                    .child(icon(Icon::File).color(c.text_faint))
+                    .child(text(format!("Item {i} · tick {tick}")).grow(1.0))
+                    .child(badge(format!("{}", i % 97)))
+                    .child(button("Open").on_click(Msg::Noop))
+            };
+            if lazy_rows {
+                lazy(("row", i), tick, build)
+            } else {
+                build()
+            }
         }));
         col().size_full().child(list.scroll_y().grow(1.0))
     }

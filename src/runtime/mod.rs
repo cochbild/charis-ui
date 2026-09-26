@@ -4,13 +4,14 @@
 //! The windowing shell (`window` module) and the headless renderer (`headless`
 //! module) both drive a [`Runtime`].
 
-use std::collections::{HashMap, HashSet};
+use crate::fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::rc::Rc;
 
 use taffy as tf;
 
 #[cfg(feature = "accessibility")]
 mod a11y;
+pub(crate) mod memo;
 use tiny_skia::Pixmap;
 
 use crate::anim::Anim;
@@ -605,6 +606,7 @@ enum Drag {
 // Frame
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub(crate) enum NodeContent {
     None,
     Text(TextSpec),
@@ -613,6 +615,7 @@ pub(crate) enum NodeContent {
     Input(InputSpec),
 }
 
+#[derive(Clone)]
 pub(crate) struct Node<M> {
     pub id: u64,
     /// Raw `.id()`/`.key()` hash, for global lookup.
@@ -644,6 +647,25 @@ pub(crate) struct Node<M> {
     pub virt_item: Option<(u64, usize)>,
     #[cfg_attr(not(feature = "accessibility"), allow(dead_code))]
     pub sem: Option<Box<crate::semantics::Semantics>>,
+    /// The element's own `pointer_events` (before inheritance).
+    pub own_pointer: bool,
+    /// `text_align` was inherited from the parent.
+    pub inherit_align: bool,
+    /// Copied unchanged from the previous frame by a `lazy` subtree: layout
+    /// can reuse its retained node as is.
+    pub reused: bool,
+}
+
+/// Resolve inherited text properties.
+fn inherit_text(st: &Style, inh: &TextStyle) -> TextStyle {
+    TextStyle {
+        size: st.font_size.unwrap_or(inh.size),
+        weight: st.font_weight.map(|w| w.0).unwrap_or(inh.weight),
+        family: st.font_family.clone().unwrap_or_else(|| inh.family.clone()),
+        italic: st.italic.unwrap_or(inh.italic),
+        line_height: st.line_height.unwrap_or(inh.line_height),
+        letter_spacing: st.letter_spacing.unwrap_or(inh.letter_spacing),
+    }
 }
 
 struct Frame<M> {
@@ -655,7 +677,7 @@ struct Frame<M> {
 
 impl<M> Default for Frame<M> {
     fn default() -> Self {
-        Self { nodes: Vec::new(), by_id: HashMap::new(), order: Vec::new() }
+        Self { nodes: Vec::new(), by_id: HashMap::default(), order: Vec::new() }
     }
 }
 
@@ -693,6 +715,11 @@ pub struct Runtime<A: App> {
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
+    /// Memoized subtrees of the current frame (see `memo.rs`).
+    memos: HashMap<u64, memo::MemoEntry>,
+    memo_build: memo::MemoBuild,
+    /// Scale factor the current frame was built at.
+    built_scale: f32,
     /// Persistent layout tree (see `sync_layout_tree`).
     ltree: tf::TaffyTree<u64>,
     lnodes: HashMap<u64, LayoutNode>,
@@ -745,27 +772,30 @@ impl<A: App> Runtime<A> {
             now: 0.0,
             pointer: None,
             hovered: Vec::new(),
-            hovered_set: HashSet::new(),
+            hovered_set: HashSet::default(),
             pressed: Vec::new(),
             focused: None,
             focus_visible: false,
             drag: Drag::None,
             last_click: None,
-            transitions: HashMap::new(),
-            rect_anims: HashMap::new(),
-            splits: HashMap::new(),
-            pane_meta: HashMap::new(),
-            scrolls: HashMap::new(),
-            inputs: HashMap::new(),
-            pending_values: HashMap::new(),
-            dropdowns: HashMap::new(),
-            virt: HashMap::new(),
+            transitions: HashMap::default(),
+            rect_anims: HashMap::default(),
+            splits: HashMap::default(),
+            pane_meta: HashMap::default(),
+            scrolls: HashMap::default(),
+            inputs: HashMap::default(),
+            pending_values: HashMap::default(),
+            dropdowns: HashMap::default(),
+            virt: HashMap::default(),
+            memos: HashMap::default(),
+            memo_build: memo::MemoBuild::default(),
+            built_scale: 0.0,
             ltree: tf::TaffyTree::new(),
-            lnodes: HashMap::new(),
+            lnodes: HashMap::default(),
             layout_gen: 0,
             preedit: None,
-            history: HashMap::new(),
-            tables: HashMap::new(),
+            history: HashMap::default(),
+            tables: HashMap::default(),
             tooltip: None,
             splitter_hover: None,
             text_sel: None,
@@ -773,7 +803,7 @@ impl<A: App> Runtime<A> {
             queue: Vec::new(),
             mailbox: crate::effects::Mailbox::new(),
             subs,
-            timers: HashMap::new(),
+            timers: HashMap::default(),
             pending_scrolls: Vec::new(),
             close_requested: false,
             sized: false,
@@ -833,8 +863,8 @@ impl<A: App> Runtime<A> {
 
     fn fire_timers(&mut self) {
         let now = self.now;
-        let mut live: HashMap<(u128, usize), f64> = HashMap::new();
-        let mut per_period: HashMap<u128, usize> = HashMap::new();
+        let mut live: HashMap<(u128, usize), f64> = HashMap::default();
+        let mut per_period: HashMap<u128, usize> = HashMap::default();
         for (period, msg) in &self.subs.timers {
             let p = period.as_nanos();
             let n = per_period.entry(p).or_insert(0);
@@ -1077,8 +1107,10 @@ impl<A: App> Runtime<A> {
     fn build(&mut self) {
         // The app has seen every emitted value by now; the view is authoritative again.
         self.pending_values.clear();
-        self.theme = Rc::new(self.app.theme());
+        let prev_theme = std::mem::replace(&mut self.theme, Rc::new(self.app.theme()));
         theme::set_theme(self.theme.clone());
+        self.memo_begin(&prev_theme, self.built_scale);
+        self.built_scale = self.scale;
         let t0 = std::time::Instant::now();
         let view = self.app.view();
         let t_view = t0.elapsed();
@@ -1098,6 +1130,10 @@ impl<A: App> Runtime<A> {
         let t1 = std::time::Instant::now();
         self.flatten(root, None, 0x5eed, 0, &base, Color::WHITE, true, &mut frame);
         let t_flatten = t1.elapsed();
+        // Record memo entries against the new frame's interaction state.
+        let old = std::mem::replace(&mut self.frame, frame);
+        self.memo_end();
+        let mut frame = std::mem::replace(&mut self.frame, old);
         let t2 = std::time::Instant::now();
         self.layout(&mut frame);
         let t_layout = t2.elapsed();
@@ -1127,9 +1163,10 @@ impl<A: App> Runtime<A> {
         frame: &mut Frame<A::Msg>,
     ) -> usize {
         let raw_key = el.key;
-        let id = match el.key {
-            Some(k) => mix_id(parent_id, k),
-            None => mix_id(parent_id, index as u64 ^ 0xA5A5_0000),
+        let id = match (&el.content, el.key) {
+            (Content::Lazy(l), _) => mix_id(memo::LAZY_SALT, l.key),
+            (_, Some(k)) => mix_id(parent_id, k),
+            (_, None) => mix_id(parent_id, index as u64 ^ 0xA5A5_0000),
         };
         let Element {
             style: mut st,
@@ -1178,6 +1215,7 @@ impl<A: App> Runtime<A> {
         }
         // Table cells follow their column's user-resized width.
         if let Behavior::TableCell { table, col } = behavior {
+            self.memo_build.volatile += 1;
             if let Some(w) = self.tables.get(&table).and_then(|t| t.get(col).copied().flatten()) {
                 st.width = Length::Px(w);
                 st.basis = Length::Auto;
@@ -1207,21 +1245,18 @@ impl<A: App> Runtime<A> {
                 tr.dur = st.transition;
             }
             let t = if tr.dur > 0.0 { ((now - tr.start) as f32 / tr.dur).clamp(0.0, 1.0) } else { 1.0 };
+            if t < 1.0 {
+                self.memo_build.animating += 1;
+            }
             let v = tr.from.lerp(&tr.to, st.easing.apply(t));
             v.write(&mut st);
         }
 
         // Text inheritance.
-        let text = TextStyle {
-            size: st.font_size.unwrap_or(inh_text.size),
-            weight: st.font_weight.map(|w| w.0).unwrap_or(inh_text.weight),
-            family: st.font_family.clone().unwrap_or_else(|| inh_text.family.clone()),
-            italic: st.italic.unwrap_or(inh_text.italic),
-            line_height: st.line_height.unwrap_or(inh_text.line_height),
-            letter_spacing: st.letter_spacing.unwrap_or(inh_text.letter_spacing),
-        };
+        let text = inherit_text(&st, inh_text);
         let color = st.color.unwrap_or(inh_color);
-        if st.text_align.is_none() {
+        let inherit_align = st.text_align.is_none();
+        if inherit_align {
             if let Some(p) = parent {
                 st.text_align = frame.nodes[p].style.text_align;
             }
@@ -1230,6 +1265,7 @@ impl<A: App> Runtime<A> {
 
         let mut dropdown_spec: Option<DropdownSpec> = None;
         let mut virtual_spec: Option<VirtualSpec<A::Msg>> = None;
+        let mut lazy_spec: Option<LazySpec<A::Msg>> = None;
         let (node_content, split_spec) = match content {
             Content::None => (NodeContent::None, None),
             Content::Text(t) => (NodeContent::Text(t), None),
@@ -1245,7 +1281,14 @@ impl<A: App> Runtime<A> {
                 virtual_spec = Some(v);
                 (NodeContent::None, None)
             }
+            Content::Lazy(l) => {
+                lazy_spec = Some(l);
+                (NodeContent::None, None)
+            }
         };
+        if split_spec.is_some() || dropdown_spec.is_some() || virtual_spec.is_some() || st.position == Position::Fixed {
+            self.memo_build.volatile += 1;
+        }
 
         // `position: fixed` elements are re-parented to the root (window) node.
         let parent = if st.position == Position::Fixed && parent.is_some() { Some(0) } else { parent };
@@ -1276,6 +1319,9 @@ impl<A: App> Runtime<A> {
             pane: None,
             virt_item: None,
             sem,
+            own_pointer: pointer_events,
+            inherit_align,
+            reused: false,
         });
         frame.by_id.insert(id, idx);
         if let Some(p) = parent {
@@ -1289,8 +1335,14 @@ impl<A: App> Runtime<A> {
         } else if let Some(v) = virtual_spec {
             self.flatten_virtual(idx, id, v, &text, color, pointer, frame);
         } else {
+            let first = if let Some(l) = lazy_spec {
+                self.flatten_lazy(idx, id, l, &text, color, pointer, frame);
+                1
+            } else {
+                0
+            };
             for (i, c) in children.into_iter().enumerate() {
-                self.flatten(c, Some(idx), id, i, &text, color, pointer, frame);
+                self.flatten(c, Some(idx), id, i + first, &text, color, pointer, frame);
             }
         }
         idx
@@ -1693,6 +1745,17 @@ impl<A: App> Runtime<A> {
         // Children have larger indices than parents: sync bottom-up.
         for i in (0..frame.nodes.len()).rev() {
             let n = &frame.nodes[i];
+            if n.reused {
+                // Copied unchanged from last frame: same style, content and
+                // children (whose ids, and so layout nodes, are unchanged).
+                if let Some(l) = self.lnodes.get_mut(&n.id) {
+                    if l.generation != generation {
+                        l.generation = generation;
+                        frame.nodes[i].tnode = l.t;
+                        continue;
+                    }
+                }
+            }
             let mut ts = to_taffy(&n.style);
             if let NodeContent::Icon(_) = n.content {
                 if n.style.width == Length::Auto {
@@ -1791,8 +1854,8 @@ impl<A: App> Runtime<A> {
         // estimates, so re-stack the ones after a mis-estimated row, grow the
         // list's extent, and shift the scroll offset by any change above the
         // viewport's first row so what the user is looking at stays put.
-        let mut vdy: HashMap<usize, f32> = HashMap::new();
-        let mut vgrow: HashMap<u64, f32> = HashMap::new();
+        let mut vdy: HashMap<usize, f32> = HashMap::default();
+        let mut vgrow: HashMap<u64, f32> = HashMap::default();
         for i in 0..frame.nodes.len() {
             let Some((lid, k)) = frame.nodes[i].virt_item else { continue };
             let Some(vs) = self.virt.get_mut(&lid) else { continue };
@@ -1842,7 +1905,9 @@ impl<A: App> Runtime<A> {
             let n = &mut frame.nodes[i];
             let mut rel = Rect::new(
                 l.location.x + n.style.translate.0,
-                l.location.y + n.style.translate.1 + vdy.get(&i).copied().unwrap_or(0.0),
+                l.location.y
+                    + n.style.translate.1
+                    + if vdy.is_empty() { 0.0 } else { vdy.get(&i).copied().unwrap_or(0.0) },
                 l.size.width,
                 l.size.height,
             );

@@ -54,6 +54,7 @@ pub mod dock;
 pub mod edit;
 pub mod effects;
 pub mod element;
+mod fxhash;
 pub mod geometry;
 #[cfg(feature = "gpu")]
 pub mod gpu;
@@ -103,7 +104,7 @@ pub mod prelude {
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};
     pub use crate::effects::{Proxy, TaskHandle};
     pub use crate::element::{
-        canvas, col, div, hsplit, icon, rich_text, row, spacer, split, text, virtual_list, vsplit, DragEvent,
+        canvas, col, div, hsplit, icon, lazy, rich_text, row, spacer, split, text, virtual_list, vsplit, DragEvent,
         DragPhase, DropEvent, DropPhase, Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
     };
     pub use crate::geometry::{Axis, Point, Rect, Size};

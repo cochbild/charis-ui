@@ -966,25 +966,34 @@ impl LmFast {
     }
 
     fn transcript(&self) -> Element<Msg> {
-        let th = theme();
-        let c = th.colors.clone();
         let mut t = col().id("transcript").grow(1.0).scroll_y().follow_end().px(24.0).py(20.0).gap(18.0);
         for (i, m) in self.messages.iter().enumerate() {
             let last = i + 1 == self.messages.len();
+            let streaming = last && self.streaming.is_some();
+            // Finished messages don't rebuild their markdown every frame:
+            // only a message whose text or state changed is rebuilt.
+            let deps =
+                (&m.text, m.reasoning.as_ref().map(|(r, secs)| (r, secs.to_bits())), m.show_reasoning, streaming);
+            t = t.child(lazy(("message", i), deps, || self.message(i, m, streaming)));
+        }
+        t
+    }
+
+    fn message(&self, i: usize, m: &Message, streaming: bool) -> Element<Msg> {
+        let th = theme();
+        let c = th.colors.clone();
+        {
             if m.user {
-                t = t.child(
-                    row().justify(Justify::End).child(
-                        rich_text([span(m.text.clone())])
-                            .selectable()
-                            .max_w(pct(75.0))
-                            .px(14.0)
-                            .py(10.0)
-                            .rounded(th.radius_lg)
-                            .bg(c.accent.with_alpha(0.12))
-                            .border(1.0, c.accent.with_alpha(0.28)),
-                    ),
+                return row().justify(Justify::End).child(
+                    rich_text([span(m.text.clone())])
+                        .selectable()
+                        .max_w(pct(75.0))
+                        .px(14.0)
+                        .py(10.0)
+                        .rounded(th.radius_lg)
+                        .bg(c.accent.with_alpha(0.12))
+                        .border(1.0, c.accent.with_alpha(0.28)),
                 );
-                continue;
             }
             let mut body = col().gap(10.0).min_w(0.0).max_w(820.0);
             if let Some((reasoning, secs)) = &m.reasoning {
@@ -1012,7 +1021,7 @@ impl LmFast {
                         }),
                 );
             }
-            if m.text.is_empty() && self.streaming.is_some() && last {
+            if m.text.is_empty() && streaming {
                 body = body.child(text("typing…").color(c.text_faint).italic());
             } else {
                 body = body.child(markdown(&m.text));
@@ -1024,15 +1033,12 @@ impl LmFast {
                 .child(tooltip_icon_button(Icon::GitBranch, "Fork from here"))
                 .child(tooltip_icon_button(Icon::Refresh, "Regenerate"))
                 .child(tooltip_icon_button(Icon::Play, "Speak"));
-            t = t.child(
-                row()
-                    .gap(12.0)
-                    .items(Align::Start)
-                    .child(avatar("AI", c.accent.darken(0.2)))
-                    .child(body.child_if(!(last && self.streaming.is_some()), || actions).grow(1.0)),
-            );
+            row()
+                .gap(12.0)
+                .items(Align::Start)
+                .child(avatar("AI", c.accent.darken(0.2)))
+                .child(body.child_if(!streaming, || actions).grow(1.0))
         }
-        t
     }
 
     fn params(&self) -> Element<Msg> {

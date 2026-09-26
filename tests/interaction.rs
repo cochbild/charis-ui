@@ -171,7 +171,13 @@ fn text_input_editing() {
 fn tab_focus_and_keyboard_activation() {
     let mut h = harness();
     let tab = Event::Key(KeyEvent { key: Key::Tab, mods: Modifiers::default(), repeat: false });
-    h.event(tab.clone()); // first focusable: the "File" menu? No — menu titles are not focusable, so the button.
+    // The menu bar comes first: Enter on "File" opens it.
+    h.event(tab.clone());
+    h.event(Event::Key(KeyEvent { key: Key::Enter, mods: Modifiers::default(), repeat: false }));
+    assert_eq!(h.rt.app.menu, Some(0));
+    h.rt.app.menu = None;
+    h.rt.invalidate();
+    h.event(tab.clone()); // the button
     h.event(Event::Key(KeyEvent { key: Key::Enter, mods: Modifiers::default(), repeat: false }));
     assert_eq!(h.rt.app.clicks, 1);
     h.event(tab); // text input

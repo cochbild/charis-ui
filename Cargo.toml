@@ -14,12 +14,15 @@ exclude = ["docs/*.png", "tests/golden/*"]
 name = "rust_ui"
 
 [features]
-default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs"]
+default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs", "native-menu"]
 window = ["dep:winit", "dep:softbuffer"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
 # Native file dialogs (Windows common item dialog, macOS panels, XDG portal on Linux).
 dialogs = ["window", "dep:rfd"]
+# The app menu as a native menu bar: the global menu on macOS (on by default),
+# and optionally a Win32 menu bar (WindowOptions::native_menu).
+native-menu = ["window", "dep:muda"]
 gpu = ["dep:wgpu", "dep:pollster"]
 # Run spawned futures on tokio (needed for tokio-based crates such as reqwest).
 tokio = ["dep:tokio"]
@@ -46,6 +49,9 @@ accesskit = { version = "0.25", optional = true }
 accesskit_winit = { version = "0.34", optional = true }
 rfd = { version = "0.17", optional = true }
 
+
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+muda = { version = "0.20", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

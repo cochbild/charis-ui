@@ -54,6 +54,9 @@ struct DockDemo {
 enum Msg {
     Dock(DockSpaceMsg),
     Theme,
+    ResetLayout,
+    DockAllBack,
+    Open(Panel),
 }
 
 impl App for DockDemo {
@@ -69,7 +72,52 @@ impl App for DockDemo {
         match msg {
             Msg::Dock(m) => self.dock.update(m),
             Msg::Theme => self.dark = !self.dark,
+            Msg::ResetLayout => self.dock = initial(),
+            Msg::DockAllBack => self.dock.dock_all_back(),
+            Msg::Open(p) => self.dock.open(p),
         }
+    }
+    fn menu(&self) -> Vec<Menu<Msg>> {
+        let open = |p: Panel| MenuItem::action(p.title(), Msg::Open(p)).icon(p.icon());
+        vec![
+            Menu::new(
+                "File",
+                vec![
+                    MenuItem::action("New Editor", Msg::Open(Panel::Editor("untitled.rs")))
+                        .icon(Icon::File)
+                        .shortcut("Mod+N"),
+                    MenuItem::Separator,
+                    MenuItem::action("Close Window", Msg::DockAllBack).shortcut("Mod+Shift+W"),
+                ],
+            ),
+            Menu::new(
+                "View",
+                vec![
+                    MenuItem::check("Dark Theme", self.dark, Msg::Theme).shortcut("Mod+Shift+T"),
+                    MenuItem::action("Reset Layout", Msg::ResetLayout).shortcut("Mod+Shift+R"),
+                ],
+            ),
+            Menu::new(
+                "Window",
+                vec![
+                    MenuItem::submenu(
+                        "Open Panel",
+                        vec![
+                            open(Panel::Explorer),
+                            open(Panel::Outline),
+                            open(Panel::Terminal),
+                            open(Panel::Problems),
+                            open(Panel::Preview),
+                            open(Panel::Chat),
+                        ],
+                    ),
+                    MenuItem::Separator,
+                    MenuItem::action("Dock All Windows Back", Msg::DockAllBack)
+                        .icon(Icon::DockIn)
+                        .disabled(self.dock.floating.is_empty()),
+                ],
+            ),
+        ]
     }
     fn view(&self) -> Element<Msg> {
         let th = theme();
@@ -80,7 +128,7 @@ impl App for DockDemo {
                 .gap(8.0)
                 .items_center()
                 .child(icon(Icon::Grid).font_size(16.0).color(th.colors.accent))
-                .child(text("Dock").semibold()),
+                .child(menubar(self.menu())),
             row().pr(6.0).child(
                 icon_button(if self.dark { Icon::Sun } else { Icon::Moon })
                     .on_click(Msg::Theme)
@@ -235,6 +283,17 @@ fn main() {
                 let t = i as f32 / 8.0;
                 h.move_to(from.x + (to.x + 6.0 - from.x) * t, from.y);
             }
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("menu") {
+            // Window → Open Panel ▸ submenu.
+            let w = h.rt.rect_of_text("Window").unwrap().center();
+            h.click(w.x, w.y);
+            let sub = h.rt.rect_of_text("Open Panel").unwrap().center();
+            h.move_to(sub.x, sub.y);
             h.settle();
             h.save_png(&out).expect("save");
             println!("saved {out}");

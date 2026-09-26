@@ -15,6 +15,7 @@ use crate::color::Color;
 use crate::element::*;
 use crate::geometry::Point;
 use crate::icons::Icon;
+use crate::menu::Shortcut;
 use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
@@ -831,9 +832,28 @@ pub fn titlebar<M: 'static>(
 // ------------------------------------------------------------------- menus
 
 /// An entry in a dropdown or context menu.
+#[derive(Clone)]
 pub enum MenuItem<M> {
-    Action { label: String, shortcut: Option<String>, icon: Option<Icon>, msg: M, disabled: bool },
-    Check { label: String, checked: bool, msg: M },
+    Action {
+        label: String,
+        shortcut: Option<Shortcut>,
+        icon: Option<Icon>,
+        msg: M,
+        disabled: bool,
+    },
+    Check {
+        label: String,
+        checked: bool,
+        msg: M,
+        shortcut: Option<Shortcut>,
+        disabled: bool,
+    },
+    /// A nested menu, opened by hovering it.
+    Submenu {
+        label: String,
+        items: Vec<MenuItem<M>>,
+        disabled: bool,
+    },
     Separator,
     Header(String),
 }
@@ -842,9 +862,20 @@ impl<M> MenuItem<M> {
     pub fn action(label: impl Into<String>, msg: M) -> Self {
         MenuItem::Action { label: label.into(), shortcut: None, icon: None, msg, disabled: false }
     }
-    pub fn shortcut(mut self, s: impl Into<String>) -> Self {
-        if let MenuItem::Action { shortcut, .. } = &mut self {
-            *shortcut = Some(s.into());
+    pub fn check(label: impl Into<String>, checked: bool, msg: M) -> Self {
+        MenuItem::Check { label: label.into(), checked, msg, shortcut: None, disabled: false }
+    }
+    pub fn submenu(label: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
+        MenuItem::Submenu { label: label.into(), items, disabled: false }
+    }
+    /// A keyboard shortcut such as `"Mod+S"` (see [`Shortcut::parse`]). In
+    /// an app menu ([`App::menu`](crate::App::menu)) it also triggers the item.
+    pub fn shortcut(mut self, s: &str) -> Self {
+        let parsed = Shortcut::parse(s);
+        debug_assert!(parsed.is_some(), "unrecognized shortcut {s:?}");
+        match &mut self {
+            MenuItem::Action { shortcut, .. } | MenuItem::Check { shortcut, .. } => *shortcut = parsed,
+            _ => {}
         }
         self
     }
@@ -855,18 +886,113 @@ impl<M> MenuItem<M> {
         self
     }
     pub fn disabled(mut self, d: bool) -> Self {
-        if let MenuItem::Action { disabled, .. } = &mut self {
-            *disabled = d;
+        match &mut self {
+            MenuItem::Action { disabled, .. }
+            | MenuItem::Check { disabled, .. }
+            | MenuItem::Submenu { disabled, .. } => *disabled = d,
+            _ => {}
         }
         self
     }
-    pub fn check(label: impl Into<String>, checked: bool, msg: M) -> Self {
-        MenuItem::Check { label: label.into(), checked, msg }
+
+    /// Transform the item's messages.
+    pub fn map<N>(self, f: &dyn Fn(M) -> N) -> MenuItem<N> {
+        match self {
+            MenuItem::Action { label, shortcut, icon, msg, disabled } => {
+                MenuItem::Action { label, shortcut, icon, msg: f(msg), disabled }
+            }
+            MenuItem::Check { label, checked, msg, shortcut, disabled } => {
+                MenuItem::Check { label, checked, msg: f(msg), shortcut, disabled }
+            }
+            MenuItem::Submenu { label, items, disabled } => {
+                MenuItem::Submenu { label, items: items.into_iter().map(|i| i.map(f)).collect(), disabled }
+            }
+            MenuItem::Separator => MenuItem::Separator,
+            MenuItem::Header(h) => MenuItem::Header(h),
+        }
+    }
+
+    /// The message of the enabled item whose shortcut matches `e`, searching
+    /// submenus too.
+    pub fn shortcut_msg(&self, e: &KeyEvent) -> Option<&M> {
+        match self {
+            MenuItem::Action { shortcut: Some(s), msg, disabled: false, .. }
+            | MenuItem::Check { shortcut: Some(s), msg, disabled: false, .. }
+                if s.matches(e) =>
+            {
+                Some(msg)
+            }
+            MenuItem::Submenu { items, disabled: false, .. } => items.iter().find_map(|i| i.shortcut_msg(e)),
+            _ => None,
+        }
     }
 }
 
-/// The popup panel of a menu (without positioning).
+/// Events inside a menu panel that has submenus.
+#[derive(Clone)]
+enum PanelEv<M> {
+    /// Open submenu `Some(i)` at nesting `depth`, or close those below it.
+    Hover(usize, Option<usize>),
+    Nop,
+    Pick(M),
+}
+
+/// A dropdown menu panel (use inside an absolutely positioned container).
+/// Submenus open on hover.
 pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
+    if !items.iter().any(|i| matches!(i, MenuItem::Submenu { .. })) {
+        return render_panel(items, &[], 0, None);
+    }
+    // The chain of open submenus is local UI state.
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for it in &items {
+            match it {
+                MenuItem::Action { label, .. } | MenuItem::Check { label, .. } | MenuItem::Submenu { label, .. } => {
+                    label.hash(&mut h)
+                }
+                MenuItem::Header(l) => l.hash(&mut h),
+                MenuItem::Separator => 0u8.hash(&mut h),
+            }
+        }
+        ("__menu_panel", h.finish())
+    };
+    let items: Vec<MenuItem<PanelEv<M>>> = items.into_iter().map(|i| i.map(&PanelEv::Pick)).collect();
+    crate::component::stateful(
+        key,
+        move |path: &Vec<usize>| {
+            let hover: HoverFn<PanelEv<M>> = Rc::new(|d, o| match o {
+                Some(usize::MAX) => PanelEv::Nop,
+                o => PanelEv::Hover(d, o),
+            });
+            render_panel(items.clone(), path, 0, Some(hover))
+        },
+        |path: &mut Vec<usize>, e: PanelEv<M>| match e {
+            PanelEv::Hover(depth, o) => {
+                path.truncate(depth);
+                path.extend(o);
+                None
+            }
+            PanelEv::Nop => None,
+            PanelEv::Pick(m) => {
+                path.clear();
+                Some(m)
+            }
+        },
+    )
+}
+
+/// Reports hovering at a menu depth: `Some(i)` = submenu `i`, `None` =
+/// another item, `Some(usize::MAX)` = the pointer left an item.
+type HoverFn<M> = Rc<dyn Fn(usize, Option<usize>) -> M>;
+
+fn render_panel<M: Clone + 'static>(
+    items: Vec<MenuItem<M>>,
+    path: &[usize],
+    depth: usize,
+    on_hover: Option<HoverFn<M>>,
+) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
     let mut panel = col()
@@ -877,7 +1003,7 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
         .rounded(th.radius + 2.0)
         .shadows(th.shadow_popover.clone())
         .role(Role::Menu);
-    let item_row = |label: String, lead: Element<M>, trail: Option<Element<M>>, msg: M, disabled: bool| {
+    let item_row = |label: String, lead: Element<M>, trail: Option<Element<M>>, msg: Option<M>, disabled: bool| {
         let mut r = row()
             .items_center()
             .h(th.row_height + 2.0)
@@ -897,22 +1023,54 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
         if disabled {
             r.disabled(true).opacity(0.45)
         } else {
-            r.hover(|s| s.bg(c.accent).color(c.accent_text)).on_click(msg).cursor(Cursor::Default)
+            let r = r.hover(|s| s.bg(c.accent).color(c.accent_text)).cursor(Cursor::Default);
+            match msg {
+                Some(m) => r.on_click(m),
+                None => r,
+            }
         }
     };
-    for it in items {
+    let blank = || div().w(15.0).shrink(0.0);
+    let hint = |s: Option<Shortcut>| s.map(|s| text(s.label()).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
+    for (i, it) in items.into_iter().enumerate() {
+        let hover_close = |r: Element<M>| match &on_hover {
+            // Hovering any other item closes submenus opened at this level.
+            Some(h) => {
+                let h = h.clone();
+                r.on_hover(move |entered| h(depth, if entered { None } else { Some(usize::MAX) }))
+            }
+            None => r,
+        };
         panel = match it {
             MenuItem::Action { label, shortcut, icon: ic, msg, disabled } => {
-                let lead = match ic {
-                    Some(i) => icon(i).font_size(15.0),
-                    None => div().w(15.0).shrink(0.0),
-                };
-                let trail = shortcut.map(|s| text(s).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
-                panel.child(item_row(label, lead, trail, msg, disabled))
+                let lead = ic.map(|i| icon(i).font_size(15.0)).unwrap_or_else(blank);
+                panel.child(hover_close(item_row(label, lead, hint(shortcut), Some(msg), disabled)))
             }
-            MenuItem::Check { label, checked, msg } => {
-                let lead = if checked { icon(Icon::Check).font_size(15.0) } else { div().w(15.0).shrink(0.0) };
-                panel.child(item_row(label, lead, None, msg, false).aria_checked(checked))
+            MenuItem::Check { label, checked, msg, shortcut, disabled } => {
+                let lead = if checked { icon(Icon::Check).font_size(15.0) } else { blank() };
+                panel.child(
+                    hover_close(item_row(label, lead, hint(shortcut), Some(msg), disabled)).aria_checked(checked),
+                )
+            }
+            MenuItem::Submenu { label, items, disabled } => {
+                let open = path.get(depth) == Some(&i) && !disabled;
+                let chevron = icon(Icon::ChevronRight).font_size(13.0).opacity(0.6).ml(24.0);
+                let mut r = item_row(label, blank(), Some(chevron), None, disabled).aria_expanded(open);
+                if let Some(h) = &on_hover {
+                    let h = h.clone();
+                    r = r.on_hover(move |entered| h(depth, if entered { Some(i) } else { Some(usize::MAX) }));
+                }
+                if open {
+                    r = r.bg(c.hover).child(
+                        render_panel(items, path, depth + 1, on_hover.clone())
+                            .absolute()
+                            .top(-6.0)
+                            .left(pct(100.0))
+                            .ml(2.0)
+                            .z_index(101),
+                    );
+                }
+                panel.child(r)
             }
             MenuItem::Separator => panel.child(div().h(1.0).my(4.0).mx(4.0).bg(c.border)),
             MenuItem::Header(h) => panel.child(
@@ -952,7 +1110,8 @@ pub fn context_menu<M: Clone + 'static>(at: Point, items: Vec<MenuItem<M>>, on_d
     div().child(backdrop(on_dismiss, false)).child(menu_panel(items).fixed().left(at.x).top(at.y).z_index(100))
 }
 
-/// A top-level menu for a [`menu_bar`].
+/// A top-level menu for a [`menu_bar`] or an app menu ([`App::menu`](crate::App::menu)).
+#[derive(Clone)]
 pub struct Menu<M> {
     pub title: String,
     pub items: Vec<MenuItem<M>>,
@@ -962,6 +1121,44 @@ impl<M> Menu<M> {
     pub fn new(title: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
         Self { title: title.into(), items }
     }
+
+    /// Transform the menu's messages.
+    pub fn map<N>(self, f: &dyn Fn(M) -> N) -> Menu<N> {
+        Menu { title: self.title, items: self.items.into_iter().map(|i| i.map(f)).collect() }
+    }
+}
+
+/// Events of a [`menubar`].
+#[derive(Clone)]
+enum BarEv<M> {
+    Open(Option<usize>),
+    Pick(M),
+}
+
+/// An in-window menu bar that manages which menu is open by itself (unlike
+/// [`menu_bar`], whose open menu the app controls). Picking an item closes
+/// the menu and sends its message. Pass the app's menus:
+/// `menubar(self.menu())` (see [`App::menu`](crate::App::menu)).
+pub fn menubar<M: Clone + 'static>(menus: Vec<Menu<M>>) -> Element<M> {
+    if crate::menu::native_menu_bar() {
+        // Shown by the OS instead (macOS menu bar, or a native Win32 menu bar).
+        return div();
+    }
+    let menus: Vec<Menu<BarEv<M>>> = menus.into_iter().map(|m| m.map(&BarEv::Pick)).collect();
+    crate::component::stateful(
+        "__menubar",
+        move |open: &Option<usize>| menu_bar(menus.clone(), *open, BarEv::Open),
+        |open: &mut Option<usize>, e: BarEv<M>| match e {
+            BarEv::Open(o) => {
+                *open = o;
+                None
+            }
+            BarEv::Pick(m) => {
+                *open = None;
+                Some(m)
+            }
+        },
+    )
 }
 
 /// An application menu bar (File, Edit, View…). `open` is the index of the

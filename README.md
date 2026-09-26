@@ -349,6 +349,30 @@ titlebar(title, left_content, right_content, window_info().maximized)
 Any element can become a drag area (`.window_drag_area()`) or a window button
 (`.window_control(WindowControl::Close)`). Frameless windows stay resizable from their edges.
 
+### App menus and shortcuts
+
+Declare the menus once, from state:
+
+```rust
+fn menu(&self) -> Vec<Menu<Msg>> {
+    vec![
+        Menu::new("File", vec![
+            MenuItem::action("Open…", Msg::Open).shortcut("Mod+O"), // Cmd on macOS, Ctrl elsewhere
+            MenuItem::submenu("Export", vec![MenuItem::action("HTML", Msg::ExportHtml)]),
+        ]),
+        Menu::new("View", vec![MenuItem::check("Word wrap", self.wrap, Msg::ToggleWrap).shortcut("Alt+Z")]),
+    ]
+}
+```
+
+- **Shortcuts** work in every window. A focused text input keeps its own editing keys, so Ctrl+C
+  in a text field copies rather than triggering the menu's Copy.
+- **In the window:** `menubar(self.menu())` draws the menu bar (in a custom title bar, for
+  example), with submenus.
+- **Native menu bar:** on macOS the same menus become the global menu bar, with the standard app
+  menu and native key equivalents, and `menubar()` then renders nothing. Windows can opt into a
+  native menu bar with `WindowOptions::native_menu(true)`.
+
 ### File dialogs
 
 Ask from `update`; the answer arrives as a message, so nothing blocks:
@@ -411,7 +435,6 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
-- Native menus
 - Auto-hide (JetBrains "unpinned") panels
 - Hot-reloadable stylesheet layer
 

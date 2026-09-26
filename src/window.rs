@@ -34,6 +34,11 @@ pub struct WindowOptions {
     pub icon: Option<(u32, u32, Vec<u8>)>,
     /// Extra fonts (TTF/OTF/TTC bytes) loaded before the first frame.
     pub fonts: Vec<Vec<u8>>,
+    /// Show the app menu ([`App::menu`]) as a native menu bar: the global
+    /// menu bar on macOS (the default there), a Win32 menu bar on Windows
+    /// (off by default; apps usually draw [`menubar`](crate::widgets::menubar)
+    /// in their title bar). Ignored on Linux.
+    pub native_menu: bool,
 }
 
 impl Default for WindowOptions {
@@ -48,6 +53,7 @@ impl Default for WindowOptions {
             resizable: true,
             icon: None,
             fonts: Vec::new(),
+            native_menu: cfg!(target_os = "macos"),
         }
     }
 }
@@ -87,6 +93,12 @@ impl WindowOptions {
             let data = pm.take_demultiplied();
             self.icon = Some((w, h, data));
         }
+        self
+    }
+
+    /// See [`WindowOptions::native_menu`].
+    pub fn native_menu(mut self, on: bool) -> Self {
+        self.native_menu = on;
         self
     }
 
@@ -145,6 +157,10 @@ struct Shell<A: App> {
     proxy: winit::event_loop::EventLoopProxy<UserEvent>,
     /// The main window closed; the event loop is exiting.
     exiting: bool,
+    /// The app menu as a native menu bar.
+    #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+    menu: Option<crate::native_menu::NativeMenu<A::Msg>>,
+    native_menu: bool,
 }
 
 /// Open a window and run the app until it is closed. Extra windows declared
@@ -153,6 +169,7 @@ pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::e
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
     let fonts = std::mem::take(&mut opts.fonts);
+    let native_menu = opts.native_menu && cfg!(all(feature = "native-menu", any(target_os = "macos", windows)));
     let mut shell = Shell {
         app: Rc::new(RefCell::new(app)),
         wins: Vec::new(),
@@ -163,6 +180,9 @@ pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::e
         error: None,
         proxy,
         exiting: false,
+        #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+        menu: None,
+        native_menu,
     };
     let main = shell.new_win(None, opts, None, None);
     shell.wins.push(main);
@@ -248,6 +268,8 @@ impl<A: App> Shell<A> {
             rt.load_font(f.clone());
         }
         rt.frameless = opts.frameless;
+        // macOS menus handle their own key equivalents.
+        rt.set_native_menu(self.native_menu && cfg!(target_os = "macos"));
         let proxy = self.proxy.clone();
         rt.set_waker(move || {
             let _ = proxy.send_event(UserEvent::Wake);
@@ -336,6 +358,48 @@ impl<A: App> Shell<A> {
         w.gfx = Some(Gfx { window, presenter });
     }
 
+    /// Build or update the native menu bar from [`App::menu`].
+    #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+    fn refresh_menu(&mut self) {
+        if !self.native_menu {
+            return;
+        }
+        let menus = self.app.borrow().menu();
+        if menus.is_empty() && self.menu.is_none() {
+            return;
+        }
+        let sig = crate::native_menu::signature(&menus);
+        if self.menu.as_ref().is_some_and(|m| m.sig == sig) {
+            return;
+        }
+        let built = crate::native_menu::build(&menus, &self.wins[0].opts.title);
+        #[cfg(target_os = "macos")]
+        built.menu.init_for_nsapp();
+        #[cfg(windows)]
+        if let Some(hwnd) = self.wins[0].gfx.as_ref().and_then(|g| hwnd(&g.window)) {
+            // SAFETY: the HWND belongs to our live main window.
+            unsafe {
+                if let Some(old) = &self.menu {
+                    let _ = old.menu.remove_for_hwnd(hwnd);
+                }
+                let _ = built.menu.init_for_hwnd(hwnd);
+            }
+        }
+        if self.menu.is_none() {
+            let proxy = std::sync::Mutex::new(self.proxy.clone());
+            muda::MenuEvent::set_event_handler(Some(move |e: muda::MenuEvent| {
+                if let Ok(p) = proxy.lock() {
+                    let _ = p.send_event(UserEvent::Menu(e.id));
+                }
+            }));
+        }
+        crate::menu::set_native_menu_bar(true);
+        self.menu = Some(built);
+    }
+
+    #[cfg(not(all(feature = "native-menu", any(target_os = "macos", windows))))]
+    fn refresh_menu(&mut self) {}
+
     /// After app updates: re-render every window, and open or close extra
     /// windows to match [`App::windows`].
     fn sync(&mut self, el: &ActiveEventLoop) {
@@ -350,6 +414,7 @@ impl<A: App> Shell<A> {
         if !updated {
             return;
         }
+        self.refresh_menu();
         for w in &mut self.wins {
             w.rt.invalidate();
             if let Some(g) = &w.gfx {
@@ -592,6 +657,16 @@ impl<A: App> Shell<A> {
     }
 }
 
+/// The Win32 window handle, for the native menu bar.
+#[cfg(all(windows, feature = "native-menu"))]
+fn hwnd(w: &Window) -> Option<isize> {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match w.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get()),
+        _ => None,
+    }
+}
+
 /// GPU by default; falls back to the CPU renderer when no adapter is
 /// available or `RUI_RENDERER=cpu` is set.
 #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
@@ -632,6 +707,9 @@ fn modifiers(m: ModifiersState) -> Modifiers {
 enum UserEvent {
     /// Background tasks posted messages.
     Wake,
+    /// A native menu item was picked.
+    #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+    Menu(muda::MenuId),
     /// A file dialog was answered.
     #[cfg_attr(not(feature = "dialogs"), allow(dead_code))]
     DialogDone { window: Option<String>, id: u64, paths: Vec<std::path::PathBuf> },
@@ -655,6 +733,15 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 for w in &mut self.wins {
                     w.rt.set_time(now);
                     w.rt.poll();
+                }
+            }
+            #[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+            UserEvent::Menu(id) => {
+                if let Some(m) = self.menu.as_ref().and_then(|menu| menu.msgs.get(&id)).cloned() {
+                    let rt = &mut self.wins[0].rt;
+                    rt.set_time(now);
+                    rt.send(m);
+                    rt.poll();
                 }
             }
             UserEvent::DialogDone { window, id, paths } => {

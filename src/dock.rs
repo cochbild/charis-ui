@@ -733,6 +733,21 @@ impl<T> DockSpace<T> {
         self.floating.push(FloatingDock { id: self.next, dock, position, size: self.float_size });
     }
 
+    /// Move every floating window's tabs back into the main dock (the
+    /// windows close).
+    pub fn dock_all_back(&mut self) {
+        let ids: Vec<DockId> = self.floating.iter().map(|f| f.id).collect();
+        for id in ids {
+            self.dock_back(id, None);
+        }
+        self.floating.retain(|f| !f.dock.is_empty());
+    }
+
+    /// Open a tab: in the main dock's first group.
+    pub fn open(&mut self, tab: T) {
+        self.main.open(tab);
+    }
+
     /// Move every tab of floating dock `id` (or just group `g`) into the main dock.
     fn dock_back(&mut self, id: DockId, g: Option<GroupId>) {
         let Some(f) = self.floating.iter_mut().find(|f| f.id == id) else { return };

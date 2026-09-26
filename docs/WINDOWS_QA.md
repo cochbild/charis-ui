@@ -73,4 +73,14 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 - [ ] `cargo run --release --example multiwindow`: inspector windows open, share the count, and
       close independently.
 
+**Menus** (`cargo run --release --example dock`)
+- [ ] File / View / Window in the title bar open on click; hovering "Open Panel" opens its
+      submenu to the right; picking an item runs it and closes the menu; clicking elsewhere closes it.
+- [ ] Shortcuts: Ctrl+Shift+T toggles the theme, Ctrl+N opens an editor tab, even with focus in
+      the Assistant's text box.
+
+**File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
+- [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
+      "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.
+
 Report anything that fails, with a screenshot if possible.

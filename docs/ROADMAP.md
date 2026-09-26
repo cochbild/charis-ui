@@ -101,7 +101,9 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
 - [x] Native file dialogs: `cx.open_file / open_files / pick_folder / save_file`, answered as
       messages; rfd underneath (Windows common item dialog, macOS panels, XDG portal or zenity on
       Linux), modal to the asking window; scripted in tests with `set_dialog_responder`.
-- [ ] App menus: declared once; in-window menu bar, keyboard shortcuts, native menu bar on macOS.
+- [x] App menus (`App::menu`): declared once; shortcuts in every window (after focused inputs),
+      `menubar()` in-window with submenus, native menu bar via muda on macOS (default, with the
+      standard app menu) and Windows (opt-in). Linux has no native menu (GTK-free build).
 
 **Exit:** one of your own apps (currently built with iced) ported with no loss of function.
 

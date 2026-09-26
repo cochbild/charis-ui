@@ -126,6 +126,10 @@ impl<A: App> App for Shared<A> {
         self.app.borrow().on_key(e)
     }
 
+    fn menu(&self) -> Vec<crate::widgets::Menu<A::Msg>> {
+        self.app.borrow().menu()
+    }
+
     fn windows(&self) -> Vec<super::WindowSpec<A::Msg>> {
         self.app.borrow().windows()
     }

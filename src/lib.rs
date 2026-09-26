@@ -64,6 +64,9 @@ pub mod headless;
 pub mod icons;
 #[cfg(feature = "markdown")]
 pub mod markdown;
+pub mod menu;
+#[cfg(all(feature = "native-menu", any(target_os = "macos", windows)))]
+mod native_menu;
 pub mod paint;
 #[cfg(feature = "window")]
 mod platform;
@@ -119,6 +122,7 @@ pub mod prelude {
     pub use crate::icons::Icon;
     #[cfg(feature = "markdown")]
     pub use crate::markdown::markdown;
+    pub use crate::menu::Shortcut;
     pub use crate::paint::Canvas;
     pub use crate::runtime::{window_info, App, Cx, WindowSpec};
     pub use crate::semantics::Role;

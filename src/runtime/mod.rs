@@ -62,6 +62,14 @@ pub trait App: 'static {
         None
     }
 
+    /// The app's menus (File, Edit, View…), declared from state. Their
+    /// shortcuts work in every window; show them in-window with
+    /// [`menubar`](crate::widgets::menubar), and natively on macOS (see
+    /// [`menu`](crate::menu)).
+    fn menu(&self) -> Vec<crate::widgets::Menu<Self::Msg>> {
+        Vec::new()
+    }
+
     /// Extra windows to show besides the main one, declared from state like
     /// the rest of the UI: a window opens when its key appears here and
     /// closes when it disappears. Closing one sends its `on_close` message;
@@ -792,6 +800,7 @@ pub struct Runtime<A: App> {
     /// A drag from another window is over this one.
     external_over: bool,
     queue: Vec<Out<A::Msg>>,
+    native_menu: bool,
     dialog_requests: Vec<(u64, DialogRequest)>,
     dialogs_pending: HashMap<u64, DialogCb<A::Msg>>,
     next_dialog: u64,
@@ -868,6 +877,7 @@ impl<A: App> Runtime<A> {
             screen_origin: None,
             external_over: false,
             queue: Vec::new(),
+            native_menu: false,
             dialog_requests: Vec::new(),
             dialogs_pending: HashMap::default(),
             next_dialog: 0,
@@ -2365,6 +2375,12 @@ impl<A: App> Runtime<A> {
         self.dialog_responder = Some(Box::new(respond));
     }
 
+    /// A native menu bar shows the app menu and handles its shortcuts, so
+    /// the runtime shouldn't match them too.
+    pub fn set_native_menu(&mut self, on: bool) {
+        self.native_menu = on;
+    }
+
     /// True if the app was updated since the last call (other windows of
     /// the same app need to re-render).
     pub fn take_updated(&mut self) -> bool {
@@ -3146,6 +3162,14 @@ impl<A: App> Runtime<A> {
                     self.text_sel = Some((id, 0, len));
                     return;
                 }
+            }
+        }
+        // App menu shortcuts (unless a native menu bar handles them).
+        if !self.native_menu {
+            let menus = self.app.menu();
+            if let Some(m) = menus.iter().flat_map(|m| &m.items).find_map(|i| i.shortcut_msg(&k)) {
+                self.queue.push(Out::Msg(m.clone()));
+                return;
             }
         }
         if k.key == Key::Tab {

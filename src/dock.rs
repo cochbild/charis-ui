@@ -52,6 +52,7 @@ pub const DOCK_EDGE: GroupId = GroupId::MAX - 1;
 
 /// Where a dragged tab will land relative to a group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DropZone {
     /// Join the group (appended).
     Center,

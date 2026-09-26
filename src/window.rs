@@ -63,6 +63,7 @@ pub struct WindowOptions {
 /// [`window_info().backdrop`](crate::runtime::WindowInfo::backdrop) and
 /// make their title bar or sidebars translucent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Backdrop {
     #[default]
     None,
@@ -146,6 +147,12 @@ impl WindowOptions {
     /// [`traffic_lights`](Self::traffic_lights)).
     pub fn frameless(mut self, f: bool) -> Self {
         self.frameless = f;
+        self
+    }
+
+    /// Whether the user can resize the window (default `true`).
+    pub fn resizable(mut self, on: bool) -> Self {
+        self.resizable = on;
         self
     }
 

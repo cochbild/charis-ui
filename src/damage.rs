@@ -26,6 +26,7 @@ pub(crate) struct Item {
 /// What the CPU renderer redrew in the last frame
 /// ([`Runtime::last_damage`](crate::Runtime::last_damage)).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum Damage {
     /// Everything (first frame, resize, too much changed).
     Full,

@@ -218,6 +218,7 @@ impl Weight {
 
 /// Font family selection.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum FontFamily {
     /// The theme's UI font (Inter when the `bundled-fonts` feature is enabled).
     Ui,
@@ -229,6 +230,7 @@ pub enum FontFamily {
 
 /// Mouse cursor shapes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum Cursor {
     #[default]
     Default,

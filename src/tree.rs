@@ -98,6 +98,7 @@ pub enum TreeMsg<Id> {
 
 /// What happened, for the app.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum TreeEvent<Id> {
     Selected(Id),
     /// Enter or double-click on a node without children.

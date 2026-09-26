@@ -27,6 +27,7 @@ use crate::style::*;
 
 /// Keyboard key, platform independent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Key {
     Char(char),
     Enter,
@@ -133,6 +134,7 @@ pub enum DropPhase {
 
 /// Built-in window control actions for custom (frameless) title bars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WindowControl {
     Minimize,
     ToggleMaximize,

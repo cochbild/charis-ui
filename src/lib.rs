@@ -51,11 +51,12 @@ pub mod anim;
 pub mod color;
 pub mod commands;
 pub mod component;
+#[doc(hidden)]
 pub mod cpu;
 pub mod damage;
 pub mod dialog;
 pub mod dock;
-pub mod edit;
+pub(crate) mod edit;
 pub mod effects;
 pub mod element;
 mod fxhash;

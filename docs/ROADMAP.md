@@ -52,7 +52,7 @@ Each milestone ends with a tagged release, and each has exit criteria that can b
 ### M0: Release engineering
 
 - [ ] Final crate name, reserved on crates.io. `rust-ui`, `rui` and `rustui` are taken.
-- [x] `LICENSE-MIT` and `LICENSE-APACHE` files. Still to do: `CONTRIBUTING.md`, `CHANGELOG.md`, code of conduct.
+- [x] `LICENSE-MIT` and `LICENSE-APACHE`, `CONTRIBUTING.md`, `CHANGELOG.md` and `CODE_OF_CONDUCT.md`.
 - [ ] CI with GitHub Actions (**deferred to the end**):
   - fmt, clippy (`-D warnings`), and tests on Linux, Windows and macOS;
   - a feature matrix: `--no-default-features`, `gpu`, `serde`;
@@ -197,11 +197,9 @@ a restart.
 
 ### M6: Developer experience and 1.0
 
-- [ ] API review:
-  - consistent naming;
-  - `#[non_exhaustive]` where needed;
-  - private internals;
-  - a documented semver policy.
+- [x] API review: consistent naming (`set_*` for runtime changes, `with_*` for theme builders,
+      `on_*` for handlers); `#[non_exhaustive]` on the enums that will grow; internal modules
+      private or hidden; the semver policy in `docs/SEMVER.md`.
 - [ ] A docs site with a book (guide, theming, layout, panels, testing) plus rustdoc with examples
       on every public item.
 - [x] Optional hot-reloadable stylesheet layer (`stylesheet` module: CSS-like rules on style

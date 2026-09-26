@@ -107,6 +107,7 @@ pub enum ResizeEdge {
 
 /// Requests from the runtime to the windowing shell.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum WindowRequest {
     DragMove,
     DragResize(ResizeEdge),
@@ -139,6 +140,7 @@ pub(crate) type ClipboardCb<M> = Box<dyn FnOnce(ClipboardContent) -> M>;
 
 /// What's on the clipboard ([`Cx::read_clipboard`]).
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ClipboardContent {
     Empty,
     Text(String),
@@ -325,6 +327,7 @@ pub(crate) fn set_window_info(i: WindowInfo) {
 /// What a window-space point is, from the OS window manager's perspective
 /// (used for native frameless chrome: snap, system menu, Snap Layouts).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ChromeHit {
     /// Normal app content.
     Client,
@@ -349,6 +352,7 @@ impl ChromeMap {
 
 /// Mouse buttons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MouseButton {
     Left,
     Right,
@@ -357,6 +361,7 @@ pub enum MouseButton {
 
 /// Input events fed to the runtime by the platform shell.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Event {
     PointerMove(Point),
     PointerDown(Point, MouseButton),

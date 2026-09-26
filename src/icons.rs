@@ -12,6 +12,7 @@ use tiny_skia::{Path, PathBuilder};
 
 /// An icon: either built-in or custom SVG path data in a 24×24 viewbox.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Icon {
     ChevronRight,
     ChevronDown,

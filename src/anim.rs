@@ -2,6 +2,7 @@
 
 /// Easing curves.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum Easing {
     Linear,
     EaseOutCubic,

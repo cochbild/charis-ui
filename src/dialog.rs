@@ -32,6 +32,7 @@ use std::path::PathBuf;
 
 /// What kind of dialog to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DialogKind {
     OpenFile,
     OpenFiles,

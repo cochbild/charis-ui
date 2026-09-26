@@ -54,6 +54,7 @@ fn responder_answers_like_the_user() {
             DialogKind::OpenFiles => vec!["/a".into(), "/b".into()],
             DialogKind::SaveFile => vec![PathBuf::from("/tmp").join(req.dialog.file_name.clone().unwrap())],
             DialogKind::PickFolder => vec![],
+            _ => vec![],
         }
     });
     h.rt.send(Msg::Open);

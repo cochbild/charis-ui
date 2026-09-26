@@ -552,14 +552,19 @@ timings.
 
 ## Status and roadmap
 
-This is an early but working foundation. Known gaps and planned work:
-
-- Damage-region repainting on the CPU backend
-- Virtualized trees (lists and tables are done)
-- Hot-reloadable stylesheet layer
+This is a working 0.x framework heading for 1.0. The API may still change between minor
+releases; [`docs/SEMVER.md`](docs/SEMVER.md) says what's covered and how breaks are announced,
+and [`CHANGELOG.md`](CHANGELOG.md) lists them. The plan to 1.0 is in
+[`docs/ROADMAP.md`](docs/ROADMAP.md). The main gaps are QA on real Windows and macOS hardware,
+CI, and a published crate name.
 
 See [`docs/LANDSCAPE.md`](docs/LANDSCAPE.md) for the survey of existing Rust UI frameworks and
 the design research behind these choices.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build, test and submit changes, and
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for the community standards.
 
 ## License
 

@@ -177,6 +177,7 @@ impl Svg {
 
 /// How an image fills its box (CSS `object-fit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum Fit {
     /// Scaled to fit inside, keeping its aspect ratio (may leave bands).
     #[default]
@@ -193,6 +194,7 @@ pub enum Fit {
 
 /// What an image element shows.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ImageSource {
     Raster(Image),
     #[cfg(feature = "svg")]

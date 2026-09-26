@@ -9,6 +9,7 @@
 
 /// The kind of control or structure an element represents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Role {
     Button,
     CheckBox,

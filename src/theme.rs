@@ -86,6 +86,7 @@ impl Scale {
 
 /// Neutral color families (Radix-style grays with a subtle tint).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum GrayTint {
     /// Pure neutral gray.
     Gray,
@@ -127,6 +128,7 @@ impl GrayTint {
 /// accent too; these are just good starting points for pickers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum Accent {
     Blue,
     Indigo,

@@ -330,6 +330,7 @@ impl<A: App> Shell<A> {
             rt.load_font(f.clone());
         }
         rt.frameless = opts.frameless;
+        rt.set_external_clipboard(true);
         if opts.system_font {
             rt.use_system_font();
         }
@@ -639,9 +640,35 @@ impl<A: App> Shell<A> {
         }
     }
 
+    /// Answer the app's clipboard reads from the system clipboard.
+    fn read_clipboards(&mut self, i: usize) {
+        for id in self.wins[i].rt.take_clipboard_requests() {
+            let content = self.clipboard_content();
+            self.wins[i].rt.clipboard_done(id, content);
+        }
+    }
+
+    /// The system clipboard's text, else its image.
+    fn clipboard_content(&mut self) -> crate::runtime::ClipboardContent {
+        use crate::runtime::ClipboardContent;
+        #[cfg(feature = "clipboard")]
+        if let Some(cb) = &mut self.clipboard {
+            if let Ok(t) = cb.get_text() {
+                return ClipboardContent::Text(t);
+            }
+            if let Ok(img) = cb.get_image() {
+                if let Some(i) = crate::image::Image::from_rgba(img.width as u32, img.height as u32, &img.bytes) {
+                    return ClipboardContent::Image(i);
+                }
+            }
+        }
+        ClipboardContent::Empty
+    }
+
     fn apply_requests(&mut self, el: &ActiveEventLoop) {
         for i in 0..self.wins.len() {
             self.show_dialogs(i);
+            self.read_clipboards(i);
             let requests = self.wins[i].rt.take_requests();
             for r in requests {
                 let Some(g) = &self.wins[i].gfx else { continue };
@@ -683,6 +710,18 @@ impl<A: App> Shell<A> {
                         #[cfg(feature = "clipboard")]
                         if let Some(cb) = &mut self.clipboard {
                             let _ = cb.set_text(_s);
+                        }
+                    }
+                    WindowRequest::SetClipboardImage(_img) =>
+                    {
+                        #[cfg(feature = "clipboard")]
+                        if let Some(cb) = &mut self.clipboard {
+                            let data = arboard::ImageData {
+                                width: _img.width() as usize,
+                                height: _img.height() as usize,
+                                bytes: _img.to_rgba().into(),
+                            };
+                            let _ = cb.set_image(data);
                         }
                     }
                 }
@@ -991,10 +1030,18 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 let key = map_key(&event.logical_key);
                 #[cfg(feature = "clipboard")]
                 if mods.command() && key == Key::Char('v') {
-                    if let Some(t) = self.clipboard.as_mut().and_then(|c| c.get_text().ok()) {
-                        self.wins[i].rt.handle(Event::Paste(t));
-                        self.apply_requests(el);
-                        return;
+                    match self.clipboard_content() {
+                        crate::runtime::ClipboardContent::Text(t) => {
+                            self.wins[i].rt.handle(Event::Paste(t));
+                            self.apply_requests(el);
+                            return;
+                        }
+                        crate::runtime::ClipboardContent::Image(img) => {
+                            self.wins[i].rt.handle(Event::PasteImage(img));
+                            self.apply_requests(el);
+                            return;
+                        }
+                        crate::runtime::ClipboardContent::Empty => {}
                     }
                 }
                 let rt = &mut self.wins[i].rt;

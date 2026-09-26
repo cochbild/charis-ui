@@ -120,7 +120,8 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
       window. IME is enabled only while a text input has focus; editing keys go to the IME while
       composing.
 - [x] Rich text spans (bold, color, links) and selectable read-only text.
-- [ ] System clipboard on all platforms, including images (optional).
+- [x] System clipboard on all platforms, including images: `cx.copy_image`, `cx.read_clipboard`
+      (text or image), `on_paste_image` for Ctrl/Cmd+V with an image; arboard `image-data`.
 - [x] Keyboard shortcut and command system: `App::commands()` with default keys and chords,
       a rebindable `Keymap` (serde), menus built from commands, a command palette, a Keyboard
       Shortcuts editor with a recorder and conflict warnings, `on_key_capture`.

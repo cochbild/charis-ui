@@ -42,7 +42,7 @@ cosmic-text = "0.19"
 tiny-skia = "0.12"
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
-arboard = { version = "3", optional = true, default-features = false }
+arboard = { version = "3", optional = true, default-features = false, features = ["image-data"] }
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }

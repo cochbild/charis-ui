@@ -196,6 +196,7 @@ pub(crate) struct Handlers<M> {
     pub key: Option<KeyCb<M>>,
     pub key_capture: Option<KeyCb<M>>,
     pub focus: Option<Cb<bool, M>>,
+    pub paste_image: Option<Cb<crate::image::Image, M>>,
     pub value: Option<Cb<f32, M>>,
     pub input: Option<Cb<String, M>>,
     pub submit: Option<M>,
@@ -218,6 +219,7 @@ impl<M: Clone> Clone for Handlers<M> {
             key: self.key.clone(),
             key_capture: self.key_capture.clone(),
             focus: self.focus.clone(),
+            paste_image: self.paste_image.clone(),
             value: self.value.clone(),
             input: self.input.clone(),
             submit: self.submit.clone(),
@@ -242,6 +244,7 @@ impl<M> Default for Handlers<M> {
             key: None,
             key_capture: None,
             focus: None,
+            paste_image: None,
             value: None,
             input: None,
             submit: None,
@@ -278,6 +281,7 @@ impl<M: 'static> Handlers<M> {
                 Rc::new(move |e: &KeyEvent| k(e).map(|m| f(m))) as KeyCb<N>
             }),
             focus: wrap(self.focus, &f),
+            paste_image: wrap(self.paste_image, &f),
             value: wrap(self.value, &f),
             input: wrap(self.input, &f),
             submit: self.submit.map(|m| f(m)),
@@ -1426,6 +1430,12 @@ impl<M: 'static> Element<M> {
     /// recorder or a list driven from its search field.
     pub fn on_key_capture(mut self, f: impl Fn(&KeyEvent) -> Option<M> + 'static) -> Self {
         self.handlers.key_capture = Some(Rc::new(move |e: &KeyEvent| f(e).map(Out::Msg)));
+        self
+    }
+    /// Called when the user pastes an image (Ctrl/Cmd+V with an image on
+    /// the clipboard) while this element or a descendant has focus.
+    pub fn on_paste_image(mut self, f: impl Fn(crate::image::Image) -> M + 'static) -> Self {
+        self.handlers.paste_image = Some(cb(f));
         self
     }
     /// Called with `true` when this element gets keyboard focus and `false`

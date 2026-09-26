@@ -97,7 +97,9 @@ pub use icons::Icon;
 #[cfg(feature = "markdown")]
 pub use markdown::markdown;
 pub use paint::Canvas;
-pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
+pub use runtime::{
+    window_info, App, ChromeHit, ChromeMap, ClipboardContent, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest,
+};
 pub use semantics::{Role, Semantics};
 pub use style::*;
 pub use subscription::Subscriptions;

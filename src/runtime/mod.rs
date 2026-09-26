@@ -115,6 +115,7 @@ pub enum WindowRequest {
     Close,
     SetTitle(String),
     SetClipboard(String),
+    SetClipboardImage(crate::image::Image),
 }
 
 /// Scroll commands issued from [`App::update`].
@@ -133,10 +134,20 @@ type DialogResponder = Box<dyn FnMut(&DialogRequest) -> Vec<std::path::PathBuf>>
 
 /// Turns a dialog's chosen paths into the app's message.
 pub(crate) type DialogCb<M> = Box<dyn FnOnce(Vec<std::path::PathBuf>) -> M>;
+pub(crate) type ClipboardCb<M> = Box<dyn FnOnce(ClipboardContent) -> M>;
+
+/// What's on the clipboard ([`Cx::read_clipboard`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClipboardContent {
+    Empty,
+    Text(String),
+    Image(crate::image::Image),
+}
 
 /// Context passed to [`App::update`] for side effects.
 pub struct Cx<M> {
     pub(crate) dialogs: Vec<(DialogRequest, DialogCb<M>)>,
+    pub(crate) clipboard_reads: Vec<ClipboardCb<M>>,
     pub(crate) requests: Vec<WindowRequest>,
     pub(crate) focus: Option<Option<u64>>,
     pub(crate) scrolls: Vec<(u64, ScrollCmd)>,
@@ -197,6 +208,15 @@ impl<M> Cx<M> {
     }
     pub fn copy_to_clipboard(&mut self, s: impl Into<String>) {
         self.requests.push(WindowRequest::SetClipboard(s.into()));
+    }
+    /// Put an image on the system clipboard.
+    pub fn copy_image(&mut self, image: crate::image::Image) {
+        self.requests.push(WindowRequest::SetClipboardImage(image));
+    }
+    /// Read the system clipboard (text, else an image); `done` gets it as
+    /// a message.
+    pub fn read_clipboard(&mut self, done: impl FnOnce(ClipboardContent) -> M + 'static) {
+        self.clipboard_reads.push(Box::new(done));
     }
     /// Scroll the scroll container with this `.id(...)` to its end.
     pub fn scroll_to_end(&mut self, id: &str) {
@@ -354,6 +374,8 @@ pub enum Event {
     },
     /// Paste from the system clipboard.
     Paste(String),
+    /// Paste an image from the system clipboard.
+    PasteImage(crate::image::Image),
     WindowFocus(bool),
 }
 
@@ -911,6 +933,12 @@ pub struct Runtime<A: App> {
     pub maximized: bool,
     window_focused: bool,
     clipboard: String,
+    /// The internal clipboard's image (when the last copy was an image).
+    clipboard_image: Option<crate::image::Image>,
+    /// The shell reads the system clipboard for `Cx::read_clipboard`.
+    external_clipboard: bool,
+    clipboard_pending: HashMap<u64, ClipboardCb<A::Msg>>,
+    clipboard_requests: Vec<u64>,
 }
 
 const DOUBLE_CLICK: f64 = 0.4;
@@ -990,6 +1018,10 @@ impl<A: App> Runtime<A> {
             maximized: false,
             window_focused: true,
             clipboard: String::new(),
+            clipboard_image: None,
+            external_clipboard: false,
+            clipboard_pending: HashMap::default(),
+            clipboard_requests: Vec::new(),
         }
     }
 
@@ -2514,6 +2546,14 @@ impl<A: App> Runtime<A> {
                 self.dirty = true;
             }
             Event::Paste(t) => self.paste(&t),
+            Event::PasteImage(img) => {
+                if let Some(i) = self.focused.and_then(|f| self.frame.by_id.get(&f).copied()) {
+                    let h = self.chain(i).into_iter().find_map(|j| self.frame.nodes[j].handlers.paste_image.clone());
+                    if let Some(h) = h {
+                        self.queue.push(h(img));
+                    }
+                }
+            }
             Event::WindowFocus(f) => {
                 self.window_focused = f;
                 self.dirty = true;
@@ -2559,6 +2599,26 @@ impl<A: App> Runtime<A> {
         std::mem::take(&mut self.dialog_requests)
     }
 
+    /// The shell reads the system clipboard for [`Cx::read_clipboard`]
+    /// (otherwise reads are answered from the internal clipboard).
+    pub fn set_external_clipboard(&mut self, on: bool) {
+        self.external_clipboard = on;
+    }
+
+    /// Clipboard reads the app asked for; answer each with
+    /// [`Runtime::clipboard_done`].
+    pub fn take_clipboard_requests(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.clipboard_requests)
+    }
+
+    /// Deliver the clipboard's content for read `id`.
+    pub fn clipboard_done(&mut self, id: u64, content: ClipboardContent) {
+        if let Some(cb) = self.clipboard_pending.remove(&id) {
+            self.queue.push(Out::Msg(cb(content)));
+            self.flush();
+        }
+    }
+
     /// Deliver the user's answer to dialog `id` (empty = cancelled).
     pub fn dialog_done(&mut self, id: u64, paths: Vec<std::path::PathBuf>) {
         if let Some(cb) = self.dialogs_pending.remove(&id) {
@@ -2593,6 +2653,7 @@ impl<A: App> Runtime<A> {
         self.updated = true;
         let mut cx = Cx {
             dialogs: Vec::new(),
+            clipboard_reads: Vec::new(),
             requests: Vec::new(),
             focus: None,
             scrolls: Vec::new(),
@@ -2606,6 +2667,34 @@ impl<A: App> Runtime<A> {
                 };
                 if let Some(m) = msg {
                     self.app.update(m, &mut cx);
+                }
+            }
+            // Copies land in the internal clipboard too (headless runs read it).
+            for r in &cx.requests {
+                match r {
+                    WindowRequest::SetClipboard(t) => {
+                        self.clipboard = t.clone();
+                        self.clipboard_image = None;
+                    }
+                    WindowRequest::SetClipboardImage(i) => {
+                        self.clipboard.clear();
+                        self.clipboard_image = Some(i.clone());
+                    }
+                    _ => {}
+                }
+            }
+            for cb in std::mem::take(&mut cx.clipboard_reads) {
+                if self.external_clipboard {
+                    self.next_dialog += 1;
+                    self.clipboard_pending.insert(self.next_dialog, cb);
+                    self.clipboard_requests.push(self.next_dialog);
+                } else {
+                    let content = match (&self.clipboard_image, self.clipboard.is_empty()) {
+                        (Some(i), _) => ClipboardContent::Image(i.clone()),
+                        (None, false) => ClipboardContent::Text(self.clipboard.clone()),
+                        (None, true) => ClipboardContent::Empty,
+                    };
+                    self.queue.push(Out::Msg(cb(content)));
                 }
             }
             for (req, cb) in std::mem::take(&mut cx.dialogs) {

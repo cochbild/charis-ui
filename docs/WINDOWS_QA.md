@@ -79,6 +79,13 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 - [ ] Shortcuts: Ctrl+Shift+T toggles the theme, Ctrl+N opens an editor tab, even with focus in
       the Assistant's text box.
 
+**Tool windows** (dock example)
+- [ ] The ★ (left), branch and ✓ (right) and ▶ (bottom) stripe buttons open Bookmarks, Git, Todo
+      and Build. Todo is pinned (pushes the dock aside); the others slide over it and hide when
+      you click the editor or press Escape.
+- [ ] The pin button in a panel's header switches between pinned and auto-hide; dragging an
+      auto-hide panel's inner edge resizes it.
+
 **File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
 - [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
       "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.

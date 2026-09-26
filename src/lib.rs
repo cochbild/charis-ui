@@ -79,6 +79,7 @@ pub mod system;
 pub mod table;
 pub mod text;
 pub mod theme;
+pub mod toolwin;
 pub mod widgets;
 #[cfg(feature = "window")]
 pub mod window;

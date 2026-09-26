@@ -8,6 +8,7 @@
 
 use rust_ui::dock::{DockSpace, DockSpaceMsg};
 use rust_ui::prelude::*;
+use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Panel {
@@ -45,8 +46,62 @@ impl Panel {
     }
 }
 
+/// Tool windows in the edge stripes (JetBrains style), around the dock.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Tool {
+    Bookmarks,
+    Git,
+    Build,
+    Todo,
+}
+
+impl Tool {
+    fn icon(&self) -> Icon {
+        match self {
+            Tool::Bookmarks => Icon::Star,
+            Tool::Git => Icon::GitBranch,
+            Tool::Build => Icon::Play,
+            Tool::Todo => Icon::Check,
+        }
+    }
+}
+
+fn tools() -> ToolWindows<Tool> {
+    ToolWindows::new()
+        .add(Tool::Bookmarks, Side::Left, ToolMode::AutoHide)
+        .add(Tool::Git, Side::Right, ToolMode::AutoHide)
+        .add(Tool::Todo, Side::Right, ToolMode::Pinned)
+        .add(Tool::Build, Side::Bottom, ToolMode::AutoHide)
+}
+
+fn tool_content(t: &Tool) -> Element<Msg> {
+    let th = theme();
+    let c = &th.colors;
+    match t {
+        Tool::Bookmarks => col().p(10.0).gap(2.0).children(
+            ["main.rs:12  fn main", "dock.rs:88  fn update", "theme.rs:210  Palette"]
+                .map(|b| tree_row(0, None, Some(Icon::Star), b, false)),
+        ),
+        Tool::Git => col().p(12.0).gap(8.0).child(text("Changes").semibold()).children(
+            ["M  src/dock.rs", "M  src/toolwin.rs", "A  examples/dock.rs"].map(|f| text(f).mono().font_size(12.0)),
+        ),
+        Tool::Build => col()
+            .p(12.0)
+            .mono()
+            .font_size(12.0)
+            .gap(2.0)
+            .child(text("   Compiling rust-ui v0.1.0").color(c.success))
+            .child(text("    Finished `release` profile in 12.4s").color(c.text_muted)),
+        Tool::Todo => col().p(12.0).gap(6.0).children(
+            ["Keyboard resizing of splitters", "Workspaces", "Compass drop targets"]
+                .map(|t| row().gap(8.0).items_center().child(checkbox(t, false))),
+        ),
+    }
+}
+
 struct DockDemo {
     dock: DockSpace<Panel>,
+    tools: ToolWindows<Tool>,
     dark: bool,
 }
 
@@ -57,6 +112,7 @@ enum Msg {
     ResetLayout,
     DockAllBack,
     Open(Panel),
+    Tool(ToolMsg<Tool>),
 }
 
 impl App for DockDemo {
@@ -72,10 +128,17 @@ impl App for DockDemo {
         match msg {
             Msg::Dock(m) => self.dock.update(m),
             Msg::Theme => self.dark = !self.dark,
-            Msg::ResetLayout => self.dock = initial(),
+            Msg::ResetLayout => {
+                self.dock = initial();
+                self.tools = tools();
+            }
             Msg::DockAllBack => self.dock.dock_all_back(),
             Msg::Open(p) => self.dock.open(p),
+            Msg::Tool(m) => self.tools.update(m),
         }
+    }
+    fn on_key(&self, k: &KeyEvent) -> Option<Msg> {
+        self.tools.key(k).map(Msg::Tool)
     }
     fn menu(&self) -> Vec<Menu<Msg>> {
         let open = |p: Panel| MenuItem::action(p.title(), Msg::Open(p)).icon(p.icon());
@@ -136,13 +199,9 @@ impl App for DockDemo {
             ),
             window_info().maximized,
         );
-        col().size_full().child(bar).child(self.dock.view_with_icons(
-            None,
-            Panel::title,
-            |p| Some(p.icon()),
-            panel_content,
-            Msg::Dock,
-        ))
+        let dock = self.dock.view_with_icons(None, Panel::title, |p| Some(p.icon()), panel_content, Msg::Dock);
+        let body = self.tools.view(dock, |t| format!("{t:?}"), Tool::icon, tool_content, Msg::Tool);
+        col().size_full().child(bar).child(body)
     }
     fn windows(&self) -> Vec<WindowSpec<Msg>> {
         self.dock.windows(Panel::title, Msg::Dock)
@@ -261,7 +320,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     // For scripted UI tests: print where a text is (center, window coordinates).
     if let Some(pos) = args.iter().position(|a| a == "--where") {
-        let mut h = Headless::new(DockDemo { dock: initial(), dark: true }, 1280.0, 800.0, 1.0);
+        let mut h = Headless::new(DockDemo { dock: initial(), tools: tools(), dark: true }, 1280.0, 800.0, 1.0);
         h.settle();
         let t = args.get(pos + 1).expect("--where TEXT");
         let c = h.rt.rect_of_text(t).expect("text not found").center();
@@ -270,7 +329,7 @@ fn main() {
     }
     if let Some(pos) = args.iter().position(|a| a == "--screenshot") {
         let out = args.get(pos + 1).cloned().unwrap_or_else(|| "dock.png".into());
-        let mut h = Headless::new(DockDemo { dock: initial(), dark: true }, 1280.0, 800.0, 1.0);
+        let mut h = Headless::new(DockDemo { dock: initial(), tools: tools(), dark: true }, 1280.0, 800.0, 1.0);
         h.settle();
         let state = args.iter().position(|a| a == "--state").and_then(|i| args.get(i + 1)).cloned();
         if state.as_deref() == Some("reorder") {
@@ -283,6 +342,15 @@ fn main() {
                 let t = i as f32 / 8.0;
                 h.move_to(from.x + (to.x + 6.0 - from.x) * t, from.y);
             }
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
+        if state.as_deref() == Some("tools") {
+            // Todo pinned on the right, Build sliding up over the editor.
+            h.rt.send(Msg::Tool(ToolMsg::Toggle(Tool::Todo)));
+            h.rt.send(Msg::Tool(ToolMsg::Toggle(Tool::Build)));
             h.settle();
             h.save_png(&out).expect("save");
             println!("saved {out}");
@@ -328,7 +396,7 @@ fn main() {
         return;
     }
     rust_ui::run(
-        DockDemo { dock: initial(), dark: true },
+        DockDemo { dock: initial(), tools: tools(), dark: true },
         WindowOptions::new("Dock demo").size(1280.0, 800.0).frameless(true),
     )
     .expect("run");

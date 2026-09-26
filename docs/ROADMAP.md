@@ -169,8 +169,9 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Drag a dock tab out into a floating OS window, and dock it back (`DockSpace`): tear-out at
   the drop point, cross-window drop targets with previews, pop-out / dock-back buttons, closing
   a floating window re-docks its tabs. Verified end to end under Xvfb with real OS windows.
-- [ ] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
-      style).
+- [x] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
+      style): `ToolWindows` with pinned/auto-hide modes, one per edge, resizable, Escape and
+      outside click hide, reduced-motion aware.
 - [ ] Panel commands:
   - move a panel to the left, right, top or bottom;
   - hide all panels;

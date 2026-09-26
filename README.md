@@ -269,6 +269,17 @@ Closing a floating window docks its tabs back.
 
 ![A tab dragged out into its own window](docs/dock-tear-out.png)
 
+**Tool windows** (`ToolWindows`) add JetBrains-style side panels around any content, such as a
+dock:
+- icon stripes on the left, right and bottom edges, one button per tool window;
+- a *pinned* tool window takes space, with a splitter to resize it;
+- an *auto-hide* one slides over the content, and hides again when you click elsewhere, press
+  Escape or click its stripe button;
+- one tool window per edge is open at a time;
+- the header's pin button switches modes, and the minus button hides the panel.
+
+![Pinned and auto-hide tool windows](docs/tool-windows.png)
+
 With the `serde` feature, the whole `Dock` or `DockSpace` (tree, weights, tabs, maximized group,
 floating windows, and a `version` field) serializes, so layouts can be persisted per workspace.
 
@@ -435,7 +446,6 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
-- Auto-hide (JetBrains "unpinned") panels
 - Hot-reloadable stylesheet layer
 
 See [`docs/LANDSCAPE.md`](docs/LANDSCAPE.md) for the survey of existing Rust UI frameworks and

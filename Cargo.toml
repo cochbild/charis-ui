@@ -66,3 +66,7 @@ required-features = ["window"]
 [[example]]
 name = "counter"
 required-features = ["window"]
+
+[[example]]
+name = "lmfast_chat"
+required-features = ["window", "markdown"]

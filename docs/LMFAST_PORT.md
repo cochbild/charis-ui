@@ -78,6 +78,27 @@ Discover, Models, Tune, Developer, Settings).
 
 ## Proof
 
-Before touching lmfast-rs itself, a faithful recreation of its **Chat** screen lives here as
-`examples/lmfast_chat.rs`, using mock streaming, so the look and the feature parity can be judged
-side by side. After that, the real port happens on a branch in lmfast-rs.
+`examples/lmfast_chat.rs` recreates lmfast's **Chat** screen with mock streaming, so the look and
+the feature parity can be judged side by side:
+
+```sh
+cargo run --release --example lmfast_chat
+```
+
+![lmfast chat recreation](lmfast-chat.png)
+
+It uses:
+- lmfast's own palette (amber on near-black), applied through `ThemeConfig` plus exact overrides.
+- A nav sidebar and conversation folders with search.
+- A `combo_box` model picker.
+- Streamed Markdown replies: a `cx.run` stream you can abort, a `follow_end` transcript, and a
+  timer-driven tok/s readout.
+- A collapsible reasoning block, selectable text, and copy buttons.
+- A `text_area` composer where Enter sends and Shift+Enter adds a newline.
+- A params panel with a slider and `pick_list`.
+- A quit confirmation driven by `on_close_request`.
+
+Running it in a real window found and fixed a bug the headless tests missed: fast typing could
+drop characters between frames. There is now a regression test for it.
+
+**Next:** port lmfast-ui screen by screen on a branch in lmfast-rs, starting with Chat.

@@ -111,3 +111,17 @@ fn paste_keeps_newlines_and_click_positions() {
     h.type_text("*");
     assert_eq!(h.rt.app.text, "a\n*b\nc");
 }
+
+#[test]
+fn fast_typing_between_frames_keeps_every_keystroke() {
+    // Real windows can deliver several keystrokes before the next redraw.
+    let mut h = setup(false);
+    for ch in "Stream a reply please".chars() {
+        h.rt.handle(Event::Key(KeyEvent { key: Key::Char(ch), mods: Modifiers::default(), repeat: false }));
+        h.rt.handle(Event::Text(ch.to_string()));
+    }
+    key(&mut h, Key::Backspace, false);
+    h.rt.handle(Event::Text("E".into()));
+    h.rt.render();
+    assert_eq!(h.rt.app.text, "Stream a reply pleasE");
+}

@@ -491,6 +491,10 @@ pub struct Runtime<A: App> {
     pane_meta: HashMap<(u64, usize), (f32, f32, bool)>,
     scrolls: HashMap<u64, ScrollState>,
     inputs: HashMap<u64, InputState>,
+    /// Values emitted by inputs since the last rebuild. Inputs are controlled
+    /// (the app owns the value), so several keystrokes between frames must
+    /// build on each other rather than on the last rendered value.
+    pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     tooltip: Option<(u64, f64, Point)>,
     splitter_hover: Option<(u64, f64)>,
@@ -548,6 +552,7 @@ impl<A: App> Runtime<A> {
             pane_meta: HashMap::new(),
             scrolls: HashMap::new(),
             inputs: HashMap::new(),
+            pending_values: HashMap::new(),
             dropdowns: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
@@ -859,6 +864,8 @@ impl<A: App> Runtime<A> {
     }
 
     fn build(&mut self) {
+        // The app has seen every emitted value by now; the view is authoritative again.
+        self.pending_values.clear();
         self.theme = Rc::new(self.app.theme());
         theme::set_theme(self.theme.clone());
         let view = self.app.view();
@@ -2116,7 +2123,7 @@ impl<A: App> Runtime<A> {
             }
             if let NodeContent::Input(spec) = &n.content {
                 let id = n.id;
-                let value = spec.value.clone();
+                let value = self.pending_values.get(&id).cloned().unwrap_or_else(|| spec.value.clone());
                 let pos = self.input_hit(id, p).unwrap_or(0);
                 let st = self.inputs.entry(id).or_default();
                 if clicks == 2 {
@@ -2488,7 +2495,7 @@ impl<A: App> Runtime<A> {
         let n = &self.frame.nodes[i];
         let NodeContent::Input(spec) = &n.content else { return false };
         let id = n.id;
-        let value = spec.value.clone();
+        let value = self.pending_values.get(&id).cloned().unwrap_or_else(|| spec.value.clone());
         let password = spec.password;
         let multiline = spec.multiline;
         let submit_on_enter = spec.submit_on_enter;
@@ -2624,6 +2631,7 @@ impl<A: App> Runtime<A> {
         }
         if let (Some(v), Some(h)) = (new_value, on_input) {
             if v != value {
+                self.pending_values.insert(id, v.clone());
                 self.queue.push(h(v));
             }
         }
@@ -2684,7 +2692,7 @@ impl<A: App> Runtime<A> {
         if n.disabled {
             return;
         }
-        let value = spec.value.clone();
+        let value = self.pending_values.get(&fid).cloned().unwrap_or_else(|| spec.value.clone());
         let h = n.handlers.input.clone();
         let st = self.inputs.entry(fid).or_default();
         st.sel.clamp(&value);
@@ -2692,6 +2700,7 @@ impl<A: App> Runtime<A> {
         st.sel = s;
         st.blink_start = self.now;
         if let Some(h) = h {
+            self.pending_values.insert(fid, v.clone());
             self.queue.push(h(v));
         }
         self.dirty = true;

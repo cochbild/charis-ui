@@ -435,6 +435,9 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
                 self.rt.handle(Event::Wheel(p, d));
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
+                    eprintln!("key {:?} text {:?} state {:?}", event.logical_key, event.text, event.state);
+                }
                 if event.state != ElementState::Pressed {
                     return;
                 }
@@ -455,7 +458,14 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
                     }
                 }
             }
-            WindowEvent::Ime(Ime::Commit(t)) => self.rt.handle(Event::Text(t)),
+            WindowEvent::Ime(ime) => {
+                if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
+                    eprintln!("ime {ime:?}");
+                }
+                if let Ime::Commit(t) = ime {
+                    self.rt.handle(Event::Text(t));
+                }
+            }
             WindowEvent::Focused(f) => self.rt.handle(Event::WindowFocus(f)),
             _ => {}
         }

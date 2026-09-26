@@ -120,6 +120,98 @@ impl GrayTint {
     }
 }
 
+/// Named accent presets (Radix/Tailwind-inspired hues tuned to work as step 9
+/// of a generated scale in both light and dark mode). Any `Color` works as an
+/// accent too; these are just good starting points for pickers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Accent {
+    Blue,
+    Indigo,
+    Violet,
+    Purple,
+    Pink,
+    Rose,
+    Red,
+    Orange,
+    Amber,
+    Lime,
+    Green,
+    Emerald,
+    Teal,
+    Cyan,
+    Sky,
+    /// Neutral (gray-on-gray, like Vercel/Linear monochrome UIs).
+    Mono,
+}
+
+impl Accent {
+    /// Every preset, in color-wheel order (for swatch pickers).
+    pub const ALL: [Accent; 16] = [
+        Accent::Blue,
+        Accent::Indigo,
+        Accent::Violet,
+        Accent::Purple,
+        Accent::Pink,
+        Accent::Rose,
+        Accent::Red,
+        Accent::Orange,
+        Accent::Amber,
+        Accent::Lime,
+        Accent::Green,
+        Accent::Emerald,
+        Accent::Teal,
+        Accent::Cyan,
+        Accent::Sky,
+        Accent::Mono,
+    ];
+
+    /// Human-readable name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Accent::Blue => "Blue",
+            Accent::Indigo => "Indigo",
+            Accent::Violet => "Violet",
+            Accent::Purple => "Purple",
+            Accent::Pink => "Pink",
+            Accent::Rose => "Rose",
+            Accent::Red => "Red",
+            Accent::Orange => "Orange",
+            Accent::Amber => "Amber",
+            Accent::Lime => "Lime",
+            Accent::Green => "Green",
+            Accent::Emerald => "Emerald",
+            Accent::Teal => "Teal",
+            Accent::Cyan => "Cyan",
+            Accent::Sky => "Sky",
+            Accent::Mono => "Mono",
+        }
+    }
+
+    /// The seed color for this preset.
+    pub fn color(self, dark: bool) -> Color {
+        hex(match self {
+            Accent::Blue => "#3b82f6",
+            Accent::Indigo => "#6366f1",
+            Accent::Violet => "#8b5cf6",
+            Accent::Purple => "#a855f7",
+            Accent::Pink => "#ec4899",
+            Accent::Rose => "#f43f5e",
+            Accent::Red => "#e5484d",
+            Accent::Orange => "#f76b15",
+            Accent::Amber => "#ffb000",
+            Accent::Lime => "#84cc16",
+            Accent::Green => "#22c55e",
+            Accent::Emerald => "#10b981",
+            Accent::Teal => "#14b8a6",
+            Accent::Cyan => "#06b6d4",
+            Accent::Sky => "#0ea5e9",
+            Accent::Mono if dark => "#e4e4e7",
+            Accent::Mono => "#27272a",
+        })
+    }
+}
+
 /// How much space controls take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Density {
@@ -219,6 +311,8 @@ pub struct Palette {
     pub scrollbar_hover: Color,
     pub status_bar: Color,
     pub status_text: Color,
+    /// Inline code and other "literal" text (accent-tinted, readable on surfaces).
+    pub code_text: Color,
 }
 
 /// A complete theme: palette plus shape, typography and motion tokens.
@@ -287,7 +381,14 @@ impl Theme {
         let amber = Scale::generate(if dark { hex("#f5b94a") } else { hex("#c98a12") }, dark);
         let g = |n| gray.step(n);
         let a = |n| accent.step(n);
-        let on_accent = if accent.step(9).to_oklch().0 > 0.72 { hex("#111113") } else { Color::WHITE };
+        // White on the accent unless that drops below WCAG's 3:1 for UI components
+        // (e.g. orange, amber, lime, near-white "mono"); then near-black.
+        let a9 = accent.step(9);
+        let on_accent = if a9.contrast(Color::WHITE) >= 3.0 {
+            Color::WHITE
+        } else {
+            a9.most_readable(Color::WHITE, hex("#111113"))
+        };
         let colors = if dark {
             Palette {
                 background: g(1),
@@ -317,6 +418,7 @@ impl Theme {
                 scrollbar_hover: Color::WHITE.with_alpha(0.28),
                 status_bar: g(1).darken(0.12),
                 status_text: g(11),
+                code_text: a(11),
             }
         } else {
             Palette {
@@ -346,6 +448,7 @@ impl Theme {
                 scrollbar_hover: Color::BLACK.with_alpha(0.32),
                 status_bar: g(2).lerp(g(3), 0.5),
                 status_text: g(11),
+                code_text: a(11),
             }
         };
         let k = cfg.scaling.max(0.5);
@@ -403,6 +506,27 @@ impl Theme {
         Self::from_config(ThemeConfig { density, ..self.config })
     }
 
+    /// Same theme with an accent preset (resolved for this theme's mode).
+    pub fn with_accent_preset(self, accent: Accent) -> Self {
+        let color = accent.color(self.config.dark);
+        self.with_accent(color)
+    }
+
+    /// Same knobs, switched between dark and light mode.
+    pub fn with_dark(self, dark: bool) -> Self {
+        Self::from_config(ThemeConfig { dark, ..self.config })
+    }
+
+    /// Same theme with a different base corner radius.
+    pub fn with_radius(self, radius: f32) -> Self {
+        Self::from_config(ThemeConfig { radius, ..self.config })
+    }
+
+    /// Same theme with a different size multiplier.
+    pub fn with_scaling(self, scaling: f32) -> Self {
+        Self::from_config(ThemeConfig { scaling, ..self.config })
+    }
+
     /// Same theme with a different gray tint.
     pub fn with_gray(self, gray: GrayTint) -> Self {
         Self::from_config(ThemeConfig { gray, ..self.config })
@@ -428,12 +552,26 @@ mod tests {
     use super::*;
 
     fn contrast(a: Color, b: Color) -> f32 {
-        let lum = |c: Color| {
-            let f = |x: f32| if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
-            0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
-        };
-        let (x, y) = (lum(a), lum(b));
-        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+        a.contrast(b)
+    }
+
+    #[test]
+    fn every_accent_preset_is_readable_in_both_modes() {
+        for dark in [true, false] {
+            for a in Accent::ALL {
+                for gray in [GrayTint::Zinc, GrayTint::Accent, GrayTint::Sand] {
+                    let t =
+                        Theme::from_config(ThemeConfig { dark, accent: a.color(dark), gray, ..ThemeConfig::dark() });
+                    let c = &t.colors;
+                    let on = contrast(c.accent_text, c.accent);
+                    assert!(on >= 3.0, "{} button text contrast {on:.2} (dark={dark})", a.name());
+                    let code = contrast(c.code_text, c.surface);
+                    assert!(code >= 4.5, "{} code text contrast {code:.2} (dark={dark})", a.name());
+                    let body = contrast(c.text, c.background);
+                    assert!(body >= 7.0, "{} body text contrast {body:.2} (dark={dark})", a.name());
+                }
+            }
+        }
     }
 
     #[test]

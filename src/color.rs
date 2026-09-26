@@ -157,6 +157,25 @@ impl Color {
         0.2126 * self.r + 0.7152 * self.g + 0.0722 * self.b
     }
 
+    /// WCAG 2 contrast ratio against another opaque color (1.0 ..= 21.0).
+    pub fn contrast(&self, other: Color) -> f32 {
+        let lum = |c: &Color| {
+            let f = |x: f32| if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+            0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
+        };
+        let (x, y) = (lum(self), lum(&other));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    /// Whichever of `a` / `b` reads better on top of this color.
+    pub fn most_readable(&self, a: Color, b: Color) -> Color {
+        if self.contrast(a) >= self.contrast(b) {
+            a
+        } else {
+            b
+        }
+    }
+
     pub(crate) fn to_skia(self) -> tiny_skia::Color {
         tiny_skia::Color::from_rgba(
             self.r.clamp(0.0, 1.0),

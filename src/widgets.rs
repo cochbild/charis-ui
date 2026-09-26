@@ -654,6 +654,22 @@ pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M
     r
 }
 
+/// A round color swatch for theme/accent pickers. Selected swatches get a
+/// ring in the swatch's own color with a gap, like macOS/GitHub pickers.
+pub fn color_swatch<M: Clone + 'static>(color: Color, selected: bool) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    div()
+        .center()
+        .square(26.0)
+        .pill()
+        .shrink(0.0)
+        .border(2.0, if selected { color } else { Color::TRANSPARENT })
+        .transition(0.12)
+        .hover(move |s| if selected { s } else { s.border_color(c.border_strong) })
+        .child(div().square(18.0).pill().bg(color).border(1.0, Color::BLACK.with_alpha(0.12)))
+}
+
 // --------------------------------------------------------- window chrome
 
 /// Minimize / maximize / close buttons for frameless windows (Windows style).

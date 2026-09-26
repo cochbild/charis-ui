@@ -2,7 +2,12 @@
 //! compare look and feature parity. Streaming is mocked.
 //!
 //! Run:        cargo run --release --example lmfast_chat
-//! Screenshot: cargo run --release --example lmfast_chat -- --screenshot chat.png [--streaming]
+//! Screenshot: cargo run --release --example lmfast_chat -- --screenshot chat.png
+//!             [--streaming] [--settings] [--light] [--accent violet] [--gray slate]
+//!
+//! The whole look is generated from a handful of `ThemeConfig` knobs, which the
+//! Settings screen changes live: mode, accent, neutral tint, corners, density
+//! and text size. Nothing in the views hard-codes a color.
 
 use std::time::{Duration, Instant};
 
@@ -10,9 +15,39 @@ use futures::StreamExt;
 use rust_ui::prelude::*;
 use rust_ui::TaskHandle;
 
-// lmfast's owned palette: signal amber on flat near-black.
-const BG: &str = "#0D0D0F";
-const AMBER: &str = "#FFB000";
+const GRAYS: [(&str, GrayTint); 7] = [
+    ("Zinc", GrayTint::Zinc),
+    ("Slate", GrayTint::Slate),
+    ("Gray", GrayTint::Gray),
+    ("Mauve", GrayTint::Mauve),
+    ("Sand", GrayTint::Sand),
+    ("Sage", GrayTint::Sage),
+    ("Tinted", GrayTint::Accent),
+];
+
+/// The user's appearance choices (what lmfast would persist in settings).
+#[derive(Clone, Debug, PartialEq)]
+struct Appearance {
+    dark: bool,
+    accent: Accent,
+    gray: GrayTint,
+    radius: f32,
+    density: Density,
+    scaling: f32,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            dark: true,
+            accent: Accent::Indigo,
+            gray: GrayTint::Zinc,
+            radius: 6.0,
+            density: Density::Default,
+            scaling: 1.0,
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Screen {
@@ -54,6 +89,7 @@ struct LmFast {
     confirm_quit: bool,
     show_params: bool,
     temperature: f32,
+    look: Appearance,
 }
 
 #[derive(Clone, Debug)]
@@ -72,6 +108,13 @@ enum Msg {
     ToggleReasoning(usize),
     ToggleParams,
     Temperature(f32),
+    Dark(bool),
+    Accent(Accent),
+    Gray(GrayTint),
+    Radius(f32),
+    Density(Density),
+    Scaling(f32),
+    ResetLook,
     CloseRequested,
     CancelQuit,
     Quit,
@@ -82,22 +125,17 @@ impl App for LmFast {
     type Msg = Msg;
 
     fn theme(&self) -> Theme {
-        // Generate a full theme from lmfast's accent, then pin exact brand colors.
-        let mut t = Theme::from_config(ThemeConfig {
-            accent: hex(AMBER),
-            gray: GrayTint::Custom { hue: 285.0, chroma: 0.006 },
-            radius: 5.0,
+        // Every color, radius and size below is generated from these knobs.
+        let l = &self.look;
+        Theme::from_config(ThemeConfig {
+            dark: l.dark,
+            accent: l.accent.color(l.dark),
+            gray: l.gray,
+            radius: l.radius,
+            density: l.density,
+            scaling: l.scaling,
             ..ThemeConfig::dark()
-        });
-        t.colors.background = hex(BG);
-        t.colors.surface = hex(BG);
-        t.colors.chrome = hex("#0A0A0C");
-        t.colors.panel = hex("#131316");
-        t.colors.text = hex("#E6E6EA");
-        t.colors.success = hex("#4ADE80");
-        t.colors.danger = hex("#F0506E");
-        t.radius_lg = 8.0;
-        t
+        })
     }
 
     fn subscriptions(&self) -> Subscriptions<Msg> {
@@ -176,6 +214,13 @@ impl App for LmFast {
             }
             Msg::ToggleParams => self.show_params = !self.show_params,
             Msg::Temperature(v) => self.temperature = v,
+            Msg::Dark(d) => self.look.dark = d,
+            Msg::Accent(a) => self.look.accent = a,
+            Msg::Gray(g) => self.look.gray = g,
+            Msg::Radius(r) => self.look.radius = (r * 2.0).round() / 2.0,
+            Msg::Density(d) => self.look.density = d,
+            Msg::Scaling(k) => self.look.scaling = k,
+            Msg::ResetLook => self.look = Appearance::default(),
             Msg::CloseRequested => {
                 if self.streaming.is_some() {
                     self.confirm_quit = true;
@@ -194,6 +239,7 @@ impl App for LmFast {
         let c = &th.colors;
         let mut root = row().size_full().bg(c.background).child(self.nav()).child(match self.screen {
             Screen::Chat => self.chat(),
+            Screen::Settings => self.settings(),
             _ => col().grow(1.0).center().color(c.text_faint).child(text("Not part of this demo")),
         });
         if self.confirm_quit {
@@ -264,6 +310,120 @@ impl LmFast {
             )
             .child(spacer())
             .child(status)
+    }
+
+    fn settings(&self) -> Element<Msg> {
+        let th = theme();
+        let c = &th.colors;
+        let l = &self.look;
+        let setting = |label: &'static str, hint: &'static str, control: Element<Msg>| {
+            row()
+                .items_center()
+                .gap(24.0)
+                .py(14.0)
+                .border_b(1.0, c.border)
+                .child(
+                    col()
+                        .w(200.0)
+                        .shrink(0.0)
+                        .gap(2.0)
+                        .child(text(label).medium())
+                        .child(text(hint).font_size(th.font_size_sm).color(c.text_faint)),
+                )
+                .child(div().grow(1.0).min_w(0.0).child(control))
+        };
+        let mut swatches = row().flex_wrap().gap(6.0);
+        for a in Accent::ALL {
+            swatches =
+                swatches.child(color_swatch(a.color(l.dark), a == l.accent).tooltip(a.name()).on_click(Msg::Accent(a)));
+        }
+        let grays = segmented(GRAYS.iter().map(|(n, g)| (n.to_string(), *g == l.gray, Msg::Gray(*g))).collect());
+        let densities = segmented(
+            [("Compact", Density::Compact), ("Default", Density::Default), ("Comfortable", Density::Comfortable)]
+                .into_iter()
+                .map(|(n, d)| (n.to_string(), d == l.density, Msg::Density(d)))
+                .collect(),
+        );
+        let sizes = segmented(
+            [("90%", 0.9), ("100%", 1.0), ("110%", 1.1), ("125%", 1.25)]
+                .into_iter()
+                .map(|(n, k)| (n.to_string(), (k - l.scaling).abs() < 0.01, Msg::Scaling(k)))
+                .collect(),
+        );
+        let preview = card()
+            .gap(12.0)
+            .child(text("Preview").medium())
+            .child(
+                row()
+                    .flex_wrap()
+                    .gap(8.0)
+                    .items_center()
+                    .child(primary_button("Load model"))
+                    .child(button("Eject"))
+                    .child(ghost_button("Details"))
+                    .child(danger_button("Delete"))
+                    .child(badge("Q4_K_M"))
+                    .child(tag("running", c.success)),
+            )
+            .child(
+                row()
+                    .gap(12.0)
+                    .items_center()
+                    .child(switch(true))
+                    .child(checkbox("Flash attention", true))
+                    .child(progress(0.62).grow(1.0)),
+            )
+            .child(text_input(String::new(), |_| Msg::Noop).placeholder("Ask anything…"));
+        col()
+            .grow(1.0)
+            .min_w(0.0)
+            .scroll_y()
+            .child(
+                col()
+                    .w_full()
+                    .max_w(860.0)
+                    .px(32.0)
+                    .py(28.0)
+                    .gap(6.0)
+                    .child(
+                        row()
+                            .items_center()
+                            .child(
+                                col()
+                                    .grow(1.0)
+                                    .gap(4.0)
+                                    .child(text("Appearance").font_size(th.font_size_lg * 1.4).bold())
+                                    .child(
+                                        text("Everything is generated from these six knobs; nothing in the app hard-codes a color.")
+                                            .color(c.text_muted),
+                                    ),
+                            )
+                            .child(ghost_button("Reset").on_click(Msg::ResetLook)),
+                    )
+                    .child(setting(
+                        "Mode",
+                        "Light or dark surfaces",
+                        segmented(vec![
+                            ("Dark".into(), l.dark, Msg::Dark(true)),
+                            ("Light".into(), !l.dark, Msg::Dark(false)),
+                        ]),
+                    ))
+                    .child(setting("Accent", "Buttons, focus, selection", swatches))
+                    .child(setting("Neutrals", "Tint of backgrounds and borders", grays))
+                    .child(setting(
+                        "Corners",
+                        "Base radius in px",
+                        row()
+                            .items_center()
+                            .gap(12.0)
+                            .child(slider(l.radius, 0.0, 12.0).step(0.5).on_change(Msg::Radius).w(220.0))
+                            .child(text(format!("{:.1}px", l.radius)).mono().color(c.text_muted)),
+                    ))
+                    .child(setting("Density", "Control and row heights", densities))
+                    .child(setting("Text size", "Scales text and controls", sizes))
+                    .child(div().h(18.0))
+                    .child(preview),
+            )
     }
 
     fn chat(&self) -> Element<Msg> {
@@ -523,6 +683,7 @@ fn initial() -> LmFast {
         confirm_quit: false,
         show_params: false,
         temperature: 0.7,
+        look: Appearance::default(),
     }
 }
 
@@ -530,7 +691,25 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--screenshot") {
         let out = args.get(pos + 1).cloned().unwrap_or_else(|| "lmfast_chat.png".into());
-        let mut h = Headless::new(initial(), 1360.0, 860.0, 1.0);
+        let arg =
+            |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.to_lowercase());
+        let mut app = initial();
+        if args.iter().any(|a| a == "--light") {
+            app.look.dark = false;
+        }
+        if let Some(a) = arg("--accent") {
+            app.look.accent = *Accent::ALL.iter().find(|x| x.name().to_lowercase() == a).expect("unknown accent");
+        }
+        if let Some(g) = arg("--gray") {
+            app.look.gray = GRAYS.iter().find(|(n, _)| n.to_lowercase() == g).expect("unknown gray").1;
+        }
+        if let Some(r) = arg("--radius") {
+            app.look.radius = r.parse().expect("radius");
+        }
+        if args.iter().any(|a| a == "--settings") {
+            app.screen = Screen::Settings;
+        }
+        let mut h = Headless::new(app, 1360.0, 860.0, 1.0);
         h.settle();
         if args.iter().any(|a| a == "--streaming") {
             h.rt.send(Msg::Draft("Show me a table of model speeds".into()));

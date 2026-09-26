@@ -87,7 +87,7 @@ pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton
 pub use style::*;
 pub use subscription::Subscriptions;
 pub use text::{span, Span};
-pub use theme::{theme, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
+pub use theme::{theme, Accent, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;
 #[cfg(feature = "window")]
 pub use window::{run, WindowOptions};
@@ -115,7 +115,7 @@ pub mod prelude {
     };
     pub use crate::subscription::Subscriptions;
     pub use crate::text::{span, Span};
-    pub use crate::theme::{theme, Density, GrayTint, Theme, ThemeConfig};
+    pub use crate::theme::{theme, Accent, Density, GrayTint, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]
     pub use crate::window::{run, WindowOptions};

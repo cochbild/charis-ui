@@ -132,8 +132,18 @@ fn theme(&self) -> Theme {
 }
 ```
 
+Any `Color` works as the accent. There are also 16 named presets (`Accent::ALL`, e.g.
+`Accent::Teal.color(dark)`) for building pickers with `color_swatch`. Because `theme()` is
+re-read every frame, a settings screen can change any knob live. `examples/lmfast_chat.rs`
+has one (Settings → Appearance).
+
+Button text on the accent stays white unless that falls below WCAG's 3:1, e.g. on orange,
+amber or lime; then it switches to near-black. A test checks every preset in both modes.
+
 Every token on the resulting `Theme` is public, so you can still override single values.
 The raw scales are there for your own components: `theme().scales.accent.step(3)`.
+
+![One app, four looks from the same knobs](docs/lmfast-themes.png)
 
 Defaults follow web conventions:
 - 13px UI text and a 4px spacing rhythm.

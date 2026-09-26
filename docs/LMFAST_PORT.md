@@ -40,7 +40,8 @@ Discover, Models, Tune, Developer, Settings).
 
 **Window**
 - Initial size and minimum size, window icon, custom close handling.
-- Light, dark and sepia themes switched at runtime.
+- Light, dark and sepia themes switched at runtime. (Here: any mode × accent × tint; a sepia
+  look is `GrayTint::Sand` in light mode with an orange or amber accent.)
 
 **Outside the UI framework (these stay as they are)**
 - `rfd` dialogs, the `tokio` runtime, `reqwest`, `rodio`.
@@ -87,8 +88,19 @@ cargo run --release --example lmfast_chat
 
 ![lmfast chat recreation](lmfast-chat.png)
 
+The same app with other knob settings (light/teal/slate, rose/mauve, mono), and the
+Appearance screen:
+
+![theme variants](lmfast-themes.png)
+
+![appearance settings](lmfast-appearance.png)
+
+Screenshot flags: `--settings`, `--light`, `--accent <name>`, `--gray <name>`, `--radius <px>`.
+
 It uses:
-- lmfast's own palette (amber on near-black), applied through `ThemeConfig` plus exact overrides.
+- A fully generated theme with no hard-coded colors. **Settings → Appearance** changes mode,
+  accent (16 presets), neutral tint, corner radius, density and text size live. This replaces
+  lmfast's fixed amber palette.
 - A nav sidebar and conversation folders with search.
 - A `combo_box` model picker.
 - Streamed Markdown replies: a `cx.run` stream you can abort, a `follow_end` transcript, and a

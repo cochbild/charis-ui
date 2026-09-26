@@ -192,7 +192,7 @@ impl<'a> P<'a> {
             Event::Code(t) => {
                 let mut s = styled(&t, st).mono();
                 if st.link.is_none() {
-                    s = s.color(theme().colors.warning);
+                    s = s.color(theme().colors.code_text);
                 }
                 out.push(s);
             }

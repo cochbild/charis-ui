@@ -62,7 +62,7 @@ impl App for DockDemo {
             Theme::light()
         }
     }
-    fn update(&mut self, msg: Msg, _cx: &mut Cx) {
+    fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
         match msg {
             Msg::Dock(m) => self.dock.update(m),
             Msg::Theme => self.dark = !self.dark,

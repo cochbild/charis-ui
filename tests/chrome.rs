@@ -16,7 +16,7 @@ enum Msg {
 
 impl App for App1 {
     type Msg = Msg;
-    fn update(&mut self, msg: Msg, _: &mut Cx) {
+    fn update(&mut self, msg: Msg, _: &mut Cx<Msg>) {
         if let Msg::Menu(m) = msg {
             self.menu = m;
         }

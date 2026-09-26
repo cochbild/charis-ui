@@ -18,7 +18,7 @@ enum Msg {
 impl App for Counter {
     type Msg = Msg;
 
-    fn update(&mut self, msg: Msg, _cx: &mut Cx) {
+    fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
         match msg {
             Msg::Inc => self.n += 1,
             Msg::Dec => self.n -= 1,

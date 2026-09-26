@@ -14,7 +14,7 @@ enum Msg {
 
 impl App for D {
     type Msg = Msg;
-    fn update(&mut self, msg: Msg, _: &mut Cx) {
+    fn update(&mut self, msg: Msg, _: &mut Cx<Msg>) {
         match msg {
             Msg::Dock(m) => self.dock.update(m),
         }

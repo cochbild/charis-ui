@@ -136,7 +136,7 @@ impl App for Nebula {
         }
     }
 
-    fn update(&mut self, msg: Msg, cx: &mut Cx) {
+    fn update(&mut self, msg: Msg, cx: &mut Cx<Msg>) {
         match msg {
             Msg::Activity(a) => {
                 if self.activity == a && self.sidebar_open {
@@ -900,7 +900,7 @@ enum Msg { ToggleSidebar, FontSize(f32) }
 impl App for Nebula {
     type Msg = Msg;
 
-    fn update(&mut self, msg: Msg, _cx: &mut Cx) {
+    fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
         match msg {
             Msg::ToggleSidebar => self.sidebar_open = !self.sidebar_open,
             Msg::FontSize(v) => self.font_size = v,

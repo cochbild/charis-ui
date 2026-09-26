@@ -28,6 +28,8 @@ pub struct WindowOptions {
     /// (see [`titlebar`](crate::widgets::titlebar)). Edges remain resizable.
     pub frameless: bool,
     pub resizable: bool,
+    /// Window icon as straight RGBA8 pixels (width, height, data).
+    pub icon: Option<(u32, u32, Vec<u8>)>,
 }
 
 impl Default for WindowOptions {
@@ -40,6 +42,7 @@ impl Default for WindowOptions {
             min_height: 300.0,
             frameless: false,
             resizable: true,
+            icon: None,
         }
     }
 }
@@ -58,6 +61,22 @@ impl WindowOptions {
         self.min_height = h;
         self
     }
+    /// Set the window icon from straight RGBA8 pixels.
+    pub fn icon_rgba(mut self, width: u32, height: u32, rgba: Vec<u8>) -> Self {
+        self.icon = Some((width, height, rgba));
+        self
+    }
+
+    /// Set the window icon from PNG bytes (e.g. `include_bytes!("icon.png")`).
+    pub fn icon_png(mut self, png: &[u8]) -> Self {
+        if let Ok(pm) = tiny_skia::Pixmap::decode_png(png) {
+            let (w, h) = (pm.width(), pm.height());
+            let data = pm.take_demultiplied();
+            self.icon = Some((w, h, data));
+        }
+        self
+    }
+
     pub fn frameless(mut self, f: bool) -> Self {
         self.frameless = f;
         self
@@ -96,7 +115,8 @@ struct Shell<A: App> {
 
 /// Open a window and run the app until it is closed.
 pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::<Wake>::with_user_event().build()?;
+    let loop_proxy = event_loop.create_proxy();
     let mut rt = Runtime::new(app);
     rt.frameless = opts.frameless;
     let mut shell = Shell {
@@ -114,6 +134,9 @@ pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error
         native_chrome: false,
         dark: None,
     };
+    shell.rt.set_waker(move || {
+        let _ = loop_proxy.send_event(Wake);
+    });
     event_loop.run_app(&mut shell)?;
     match shell.error {
         Some(e) => Err(e.into()),
@@ -315,7 +338,17 @@ impl<A: App> Shell<A> {
     }
 }
 
-impl<A: App> ApplicationHandler for Shell<A> {
+/// User event used to wake the event loop when background tasks post messages.
+#[derive(Debug, Clone, Copy)]
+struct Wake;
+
+impl<A: App> ApplicationHandler<Wake> for Shell<A> {
+    fn user_event(&mut self, el: &ActiveEventLoop, _: Wake) {
+        self.rt.set_time(self.now());
+        self.rt.poll();
+        self.apply_requests(el);
+    }
+
     fn resumed(&mut self, el: &ActiveEventLoop) {
         if self.gfx.is_some() {
             return;
@@ -327,7 +360,10 @@ impl<A: App> ApplicationHandler for Shell<A> {
             // On Windows, frameless windows keep their native styles (for snap,
             // shadow and resizing); the platform layer hides the frame.
             .with_decorations(!self.opts.frameless || cfg!(windows))
-            .with_resizable(self.opts.resizable);
+            .with_resizable(self.opts.resizable)
+            .with_window_icon(
+                self.opts.icon.as_ref().and_then(|(w, h, d)| winit::window::Icon::from_rgba(d.clone(), *w, *h).ok()),
+            );
         let window = match el.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -359,7 +395,11 @@ impl<A: App> ApplicationHandler for Shell<A> {
         self.rt.set_time(now);
         let scale = self.gfx.as_ref().map(|g| g.window.scale_factor() as f32).unwrap_or(1.0);
         match event {
-            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::CloseRequested => {
+                if self.rt.request_close() {
+                    el.exit();
+                }
+            }
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.rt.invalidate();
@@ -425,6 +465,9 @@ impl<A: App> ApplicationHandler for Shell<A> {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         let now = self.now();
         self.rt.set_time(now);
+        // Deliver background messages and due timers.
+        self.rt.poll();
+        self.apply_requests(el);
         let Some(g) = &self.gfx else { return };
         match self.rt.next_frame() {
             Some(t) if t <= now => {

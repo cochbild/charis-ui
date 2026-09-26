@@ -95,9 +95,9 @@ X11). Screenshots go in the docs.
 
 Real apps need these before they need more widgets. iced has them; see `docs/FROM_ICED.md`.
 
-- [ ] Async tasks: `cx.spawn(future)` and `cx.spawn_blocking(fn)` that deliver a message when
+- [x] Async tasks: `cx.spawn(future)` and `cx.spawn_blocking(fn)` that deliver a message when
       done, on a small runtime.
-- [ ] Subscriptions: `App::subscriptions()` for timers and intervals, window events, and a
+- [x] Subscriptions: `App::subscriptions()` for timers and intervals, window events, and a
       `Sender<Msg>` handle that background threads can use to push messages.
 - [ ] Widgets: pick list/dropdown, combo box, radio group, image, SVG, number input.
 

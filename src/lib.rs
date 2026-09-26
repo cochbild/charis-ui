@@ -27,7 +27,7 @@
 //!
 //! impl App for Counter {
 //!     type Msg = Msg;
-//!     fn update(&mut self, msg: Msg, _cx: &mut Cx) {
+//!     fn update(&mut self, msg: Msg, _cx: &mut Cx<Msg>) {
 //!         match msg { Msg::Inc => self.n += 1, Msg::Dec => self.n -= 1 }
 //!     }
 //!     fn view(&self) -> Element<Msg> {
@@ -52,6 +52,7 @@ pub mod color;
 pub mod cpu;
 pub mod dock;
 pub mod edit;
+pub mod effects;
 pub mod element;
 pub mod geometry;
 #[cfg(feature = "gpu")]
@@ -64,6 +65,7 @@ mod platform;
 pub mod runtime;
 pub mod scene;
 pub mod style;
+pub mod subscription;
 pub mod text;
 pub mod theme;
 pub mod widgets;
@@ -72,12 +74,14 @@ pub mod window;
 
 pub use anim::Easing;
 pub use color::{hex, oklch, rgb, rgba, Color, Fill};
+pub use effects::{Proxy, TaskHandle};
 pub use element::*;
 pub use geometry::{Axis, Point, Rect, Size};
 pub use icons::Icon;
 pub use paint::Canvas;
 pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
+pub use subscription::Subscriptions;
 pub use theme::{theme, Density, GrayTint, Palette, Scale, Scales, Theme, ThemeConfig};
 pub use widgets::*;
 #[cfg(feature = "window")]
@@ -88,9 +92,10 @@ pub mod prelude {
     pub use crate::anim::Easing;
     pub use crate::color::{hex, oklch, rgb, rgba, Color, Fill};
     pub use crate::dock::{Dock, DockMsg, DockNode, DropZone};
+    pub use crate::effects::{Proxy, TaskHandle};
     pub use crate::element::{
         canvas, col, div, hsplit, icon, row, spacer, split, text, vsplit, DragEvent, DragPhase, DropEvent, DropPhase,
-        Element, Key, KeyEvent, Modifiers, Pane, WindowControl,
+        Element, Key, KeyEvent, Modifiers, Pane, ScrollInfo, WindowControl,
     };
     pub use crate::geometry::{Axis, Point, Rect, Size};
     pub use crate::headless::Headless;
@@ -101,6 +106,7 @@ pub mod prelude {
         pct, Align, Corners, Cursor, Direction, Edges, FontFamily, Justify, Length, Overflow, Shadow, StylePatch,
         TextAlign, Track, Weight,
     };
+    pub use crate::subscription::Subscriptions;
     pub use crate::theme::{theme, Density, GrayTint, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]

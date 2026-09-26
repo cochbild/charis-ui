@@ -19,6 +19,8 @@ window = ["dep:winit", "dep:softbuffer"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
 gpu = ["dep:wgpu", "dep:pollster"]
+# Run spawned futures on tokio (needed for tokio-based crates such as reqwest).
+tokio = ["dep:tokio"]
 serde = ["dep:serde"]
 
 [dependencies]
@@ -31,6 +33,8 @@ arboard = { version = "3", optional = true, default-features = false }
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
+futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 
 [target.'cfg(windows)'.dependencies]

@@ -94,6 +94,17 @@ pub enum DragPhase {
     End,
 }
 
+/// Scroll position of a scroll container, delivered by [`Element::on_scroll`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollInfo {
+    /// Current offset (logical px).
+    pub offset: Point,
+    /// Maximum offset on each axis.
+    pub max: Point,
+    /// True when scrolled to the bottom (within 2px).
+    pub at_end: bool,
+}
+
 /// Delivered to drop targets while something is dragged over them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DropEvent {
@@ -140,6 +151,7 @@ pub(crate) struct Handlers<M> {
     pub collapse: Option<Cb<(usize, bool), M>>,
     pub resize: Option<Cb<Vec<f32>, M>>,
     pub drop_target: Option<Cb<DropEvent, M>>,
+    pub scroll: Option<Cb<ScrollInfo, M>>,
 }
 
 impl<M> Default for Handlers<M> {
@@ -157,6 +169,7 @@ impl<M> Default for Handlers<M> {
             collapse: None,
             resize: None,
             drop_target: None,
+            scroll: None,
         }
     }
 }
@@ -185,6 +198,7 @@ impl<M: 'static> Handlers<M> {
             collapse: wrap(self.collapse, &f),
             resize: wrap(self.resize, &f),
             drop_target: wrap(self.drop_target, &f),
+            scroll: wrap(self.scroll, &f),
         }
     }
 }
@@ -316,6 +330,7 @@ pub struct Element<M> {
     pub(crate) hit_slop: f32,
     pub(crate) pointer_events: bool,
     pub(crate) tooltip: Option<String>,
+    pub(crate) follow_end: bool,
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -354,6 +369,7 @@ impl<M> Element<M> {
             hit_slop: 0.0,
             pointer_events: true,
             tooltip: None,
+            follow_end: false,
         }
     }
 }
@@ -531,6 +547,7 @@ impl<M: 'static> Element<M> {
             hit_slop: self.hit_slop,
             pointer_events: self.pointer_events,
             tooltip: self.tooltip,
+            follow_end: self.follow_end,
         }
     }
 
@@ -1094,6 +1111,20 @@ impl<M: 'static> Element<M> {
         self.style.min_width = Length::Px(0.0);
         self
     }
+    /// Keep a scroll container pinned to its end as content grows (chat
+    /// transcripts, logs). Scrolling up unpins it; scrolling back to the end
+    /// re-pins it.
+    pub fn follow_end(mut self) -> Self {
+        self.follow_end = true;
+        self
+    }
+
+    /// Called whenever this scroll container's position changes.
+    pub fn on_scroll(mut self, f: impl Fn(ScrollInfo) -> M + 'static) -> Self {
+        self.handlers.scroll = Some(Rc::new(f));
+        self
+    }
+
     /// Scroll on both axes.
     pub fn scroll_both(mut self) -> Self {
         self.behavior = Behavior::Scroll { x: true, y: true };

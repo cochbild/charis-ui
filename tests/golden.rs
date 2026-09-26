@@ -23,7 +23,7 @@ impl App for Gallery {
             Theme::light()
         }
     }
-    fn update(&mut self, _: Msg, _: &mut Cx) {}
+    fn update(&mut self, _: Msg, _: &mut Cx<Msg>) {}
     fn view(&self) -> Element<Msg> {
         let th = theme();
         let c = &th.colors;

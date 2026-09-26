@@ -17,11 +17,30 @@ impl<A: App> Headless<A> {
         Self { rt }
     }
 
-    /// Advance the clock by `secs` and render.
+    /// Advance the clock by `secs`, deliver background messages and due
+    /// timers, and render.
     pub fn advance(&mut self, secs: f64) {
         let t = self.rt.time() + secs;
         self.rt.set_time(t);
+        self.rt.poll();
         self.rt.render();
+    }
+
+    /// Wait (in real time, up to `timeout`) for background tasks until
+    /// `done(app)` holds, delivering their messages. Returns whether it held.
+    pub fn wait_until(&mut self, timeout: std::time::Duration, done: impl Fn(&A) -> bool) -> bool {
+        let start = std::time::Instant::now();
+        loop {
+            self.rt.poll();
+            if done(&self.rt.app) {
+                self.rt.render();
+                return true;
+            }
+            if start.elapsed() > timeout {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
     }
 
     /// Advance time until no animation is running (max 5s).

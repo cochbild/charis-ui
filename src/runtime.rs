@@ -14,12 +14,14 @@ use crate::anim::Anim;
 use crate::color::{Color, Fill};
 use crate::cpu::PaintCache;
 use crate::edit::{self, Selection};
+use crate::effects::{Proxy, TaskHandle};
 use crate::element::*;
 use crate::geometry::{Axis, Point, Rect, Size};
 use crate::icons::Icon;
 use crate::paint::Canvas;
 use crate::scene::Scene;
 use crate::style::*;
+use crate::subscription::Subscriptions;
 use crate::text::{TextStyle, TextSystem};
 use crate::theme::{self, Theme};
 
@@ -30,8 +32,9 @@ use crate::theme::{self, Theme};
 pub trait App: 'static {
     type Msg: Clone + 'static;
 
-    /// Handle a message.
-    fn update(&mut self, msg: Self::Msg, cx: &mut Cx);
+    /// Handle a message. Use `cx` for side effects: async tasks, window
+    /// actions, focus, scrolling and the clipboard.
+    fn update(&mut self, msg: Self::Msg, cx: &mut Cx<Self::Msg>);
 
     /// Describe the UI for the current state.
     fn view(&self) -> Element<Self::Msg>;
@@ -39,6 +42,11 @@ pub trait App: 'static {
     /// The theme to use. Called once per frame, so it can change at runtime.
     fn theme(&self) -> Theme {
         Theme::dark()
+    }
+
+    /// Timers and window events to listen to. Re-evaluated after every update.
+    fn subscriptions(&self) -> Subscriptions<Self::Msg> {
+        Subscriptions::none()
     }
 
     /// Global keyboard shortcuts, called for keys not handled by the focused element.
@@ -72,13 +80,23 @@ pub enum WindowRequest {
     SetClipboard(String),
 }
 
-/// Context passed to [`App::update`] for side effects.
-pub struct Cx {
-    pub(crate) requests: Vec<WindowRequest>,
-    pub(crate) focus: Option<Option<u64>>,
+/// Scroll commands issued from [`App::update`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ScrollCmd {
+    ToEnd,
+    To(f32),
 }
 
-impl Cx {
+/// Context passed to [`App::update`] for side effects.
+pub struct Cx<M> {
+    pub(crate) requests: Vec<WindowRequest>,
+    pub(crate) focus: Option<Option<u64>>,
+    pub(crate) scrolls: Vec<(u64, ScrollCmd)>,
+    pub(crate) proxy: Proxy<M>,
+}
+
+impl<M> Cx<M> {
+    /// Close the window and exit the app.
     pub fn close_window(&mut self) {
         self.requests.push(WindowRequest::Close);
     }
@@ -92,7 +110,6 @@ impl Cx {
         self.requests.push(WindowRequest::SetTitle(t.into()));
     }
     /// Move keyboard focus to the element with the given `.id(...)`.
-    /// Only ids set on top-level-unique elements are addressable this way.
     pub fn focus(&mut self, id: &str) {
         self.focus = Some(Some(crate::element::global_id(id)));
     }
@@ -101,6 +118,43 @@ impl Cx {
     }
     pub fn copy_to_clipboard(&mut self, s: impl Into<String>) {
         self.requests.push(WindowRequest::SetClipboard(s.into()));
+    }
+    /// Scroll the scroll container with this `.id(...)` to its end.
+    pub fn scroll_to_end(&mut self, id: &str) {
+        self.scrolls.push((crate::element::global_id(id), ScrollCmd::ToEnd));
+    }
+    /// Scroll the scroll container with this `.id(...)` to a vertical offset.
+    pub fn scroll_to(&mut self, id: &str, y: f32) {
+        self.scrolls.push((crate::element::global_id(id), ScrollCmd::To(y)));
+    }
+    /// A handle for sending messages from other threads.
+    pub fn proxy(&self) -> Proxy<M> {
+        self.proxy.clone()
+    }
+}
+
+impl<M: Send + 'static> Cx<M> {
+    /// Run a future in the background and deliver its output as a message.
+    pub fn spawn<F>(&mut self, fut: F, map: impl FnOnce(F::Output) -> M + Send + 'static) -> TaskHandle
+    where
+        F: std::future::Future + Send + 'static,
+        F::Output: Send,
+    {
+        crate::effects::spawn(self.proxy.clone(), fut, map)
+    }
+
+    /// Consume a stream in the background, delivering each item as a message.
+    pub fn run<S>(&mut self, stream: S, map: impl FnMut(S::Item) -> M + Send + 'static) -> TaskHandle
+    where
+        S: futures::Stream + Send + 'static,
+        S::Item: Send,
+    {
+        crate::effects::run(self.proxy.clone(), stream, map)
+    }
+
+    /// Run blocking code (file I/O, heavy computation) on a background thread.
+    pub fn spawn_blocking(&mut self, f: impl FnOnce() -> M + Send + 'static) -> TaskHandle {
+        crate::effects::spawn_blocking(self.proxy.clone(), f)
     }
 }
 
@@ -285,6 +339,9 @@ struct ScrollState {
     y: Option<Anim>,
     last_activity: f64,
     max: Point,
+    /// For `follow_end` containers: currently pinned to the end.
+    pinned: Option<bool>,
+    last_reported: Option<Point>,
 }
 
 impl ScrollState {
@@ -360,6 +417,7 @@ pub(crate) struct Node<M> {
     pub hit_slop: f32,
     pub pointer_events: bool,
     pub tooltip: Option<String>,
+    pub follow_end: bool,
     pub text: TextStyle,
     pub color: Color,
     pub tnode: tf::NodeId,
@@ -418,6 +476,12 @@ pub struct Runtime<A: App> {
     splitter_hover: Option<(u64, f64)>,
     drop_target: Option<u64>,
     queue: Vec<A::Msg>,
+    mailbox: crate::effects::Mailbox<A::Msg>,
+    subs: Subscriptions<A::Msg>,
+    timers: HashMap<(u128, usize), f64>,
+    pending_scrolls: Vec<(u64, ScrollCmd)>,
+    close_requested: bool,
+    sized: bool,
     requests: Vec<WindowRequest>,
     dirty: bool,
     frame_no: u64,
@@ -438,6 +502,7 @@ const RESIZE_BORDER: f32 = 6.0;
 
 impl<A: App> Runtime<A> {
     pub fn new(app: A) -> Self {
+        let subs = app.subscriptions();
         Self {
             app,
             text: TextSystem::new(),
@@ -465,6 +530,12 @@ impl<A: App> Runtime<A> {
             splitter_hover: None,
             drop_target: None,
             queue: Vec::new(),
+            mailbox: crate::effects::Mailbox::new(),
+            subs,
+            timers: HashMap::new(),
+            pending_scrolls: Vec::new(),
+            close_requested: false,
+            sized: false,
             requests: Vec::new(),
             dirty: true,
             frame_no: 0,
@@ -481,9 +552,76 @@ impl<A: App> Runtime<A> {
     /// Set the logical window size and scale factor.
     pub fn resize(&mut self, size: Size, scale: f32) {
         if size != self.size || scale != self.scale {
+            // The first sizing is the initial window size, not a user resize.
+            let changed = size != self.size && self.sized;
+            self.sized = true;
             self.size = size;
             self.scale = scale;
             self.dirty = true;
+            if changed {
+                if let Some(f) = self.subs.resized.clone() {
+                    self.queue.push(f(size));
+                    self.flush();
+                }
+            }
+        }
+    }
+
+    /// Install a callback that wakes the event loop when background tasks post
+    /// messages (used by the window shell).
+    pub fn set_waker(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        if let Ok(mut w) = self.mailbox.wake.lock() {
+            *w = Some(std::sync::Arc::new(wake));
+        }
+    }
+
+    /// A handle for sending messages to the app from other threads.
+    pub fn proxy(&self) -> Proxy<A::Msg> {
+        self.mailbox.proxy()
+    }
+
+    /// Deliver messages posted by background tasks and fire due timers.
+    /// Call this whenever the event loop wakes (the shells do).
+    pub fn poll(&mut self) {
+        while let Ok(m) = self.mailbox.rx.try_recv() {
+            self.queue.push(m);
+        }
+        self.fire_timers();
+        self.flush();
+    }
+
+    fn fire_timers(&mut self) {
+        let now = self.now;
+        let mut live: HashMap<(u128, usize), f64> = HashMap::new();
+        let mut per_period: HashMap<u128, usize> = HashMap::new();
+        for (period, msg) in &self.subs.timers {
+            let p = period.as_nanos();
+            let n = per_period.entry(p).or_insert(0);
+            let key = (p, *n);
+            *n += 1;
+            let secs = period.as_secs_f64();
+            let mut due = self.timers.get(&key).copied().unwrap_or(now + secs);
+            if now >= due {
+                self.queue.push(msg.clone());
+                // Skip missed ticks rather than bursting.
+                due += ((now - due) / secs).floor() * secs + secs;
+            }
+            live.insert(key, due);
+        }
+        self.timers = live;
+    }
+
+    /// The window's close button was pressed. Returns true if the window
+    /// should close now (no `on_close_request` subscription).
+    pub fn request_close(&mut self) -> bool {
+        match self.subs.close_requested.clone() {
+            Some(m) => {
+                self.close_requested = true;
+                self.queue.push(m);
+                self.flush();
+                false
+            }
+            None => true,
         }
     }
 
@@ -557,7 +695,11 @@ impl<A: App> Runtime<A> {
         if animating {
             return Some(0.0);
         }
-        let mut next: Option<f64> = None;
+        let mut next: Option<f64> =
+            self.timers.values().copied().fold(None, |a: Option<f64>, t| Some(a.map_or(t, |a| a.min(t))));
+        if !self.subs.timers.is_empty() && self.timers.is_empty() {
+            next = Some(now);
+        }
         if let Some((_, since)) = self.splitter_hover {
             let d = self.theme.splitter_hover_delay as f64;
             if now - since < d {
@@ -640,6 +782,11 @@ impl<A: App> Runtime<A> {
         self.update_input_scrolls();
         let t2 = std::time::Instant::now();
         self.paint();
+        // Messages produced during layout (scroll reports) are applied now and
+        // show up in the next frame.
+        if !self.queue.is_empty() {
+            self.flush();
+        }
         if std::env::var("RUI_PROFILE").is_ok() {
             eprintln!("build {:?} record {:?} nodes {}", t1, t2.elapsed(), self.frame.nodes.len());
         }
@@ -729,6 +876,7 @@ impl<A: App> Runtime<A> {
             hit_slop,
             pointer_events,
             tooltip,
+            follow_end,
             ..
         } = el;
 
@@ -826,6 +974,7 @@ impl<A: App> Runtime<A> {
             hit_slop,
             pointer_events: pointer,
             tooltip,
+            follow_end,
             text: text.clone(),
             color,
             tnode: tf::NodeId::from(0u64),
@@ -1110,9 +1259,34 @@ impl<A: App> Runtime<A> {
                     if a.target() > max.y {
                         a.snap(max.y);
                     }
+                    if n.follow_end {
+                        let pinned = *ss.pinned.get_or_insert(true);
+                        if pinned && a.target() < max.y {
+                            a.snap(max.y);
+                        }
+                    }
+                }
+                if let Some(pos) = self.pending_scrolls.iter().rposition(|(g, _)| n.key == Some(*g)) {
+                    let (_, cmd) = self.pending_scrolls.remove(pos);
+                    let a = ss.y.get_or_insert(Anim::new(0.0));
+                    let t = match cmd {
+                        ScrollCmd::ToEnd => max.y,
+                        ScrollCmd::To(v) => v.clamp(0.0, max.y),
+                    };
+                    a.set(t, now, 0.18);
+                    if n.follow_end {
+                        ss.pinned = Some(t >= max.y - 2.0);
+                    }
                 }
                 let off = ss.offset(now);
                 n.scroll = Point::new(off.x.clamp(0.0, max.x), off.y.clamp(0.0, max.y));
+                if let Some(h) = &n.handlers.scroll {
+                    let t = ss.target();
+                    if ss.last_reported != Some(t) {
+                        ss.last_reported = Some(t);
+                        self.queue.push(h(ScrollInfo { offset: t, max, at_end: t.y >= max.y - 2.0 }));
+                    }
+                }
             }
             if let Some((sid, axis)) = n.split {
                 if let Some(ss) = self.splits.get_mut(&sid) {
@@ -1328,6 +1502,9 @@ impl<A: App> Runtime<A> {
             Event::WindowFocus(f) => {
                 self.window_focused = f;
                 self.dirty = true;
+                if let Some(h) = self.subs.focus.clone() {
+                    self.queue.push(h(f));
+                }
             }
         }
         self.flush();
@@ -1337,13 +1514,17 @@ impl<A: App> Runtime<A> {
         if self.queue.is_empty() {
             return;
         }
-        let mut cx = Cx { requests: Vec::new(), focus: None };
+        let mut cx = Cx { requests: Vec::new(), focus: None, scrolls: Vec::new(), proxy: self.mailbox.proxy() };
         while !self.queue.is_empty() {
             for m in std::mem::take(&mut self.queue) {
                 self.app.update(m, &mut cx);
             }
         }
+        self.subs = self.app.subscriptions();
         self.requests.append(&mut cx.requests);
+        for (gid, cmd) in cx.scrolls {
+            self.pending_scrolls.push((gid, cmd));
+        }
         if let Some(f) = cx.focus {
             self.focused = f.and_then(|g| self.frame.nodes.iter().find(|n| n.key == Some(g)).map(|n| n.id));
             self.focus_visible = true;
@@ -1472,6 +1653,9 @@ impl<A: App> Runtime<A> {
                         if vertical { st.y.get_or_insert(Anim::new(0.0)) } else { st.x.get_or_insert(Anim::new(0.0)) };
                     a.snap(v);
                     st.last_activity = now;
+                    if vertical && st.pinned.is_some() {
+                        st.pinned = Some(v >= st.max.y - 2.0);
+                    }
                 }
                 self.drag = Drag::ScrollThumb { node, vertical, start, start_offset };
                 self.dirty = true;
@@ -1736,6 +1920,9 @@ impl<A: App> Runtime<A> {
                     let a = st.y.get_or_insert(Anim::new(0.0));
                     let t = (a.target() + dy).clamp(0.0, st.max.y);
                     a.set(t, now, 0.12);
+                    if st.pinned.is_some() {
+                        st.pinned = Some(t >= st.max.y - 2.0);
+                    }
                 }
                 if can_x {
                     let a = st.x.get_or_insert(Anim::new(0.0));

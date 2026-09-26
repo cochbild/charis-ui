@@ -138,6 +138,8 @@ systems; a 100k-line file scrolls at 120fps.
   (`examples/stress.rs`).
 - [x] Text cache: text is shaped once per string and style and only re-wrapped for other widths;
   lookups don't allocate.
+- [x] Components with their own state (`Component`, `stateful`): local events update local
+  state; only chosen outputs reach the app; nesting; works inside `lazy`.
 - [x] Memoized subtrees: `lazy(key, deps, || …)` skips view, tree-building and layout sync for
   unchanged parts; rebuilds automatically on theme, interaction or animation changes.
 - [x] Virtualized list (`virtual_list`: variable heights, anchored scrolling, follow-end,

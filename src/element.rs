@@ -135,6 +135,49 @@ pub enum WindowControl {
 }
 
 pub(crate) type Cb<A, M> = Rc<dyn Fn(A) -> M>;
+
+/// What an interaction produces: an app message, or an update to a
+/// [`component`](crate::component)'s local state (which may in turn emit a
+/// message).
+pub(crate) enum Out<M> {
+    Msg(M),
+    Local(Local<M>),
+}
+
+/// Applies a local update to the component store, possibly producing a message.
+pub(crate) type LocalFn<M> = Rc<dyn Fn(&mut crate::component::Store) -> Option<M>>;
+
+/// A component-local update: applied to the component state store (a
+/// nested component's update can feed its enclosing component's update).
+pub(crate) struct Local<M> {
+    pub apply: LocalFn<M>,
+}
+
+impl<M: Clone> Clone for Out<M> {
+    fn clone(&self) -> Self {
+        match self {
+            Out::Msg(m) => Out::Msg(m.clone()),
+            Out::Local(l) => Out::Local(Local { apply: l.apply.clone() }),
+        }
+    }
+}
+
+impl<M: 'static> Out<M> {
+    pub(crate) fn map<N: 'static>(self, f: &Rc<dyn Fn(M) -> N>) -> Out<N> {
+        match self {
+            Out::Msg(m) => Out::Msg(f(m)),
+            Out::Local(l) => {
+                let (apply, f) = (l.apply, f.clone());
+                Out::Local(Local { apply: Rc::new(move |s| apply(s).map(|m| f(m))) })
+            }
+        }
+    }
+}
+
+/// Wrap an app-message callback as a handler.
+pub(crate) fn cb<A: 'static, M: 'static>(f: impl Fn(A) -> M + 'static) -> Cb<A, Out<M>> {
+    Rc::new(move |a| Out::Msg(f(a)))
+}
 pub(crate) type KeyCb<M> = Rc<dyn Fn(&KeyEvent) -> Option<M>>;
 /// Custom paint callback for [`canvas`] elements.
 pub type PaintFn = Rc<dyn Fn(&mut Canvas, Rect)>;
@@ -355,6 +398,8 @@ pub(crate) struct LazySpec<M> {
     pub key: u64,
     pub deps: u64,
     pub built: Option<Box<Element<M>>>,
+    /// Components rendered inside (their state changes invalidate it).
+    pub components: Vec<u64>,
 }
 
 pub(crate) enum Content<M> {
@@ -422,7 +467,7 @@ pub struct Element<M> {
     pub(crate) disabled_style: Option<Box<StylePatch>>,
     pub(crate) children: Vec<Element<M>>,
     pub(crate) content: Content<M>,
-    pub(crate) handlers: Handlers<M>,
+    pub(crate) handlers: Handlers<Out<M>>,
     pub(crate) behavior: Behavior,
     pub(crate) focusable: bool,
     pub(crate) disabled: bool,
@@ -615,9 +660,15 @@ pub fn lazy<M: 'static>(
     };
     let key = hash(&|h| key.hash(h));
     let deps = hash(&|h| deps.hash(h));
-    let built = if crate::runtime::memo::claim(key, deps) { None } else { Some(Box::new(build())) };
+    let (built, components) = match crate::runtime::memo::claim(key, deps) {
+        Some(components) => (None, components),
+        None => {
+            let (el, components) = crate::runtime::memo::collect_components(build);
+            (Some(Box::new(el)), components)
+        }
+    };
     let mut e = div().flex_col();
-    e.content = Content::Lazy(LazySpec { key, deps, built });
+    e.content = Content::Lazy(LazySpec { key, deps, built, components });
     e
 }
 
@@ -701,6 +752,11 @@ impl<M: 'static> Element<M> {
     }
 
     fn map_rc<N: 'static>(self, f: Rc<dyn Fn(M) -> N>) -> Element<N> {
+        self.map_out(Rc::new(move |o: Out<M>| o.map(&f)))
+    }
+
+    /// Transform this element's handler outputs (messages and local updates).
+    pub(crate) fn map_out<N: 'static>(self, f: Rc<dyn Fn(Out<M>) -> Out<N>>) -> Element<N> {
         let content = match self.content {
             Content::None => Content::None,
             Content::Text(t) => Content::Text(t),
@@ -714,13 +770,14 @@ impl<M: 'static> Element<M> {
                     count: v.count,
                     estimate: v.estimate,
                     overscan: v.overscan,
-                    builder: Rc::new(move |i| b(i).map_rc(f.clone())),
+                    builder: Rc::new(move |i| b(i).map_out(f.clone())),
                 })
             }
             Content::Lazy(l) => Content::Lazy(LazySpec {
                 key: l.key,
                 deps: l.deps,
-                built: l.built.map(|b| Box::new(b.map_rc(f.clone()))),
+                built: l.built.map(|b| Box::new(b.map_out(f.clone()))),
+                components: l.components,
             }),
             Content::Split(s) => Content::Split(SplitSpec {
                 axis: s.axis,
@@ -728,7 +785,7 @@ impl<M: 'static> Element<M> {
                     .panes
                     .into_iter()
                     .map(|p| Pane {
-                        content: p.content.map_rc(f.clone()),
+                        content: p.content.map_out(f.clone()),
                         fixed: p.fixed,
                         weight: p.weight,
                         min: p.min,
@@ -746,7 +803,7 @@ impl<M: 'static> Element<M> {
             active: self.active,
             focus: self.focus,
             disabled_style: self.disabled_style,
-            children: self.children.into_iter().map(|c| c.map_rc(f.clone())).collect(),
+            children: self.children.into_iter().map(|c| c.map_out(f.clone())).collect(),
             content,
             handlers: self.handlers.map(f),
             behavior: self.behavior,
@@ -1226,7 +1283,7 @@ impl<M: 'static> Element<M> {
 
     /// Called with the target when a link span in rich text is clicked.
     pub fn on_link(mut self, f: impl Fn(String) -> M + 'static) -> Self {
-        self.handlers.link = Some(Rc::new(f));
+        self.handlers.link = Some(cb(f));
         self
     }
 
@@ -1244,51 +1301,51 @@ impl<M: 'static> Element<M> {
     // ----------------------------------------------------------- interaction
 
     pub fn on_click(mut self, m: M) -> Self {
-        self.handlers.click = Some(m);
+        self.handlers.click = Some(Out::Msg(m));
         if self.style.cursor.is_none() {
             self.style.cursor = Some(Cursor::Pointer);
         }
         self
     }
     pub fn on_double_click(mut self, m: M) -> Self {
-        self.handlers.double_click = Some(m);
+        self.handlers.double_click = Some(Out::Msg(m));
         self
     }
     /// Right click; receives the pointer position (for context menus).
     pub fn on_context_menu(mut self, f: impl Fn(Point) -> M + 'static) -> Self {
-        self.handlers.context_menu = Some(Rc::new(f));
+        self.handlers.context_menu = Some(cb(f));
         self
     }
     pub fn on_hover(mut self, f: impl Fn(bool) -> M + 'static) -> Self {
-        self.handlers.hover = Some(Rc::new(f));
+        self.handlers.hover = Some(cb(f));
         self
     }
     /// Receive pointer drag events that start on this element.
     pub fn on_drag(mut self, f: impl Fn(DragEvent) -> M + 'static) -> Self {
-        self.handlers.drag = Some(Rc::new(f));
+        self.handlers.drag = Some(cb(f));
         self
     }
     /// Make this element a drop target for drags started with [`Element::on_drag`].
     /// Receives `Over` while hovered during a drag, `Leave`, and `Drop` on release.
     pub fn on_drop_target(mut self, f: impl Fn(DropEvent) -> M + 'static) -> Self {
-        self.handlers.drop_target = Some(Rc::new(f));
+        self.handlers.drop_target = Some(cb(f));
         self
     }
     /// Key presses while this element (or a descendant) has focus.
     pub fn on_key(mut self, f: impl Fn(&KeyEvent) -> Option<M> + 'static) -> Self {
-        self.handlers.key = Some(Rc::new(f));
+        self.handlers.key = Some(Rc::new(move |e: &KeyEvent| f(e).map(Out::Msg)));
         self
     }
     /// For split containers: called when the user collapses/expands a pane by
     /// dragging its splitter. Receives `(pane_index, collapsed)`.
     pub fn on_collapse(mut self, f: impl Fn(usize, bool) -> M + 'static) -> Self {
-        self.handlers.collapse = Some(Rc::new(move |(i, c)| f(i, c)));
+        self.handlers.collapse = Some(cb(move |(i, c)| f(i, c)));
         self
     }
     /// For split containers: called with the new pane sizes after the user
     /// finishes resizing (useful for persisting layouts).
     pub fn on_resize(mut self, f: impl Fn(Vec<f32>) -> M + 'static) -> Self {
-        self.handlers.resize = Some(Rc::new(f));
+        self.handlers.resize = Some(cb(f));
         self
     }
     /// Make the element reachable with Tab and focusable by click.
@@ -1446,7 +1503,7 @@ impl<M: 'static> Element<M> {
 
     /// Called whenever this scroll container's position changes.
     pub fn on_scroll(mut self, f: impl Fn(ScrollInfo) -> M + 'static) -> Self {
-        self.handlers.scroll = Some(Rc::new(f));
+        self.handlers.scroll = Some(cb(f));
         self
     }
 

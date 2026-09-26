@@ -81,6 +81,28 @@ cursors, animations) keyed by element identity, so your model stays clean.
 
 Give elements stable identity with `.id("name")` or `.key(value)` when they can move around.
 
+**Components** keep their own state when the app doesn't need it: whether a section is open, a
+picker's visible month, a filter box's text. A component handles its own events and sends the
+app a message only when the app needs to know something:
+
+```rust
+impl Component for Folder {
+    type State = bool;       // open?
+    type Event = FolderEv;   // Toggle, Open(i)
+    type Output = Msg;       // what the app sees
+    fn update(&self, open: &mut bool, e: FolderEv) -> Option<Msg> { … }
+    fn view(&self, open: &bool) -> Element<FolderEv> { … }
+}
+
+list.child(component(("folder", name), Folder { name, items }))
+```
+
+For one-off cases, `stateful(key, view, update)` takes closures instead. Components nest, and
+their state lasts as long as they are rendered.
+
+**Memoization:** `lazy(key, deps, || view)` skips rebuilding a part of the UI while `deps` are
+unchanged (see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)).
+
 ### Styling
 
 Builder methods mirror CSS:

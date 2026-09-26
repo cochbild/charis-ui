@@ -42,6 +42,7 @@ style. This page covers:
 | `.style(|theme, status| …)` | `.bg(…).hover(|s| …).active(|s| …)`, or read tokens with `theme()` |
 | `Theme::custom(name, palette)` | `Theme::from_config(ThemeConfig { accent, gray, radius, density, … })` |
 | `Element::map` | `Element::map` |
+| `Component` (deprecated in 0.13) or lifting all state into the app | `Component` trait with local `State`, `Event` and `Output`, or `stateful(key, view, update)`; state kept by the runtime |
 | `lazy(deps, \|deps\| view)` (the closure can't borrow the app) | `lazy(key, deps, \|\| view)`: the closure can borrow `&self`, and layout is reused too |
 | `canvas` / `Program` | `canvas(|cv, rect| …)` |
 

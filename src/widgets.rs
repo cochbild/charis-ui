@@ -161,7 +161,7 @@ pub fn text_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String
         submit_on_enter: false,
         rows: (1, 1),
     }));
-    e.handlers.input = Some(Rc::new(on_input));
+    e.handlers.input = Some(cb(on_input));
     e.focusable = true;
     e.h(th.control_height)
         .px(10.0)
@@ -194,12 +194,12 @@ impl<M: 'static> Element<M> {
     }
     /// Message sent when Enter is pressed in a text input.
     pub fn on_submit(mut self, m: M) -> Self {
-        self.handlers.submit = Some(m);
+        self.handlers.submit = Some(Out::Msg(m));
         self
     }
     /// Message sent with the new value of a slider.
     pub fn on_change(mut self, f: impl Fn(f32) -> M + 'static) -> Self {
-        self.handlers.value = Some(Rc::new(f));
+        self.handlers.value = Some(cb(f));
         self
     }
 }
@@ -233,7 +233,7 @@ impl<M: 'static> Element<M> {
         if let Content::Input(spec) = &mut self.content {
             spec.submit_on_enter = true;
         }
-        self.handlers.submit = Some(msg);
+        self.handlers.submit = Some(Out::Msg(msg));
         self
     }
 }
@@ -270,7 +270,7 @@ fn dropdown<M: 'static>(
         placeholder: "Select…".into(),
         searchable,
     }));
-    e.handlers.select = Some(Rc::new(on_select));
+    e.handlers.select = Some(cb(on_select));
     e.focusable = true;
     e.min_w(120.0).h(th.control_height).shrink(0.0)
 }
@@ -996,7 +996,7 @@ pub fn menu_bar<M: Clone + 'static>(
             .child(text(m.title).nowrap());
         if open.is_some() && !is_open {
             // While a menu is open, hovering another title switches to it.
-            btn.handlers.hover = Some(Rc::new(move |_entered: bool| o(Some(i))));
+            btn.handlers.hover = Some(cb(move |_entered: bool| o(Some(i))));
         }
         if is_open {
             btn = btn.bg(c.pressed).child(menu_panel(m.items).absolute().top(28.0).left(0.0).z_index(100));

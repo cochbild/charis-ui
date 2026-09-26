@@ -624,7 +624,7 @@ pub(crate) struct Node<M> {
     pub children: Vec<usize>,
     pub style: Style,
     pub content: NodeContent,
-    pub handlers: Handlers<M>,
+    pub handlers: Handlers<Out<M>>,
     pub behavior: Behavior,
     pub focusable: bool,
     pub disabled: bool,
@@ -715,9 +715,14 @@ pub struct Runtime<A: App> {
     pending_values: HashMap<u64, String>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
+    /// State of [`component`](crate::component)s.
+    components: Rc<std::cell::RefCell<crate::component::Store>>,
     /// Memoized subtrees of the current frame (see `memo.rs`).
     memos: HashMap<u64, memo::MemoEntry>,
     memo_build: memo::MemoBuild,
+    /// Component store that was installed before this runtime's build (a
+    /// runtime can be built inside another's, e.g. in tests).
+    prev_store: Option<Rc<std::cell::RefCell<crate::component::Store>>>,
     /// Scale factor the current frame was built at.
     built_scale: f32,
     /// Persistent layout tree (see `sync_layout_tree`).
@@ -733,7 +738,7 @@ pub struct Runtime<A: App> {
     /// Read-only text selection: (node id, anchor byte, cursor byte).
     text_sel: Option<(u64, usize, usize)>,
     drop_target: Option<u64>,
-    queue: Vec<A::Msg>,
+    queue: Vec<Out<A::Msg>>,
     mailbox: crate::effects::Mailbox<A::Msg>,
     subs: Subscriptions<A::Msg>,
     timers: HashMap<(u128, usize), f64>,
@@ -787,8 +792,10 @@ impl<A: App> Runtime<A> {
             pending_values: HashMap::default(),
             dropdowns: HashMap::default(),
             virt: HashMap::default(),
+            components: Default::default(),
             memos: HashMap::default(),
             memo_build: memo::MemoBuild::default(),
+            prev_store: None,
             built_scale: 0.0,
             ltree: tf::TaffyTree::new(),
             lnodes: HashMap::default(),
@@ -831,7 +838,7 @@ impl<A: App> Runtime<A> {
             self.dirty = true;
             if changed {
                 if let Some(f) = self.subs.resized.clone() {
-                    self.queue.push(f(size));
+                    self.queue.push(Out::Msg(f(size)));
                     self.flush();
                 }
             }
@@ -855,7 +862,7 @@ impl<A: App> Runtime<A> {
     /// Call this whenever the event loop wakes (the shells do).
     pub fn poll(&mut self) {
         while let Ok(m) = self.mailbox.rx.try_recv() {
-            self.queue.push(m);
+            self.queue.push(Out::Msg(m));
         }
         self.fire_timers();
         self.flush();
@@ -873,7 +880,7 @@ impl<A: App> Runtime<A> {
             let secs = period.as_secs_f64();
             let mut due = self.timers.get(&key).copied().unwrap_or(now + secs);
             if now >= due {
-                self.queue.push(msg.clone());
+                self.queue.push(Out::Msg(msg.clone()));
                 // Skip missed ticks rather than bursting.
                 due += ((now - due) / secs).floor() * secs + secs;
             }
@@ -888,7 +895,7 @@ impl<A: App> Runtime<A> {
         match self.subs.close_requested.clone() {
             Some(m) => {
                 self.close_requested = true;
-                self.queue.push(m);
+                self.queue.push(Out::Msg(m));
                 self.flush();
                 false
             }
@@ -944,7 +951,7 @@ impl<A: App> Runtime<A> {
 
     /// Deliver a message to the app as if produced by the UI.
     pub fn send(&mut self, msg: A::Msg) {
-        self.queue.push(msg);
+        self.queue.push(Out::Msg(msg));
         self.flush();
     }
 
@@ -2245,7 +2252,7 @@ impl<A: App> Runtime<A> {
                 self.window_focused = f;
                 self.dirty = true;
                 if let Some(h) = self.subs.focus.clone() {
-                    self.queue.push(h(f));
+                    self.queue.push(Out::Msg(h(f)));
                 }
             }
         }
@@ -2257,14 +2264,30 @@ impl<A: App> Runtime<A> {
         }
     }
 
+    fn apply_local(&mut self, l: crate::element::Local<A::Msg>) -> Option<A::Msg> {
+        self.dirty = true;
+        crate::component::apply(&self.components, l)
+    }
+
+    /// Number of live component states (for tests and debugging).
+    pub fn component_count(&self) -> usize {
+        self.components.borrow().len()
+    }
+
     fn flush(&mut self) {
         if self.queue.is_empty() {
             return;
         }
         let mut cx = Cx { requests: Vec::new(), focus: None, scrolls: Vec::new(), proxy: self.mailbox.proxy() };
         while !self.queue.is_empty() {
-            for m in std::mem::take(&mut self.queue) {
-                self.app.update(m, &mut cx);
+            for out in std::mem::take(&mut self.queue) {
+                let msg = match out {
+                    Out::Msg(m) => Some(m),
+                    Out::Local(l) => self.apply_local(l),
+                };
+                if let Some(m) = msg {
+                    self.app.update(m, &mut cx);
+                }
             }
         }
         self.subs = self.app.subscriptions();
@@ -3021,14 +3044,14 @@ impl<A: App> Runtime<A> {
         }
         if k.key == Key::Escape && self.focused.is_some() {
             if let Some(m) = self.app.on_key(&k) {
-                self.queue.push(m);
+                self.queue.push(Out::Msg(m));
             } else {
                 self.focused = None;
             }
             return;
         }
         if let Some(m) = self.app.on_key(&k) {
-            self.queue.push(m);
+            self.queue.push(Out::Msg(m));
         }
     }
 

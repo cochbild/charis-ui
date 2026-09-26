@@ -226,6 +226,53 @@ struct Message {
     show_reasoning: bool,
 }
 
+/// A sidebar folder: its open/closed state is UI-only, so it lives in a
+/// component instead of the app.
+struct Folder {
+    name: &'static str,
+    /// (conversation index, title, active) of the matching conversations.
+    items: Vec<(usize, &'static str, bool)>,
+    open_initially: bool,
+}
+
+#[derive(Clone)]
+enum FolderEv {
+    Toggle,
+    Open(usize),
+}
+
+impl Component for Folder {
+    type State = bool;
+    type Event = FolderEv;
+    type Output = Msg;
+
+    fn init(&self) -> bool {
+        self.open_initially
+    }
+
+    fn update(&self, open: &mut bool, e: FolderEv) -> Option<Msg> {
+        match e {
+            FolderEv::Toggle => {
+                *open = !*open;
+                None
+            }
+            FolderEv::Open(i) => Some(Msg::Select(i)),
+        }
+    }
+
+    fn view(&self, open: &bool) -> Element<FolderEv> {
+        col()
+            .gap(1.0)
+            .child(tree_row(0, Some(*open), Some(Icon::Folder), self.name, false).on_click(FolderEv::Toggle))
+            .children(
+                self.items
+                    .iter()
+                    .filter(|_| *open)
+                    .map(|&(i, title, active)| tree_row(1, None, None, title, active).on_click(FolderEv::Open(i))),
+            )
+    }
+}
+
 struct Convo {
     title: &'static str,
     folder: Option<&'static str>,
@@ -237,7 +284,6 @@ struct LmFast {
     model: Option<usize>,
     convos: Vec<Convo>,
     active: usize,
-    open_folders: Vec<&'static str>,
     search: String,
     messages: Vec<Message>,
     draft: String,
@@ -264,7 +310,6 @@ enum Msg {
     Switch(Screen),
     Model(usize),
     Select(usize),
-    ToggleFolder(&'static str),
     Search(String),
     Draft(String),
     Send,
@@ -329,13 +374,6 @@ impl App for LmFast {
             Msg::Switch(s) => self.screen = s,
             Msg::Model(i) => self.model = Some(i),
             Msg::Select(i) => self.active = i,
-            Msg::ToggleFolder(f) => {
-                if let Some(p) = self.open_folders.iter().position(|x| *x == f) {
-                    self.open_folders.remove(p);
-                } else {
-                    self.open_folders.push(f);
-                }
-            }
             Msg::Search(s) => self.search = s,
             Msg::Draft(s) => self.draft = s,
             Msg::Send => {
@@ -912,15 +950,14 @@ impl LmFast {
         let mut folders: Vec<&str> = self.convos.iter().filter_map(|x| x.folder).collect();
         folders.dedup();
         for f in folders {
-            let open = self.open_folders.contains(&f);
-            list = list.child(tree_row(0, Some(open), Some(Icon::Folder), f, false).on_click(Msg::ToggleFolder(f)));
-            if open {
-                for (i, cv) in self.convos.iter().enumerate().filter(|(_, x)| x.folder == Some(f)) {
-                    if cv.title.to_lowercase().contains(&q) {
-                        list = list.child(tree_row(1, None, None, cv.title, i == self.active).on_click(Msg::Select(i)));
-                    }
-                }
-            }
+            let items = self
+                .convos
+                .iter()
+                .enumerate()
+                .filter(|(_, x)| x.folder == Some(f) && x.title.to_lowercase().contains(&q))
+                .map(|(i, cv)| (i, cv.title, i == self.active))
+                .collect();
+            list = list.child(component(("folder", f), Folder { name: f, items, open_initially: f == "Research" }));
         }
         for (i, cv) in self.convos.iter().enumerate().filter(|(_, x)| x.folder.is_none()) {
             if cv.title.to_lowercase().contains(&q) {
@@ -1126,7 +1163,6 @@ fn initial() -> LmFast {
             Convo { title: "Ollama API shim", folder: Some("Work") },
         ],
         active: 0,
-        open_folders: vec!["Research"],
         search: String::new(),
         messages: vec![
             Message {

@@ -141,7 +141,10 @@ fn stat<M: 'static>(label: &str, value: String) -> Element<M> {
 }
 ```
 
-- Use `Element::map` to embed a component that has its own message type.
+- Use `Element::map` to embed a view that has its own message type.
+- When a reusable piece needs its own state (open/closed, a query, a visible month), make it a
+  `Component` (or use `stateful(key, view, update)`). It handles its own events and emits app
+  messages only when the app needs them.
 - For accessibility, give custom controls a role and state: `.role(Role::Switch)`,
   `.aria_checked(on)`, `.aria_label("Wi-Fi")`, `.focusable()`.
 

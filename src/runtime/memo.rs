@@ -18,26 +18,73 @@ pub(crate) const LAZY_SALT: u64 = 0x1a2f_7e3d_9c4b_5a61;
 
 #[derive(Default)]
 struct Registry {
-    /// Reusable memo keys and the deps they were built with.
-    valid: HashMap<u64, u64>,
+    /// Reusable memo keys: the deps they were built with and the components
+    /// rendered inside them.
+    valid: HashMap<u64, (u64, Vec<u64>)>,
     claimed: HashSet<u64>,
+    /// Components rendered under each `lazy` currently being built.
+    collecting: Vec<Vec<u64>>,
+    /// Components rendered (or kept by a reused subtree) this build.
+    seen: HashSet<u64>,
 }
 
 thread_local! {
     static REGISTRY: RefCell<Option<Registry>> = const { RefCell::new(None) };
 }
 
-/// Called by [`lazy`](crate::lazy): true when last frame's subtree for
-/// `key` can be reused (and claims it).
-pub(crate) fn claim(key: u64, deps: u64) -> bool {
+/// Called by [`lazy`](crate::lazy): when last frame's subtree for `key` can
+/// be reused, claims it and returns the components inside it.
+pub(crate) fn claim(key: u64, deps: u64) -> Option<Vec<u64>> {
     REGISTRY.with(|r| {
         let mut r = r.borrow_mut();
-        let Some(r) = r.as_mut() else { return false };
-        if r.valid.get(&key) == Some(&deps) && r.claimed.insert(key) {
-            return true;
+        let r = r.as_mut()?;
+        let comps = match r.valid.get(&key) {
+            Some((d, comps)) if *d == deps && !r.claimed.contains(&key) => comps.clone(),
+            _ => return None,
+        };
+        r.claimed.insert(key);
+        for &c in &comps {
+            note(r, c);
         }
-        false
+        Some(comps)
     })
+}
+
+fn note(r: &mut Registry, comp: u64) {
+    r.seen.insert(comp);
+    if let Some(top) = r.collecting.last_mut() {
+        top.push(comp);
+    }
+}
+
+/// Record that a component was rendered (keeps its state alive, and ties it
+/// to the enclosing `lazy`s).
+pub(crate) fn note_component(comp: u64) {
+    REGISTRY.with(|r| {
+        if let Some(r) = r.borrow_mut().as_mut() {
+            note(r, comp);
+        }
+    })
+}
+
+/// Run a `lazy` build closure, collecting the components rendered inside.
+pub(crate) fn collect_components<T>(build: impl FnOnce() -> T) -> (T, Vec<u64>) {
+    let active = REGISTRY.with(|r| r.borrow_mut().as_mut().map(|r| r.collecting.push(Vec::new())).is_some());
+    let out = build();
+    let comps = if active {
+        REGISTRY.with(|r| {
+            let mut r = r.borrow_mut();
+            let Some(r) = r.as_mut() else { return Vec::new() };
+            let comps = r.collecting.pop().unwrap_or_default();
+            if let Some(top) = r.collecting.last_mut() {
+                top.extend_from_slice(&comps);
+            }
+            comps
+        })
+    } else {
+        Vec::new()
+    };
+    (out, comps)
 }
 
 /// A memoized subtree of the current frame: nodes `start..end` are the
@@ -55,6 +102,8 @@ pub(super) struct MemoEntry {
     interact: u64,
     /// Memo keys directly nested inside.
     nested: Vec<u64>,
+    /// Components rendered inside (including nested memos').
+    components: Vec<u64>,
 }
 
 /// Per-build memo bookkeeping.
@@ -145,20 +194,28 @@ impl<A: App> Runtime<A> {
     pub(super) fn memo_begin(&mut self, prev_theme: &Theme, prev_scale: f32) {
         let mut reg = Registry::default();
         if prev_scale == self.scale && same_theme(prev_theme, &self.theme) {
+            let store = self.components.borrow();
             for (&key, e) in &self.memos {
-                if !e.volatile && !e.animating && self.interact_sig(e.start, e.end) == e.interact {
-                    reg.valid.insert(key, e.deps);
+                if !e.volatile
+                    && !e.animating
+                    && !e.components.iter().any(|c| store.is_dirty(*c))
+                    && self.interact_sig(e.start, e.end) == e.interact
+                {
+                    reg.valid.insert(key, (e.deps, e.components.clone()));
                 }
             }
         }
         REGISTRY.with(|r| *r.borrow_mut() = Some(reg));
         self.memo_build = MemoBuild::default();
+        self.prev_store = crate::component::install(Some(self.components.clone()));
     }
 
     /// Finish the build: withdraw the registry and record the new frame's
     /// memo entries with their interaction state.
     pub(super) fn memo_end(&mut self) {
-        REGISTRY.with(|r| *r.borrow_mut() = None);
+        let reg = REGISTRY.with(|r| r.borrow_mut().take()).unwrap_or_default();
+        crate::component::install(self.prev_store.take());
+        self.components.borrow_mut().end_build(&reg.seen);
         let mut entries = std::mem::take(&mut self.memo_build.entries);
         for e in entries.values_mut() {
             e.interact = self.interact_sig(e.start, e.end);
@@ -194,6 +251,7 @@ impl<A: App> Runtime<A> {
                     animating: self.memo_build.animating != a0,
                     interact: 0,
                     nested,
+                    components: spec.components,
                 };
                 self.record_memo(spec.key, entry);
             }
@@ -266,6 +324,7 @@ impl<A: App> Runtime<A> {
             animating: false,
             interact: 0,
             nested: old.nested.clone(),
+            components: old.components.clone(),
         };
         let nested = entry.nested.clone();
         self.record_memo(key, entry);

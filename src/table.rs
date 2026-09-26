@@ -25,6 +25,7 @@ use std::rc::Rc;
 
 use crate::element::*;
 use crate::icons::Icon;
+use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
 
@@ -214,11 +215,12 @@ impl<M: 'static> Table<M> {
                     ColumnWidth::Weight(g) => w.grow(g).shrink(1.0).basis(0.0),
                 };
                 w.behavior = Behavior::TableCell { table: tid, col: ci };
-                w.child(e)
+                w.role(Role::Cell).child(e)
             }
         };
 
-        let mut header = row().h(th.row_height + 8.0).shrink(0.0).px(10.0).border_b(1.0, c.border).bg(c.panel);
+        let mut header =
+            row().role(Role::Row).h(th.row_height + 8.0).shrink(0.0).px(10.0).border_b(1.0, c.border).bg(c.panel);
         for (ci, col) in cols.iter().enumerate() {
             let sorted = self.sort.filter(|(sc, _)| *sc == ci).map(|(_, d)| d);
             let mut label = row()
@@ -236,7 +238,10 @@ impl<M: 'static> Table<M> {
                         .color(c.accent),
                 );
             }
-            let mut cell = sized(label, ci).h_full();
+            let mut cell = sized(label, ci).h_full().role(Role::ColumnHeader);
+            if let Some(d) = sorted {
+                cell = cell.aria_description(if d == SortDir::Asc { "sorted ascending" } else { "sorted descending" });
+            }
             if col.sortable {
                 if let Some(f) = &self.on_sort {
                     let next = match sorted {
@@ -258,6 +263,7 @@ impl<M: 'static> Table<M> {
                     .cursor(Cursor::ResizeCol)
                     .child(div().w(1.0).h_full().bg(c.border_strong));
                 grip.behavior = Behavior::ColumnResize { table: tid, col: ci, min: col.min_width };
+                grip = grip.aria_label(format!("Resize {} column", col.title));
                 cell = cell.child(grip);
             }
             header = header.child(cell);
@@ -273,6 +279,8 @@ impl<M: 'static> Table<M> {
             let radius = th.radius_sm;
             virtual_list(self.rows, move |r| {
                 let mut tr = row()
+                    .role(Role::Row)
+                    .aria_selected(sel == Some(r))
                     .h(rh)
                     .px(6.0)
                     .items_center()
@@ -297,7 +305,7 @@ impl<M: 'static> Table<M> {
             .gap(1.0)
             .grow(1.0)
         };
-        col().min_h(0.0).min_w(0.0).child(header).child(body)
+        col().role(Role::Table).min_h(0.0).min_w(0.0).child(header).child(body)
     }
 }
 

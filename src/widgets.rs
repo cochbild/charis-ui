@@ -15,6 +15,7 @@ use crate::color::Color;
 use crate::element::*;
 use crate::geometry::Point;
 use crate::icons::Icon;
+use crate::semantics::Role;
 use crate::style::*;
 use crate::theme::theme;
 
@@ -47,6 +48,7 @@ pub fn button_kind<M: 'static>(kind: ButtonKind, label: impl Into<String>) -> El
         .medium()
         .shrink(0.0)
         .focusable()
+        .role(Role::Button)
         .transition(th.transition)
         .child(text(label).nowrap());
     match kind {
@@ -105,6 +107,7 @@ pub fn icon_button<M: 'static>(i: Icon) -> Element<M> {
         .shrink(0.0)
         .color(c.text_muted)
         .focusable()
+        .role(Role::Button)
         .transition(th.transition)
         .hover(|s| s.bg(c.hover).color(c.text))
         .active(|s| s.bg(c.pressed))
@@ -294,7 +297,16 @@ pub fn checkbox<M: 'static>(label: impl Into<String>, checked: bool) -> Element<
             b.bg(c.accent).border(1.0, c.accent).color(c.accent_text).child(icon(Icon::Check).font_size(12.0).bold())
         })
         .when(!checked, |b| b.bg(c.input).border(1.0, c.border_strong));
-    row().items_center().gap(8.0).focusable().cursor(Cursor::Pointer).rounded(4.0).child(bx).child(text(label).nowrap())
+    row()
+        .items_center()
+        .gap(8.0)
+        .focusable()
+        .role(Role::CheckBox)
+        .aria_checked(checked)
+        .cursor(Cursor::Pointer)
+        .rounded(4.0)
+        .child(bx)
+        .child(text(label).nowrap())
 }
 
 /// An iOS/macOS-style toggle switch. Attach `.on_click(...)` to toggle.
@@ -308,6 +320,8 @@ pub fn switch<M: 'static>(on: bool) -> Element<M> {
         .shrink(0.0)
         .p(2.0)
         .focusable()
+        .role(Role::Switch)
+        .aria_checked(on)
         .cursor(Cursor::Pointer)
         .transition(0.18)
         .bg(if on { c.accent } else { c.border_strong })
@@ -325,7 +339,16 @@ pub fn switch<M: 'static>(on: bool) -> Element<M> {
 
 /// A labeled switch row.
 pub fn switch_row<M: 'static>(label: impl Into<String>, on: bool) -> Element<M> {
-    row().items_center().gap(10.0).cursor(Cursor::Pointer).child(switch(on)).child(text(label).nowrap())
+    let label = label.into();
+    row()
+        .items_center()
+        .gap(10.0)
+        .cursor(Cursor::Pointer)
+        .role(Role::Switch)
+        .aria_checked(on)
+        .aria_label(label.clone())
+        .child(switch(on).aria_hidden())
+        .child(text(label).nowrap())
 }
 
 /// A horizontal slider. Handle `.on_change(|v| ...)`.
@@ -384,13 +407,21 @@ impl<M: 'static> Element<M> {
 /// A progress bar, `value` in 0..=1.
 pub fn progress<M: 'static>(value: f32) -> Element<M> {
     let th = theme();
-    div().h(6.0).w_full().pill().bg(th.colors.border).clip().child(
-        div()
-            .h_full()
-            .w(pct(value.clamp(0.0, 1.0) * 100.0))
-            .pill()
-            .gradient(90.0, [(0.0, th.colors.accent), (1.0, th.colors.accent_hover)]),
-    )
+    div()
+        .h(6.0)
+        .w_full()
+        .pill()
+        .bg(th.colors.border)
+        .clip()
+        .role(Role::ProgressBar)
+        .aria_value((value.clamp(0.0, 1.0) * 100.0).round() as f64, 0.0, 100.0)
+        .child(
+            div()
+                .h_full()
+                .w(pct(value.clamp(0.0, 1.0) * 100.0))
+                .pill()
+                .gradient(90.0, [(0.0, th.colors.accent), (1.0, th.colors.accent_hover)]),
+        )
 }
 
 // -------------------------------------------------------------- decoration
@@ -444,12 +475,12 @@ pub fn kbd<M: 'static>(keys: impl Into<String>) -> Element<M> {
 
 /// A horizontal divider line.
 pub fn separator<M: 'static>() -> Element<M> {
-    div().h(1.0).w_full().shrink(0.0).bg(theme().colors.border)
+    div().h(1.0).w_full().shrink(0.0).bg(theme().colors.border).role(Role::Separator)
 }
 
 /// A vertical divider line.
 pub fn vseparator<M: 'static>() -> Element<M> {
-    div().w(1.0).self_align(Align::Stretch).shrink(0.0).bg(theme().colors.border)
+    div().w(1.0).self_align(Align::Stretch).shrink(0.0).bg(theme().colors.border).role(Role::Separator)
 }
 
 /// A raised card container.
@@ -475,6 +506,8 @@ pub fn avatar<M: 'static>(initials: &str, color: Color) -> Element<M> {
         .color(Color::WHITE)
         .font_size(11.0)
         .semibold()
+        .role(Role::Image)
+        .aria_label(initials.to_string())
         .child(text(initials.to_string()).nowrap())
 }
 
@@ -497,7 +530,7 @@ pub fn section_header<M: 'static>(title: impl Into<String>) -> Element<M> {
 
 /// A selectable list row with an optional icon.
 pub fn list_item<M: 'static>(i: Option<Icon>, label: impl Into<String>, selected: bool) -> Element<M> {
-    tree_row(0, None, i, label, selected)
+    tree_row(0, None, i, label, selected).role(Role::ListItem)
 }
 
 /// A tree-view row. `expanded`: `Some(true/false)` shows a disclosure chevron.
@@ -522,7 +555,12 @@ pub fn tree_row<M: 'static>(
         .color(if selected { c.text } else { c.text_muted })
         .transition(0.08)
         .hover(|s| s.bg(if selected { c.accent_soft } else { c.hover }).color(c.text))
-        .cursor(Cursor::Default);
+        .cursor(Cursor::Default)
+        .role(Role::TreeItem)
+        .aria_selected(selected);
+    if let Some(e) = expanded {
+        r = r.aria_expanded(e);
+    }
     if selected {
         r = r.bg(c.accent_soft);
     }
@@ -573,8 +611,14 @@ impl<M> Tab<M> {
 pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
-    let mut bar =
-        row().h(th.tab_height).shrink(0.0).bg(c.panel).border_b(1.0, c.border).scroll_x().items(Align::Stretch);
+    let mut bar = row()
+        .h(th.tab_height)
+        .shrink(0.0)
+        .bg(c.panel)
+        .border_b(1.0, c.border)
+        .scroll_x()
+        .items(Align::Stretch)
+        .role(Role::TabList);
     for (i, t) in tabs.into_iter().enumerate() {
         let mut tab = row()
             .key(("tab", i, t.label.clone()))
@@ -588,7 +632,9 @@ pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
             .color(if t.active { c.text } else { c.text_muted })
             .transition(0.08)
             .on_click(t.on_select.clone())
-            .cursor(Cursor::Default);
+            .cursor(Cursor::Default)
+            .role(Role::Tab)
+            .aria_selected(t.active);
         if t.active {
             tab = tab.bg(c.surface).child(div().absolute().top(0.0).left(0.0).right(0.0).h(2.0).bg(c.accent));
             // Cover the bar's bottom border so the active tab merges into content.
@@ -608,6 +654,8 @@ pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
                 .color(c.text_faint)
                 .transition(0.08)
                 .hover(|s| s.bg(c.pressed).color(c.text))
+                .role(Role::Button)
+                .aria_label("Close tab")
                 .on_click(close);
             let btn = if t.modified && !t.active {
                 btn.child(icon(Icon::Dot).font_size(10.0))
@@ -632,7 +680,8 @@ pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M
         .bg(c.input)
         .border(1.0, c.border)
         .shrink(0.0)
-        .self_align(Align::Start);
+        .self_align(Align::Start)
+        .role(Role::RadioGroup);
     for (label, active, msg) in items {
         let mut b = row()
             .items_center()
@@ -643,6 +692,8 @@ pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M
             .medium()
             .transition(0.12)
             .on_click(msg)
+            .role(Role::RadioButton)
+            .aria_checked(active)
             .child(text(label).nowrap());
         b = if active {
             b.bg(c.elevated).color(c.text).shadows(th.shadow_sm.clone())
@@ -664,6 +715,8 @@ pub fn color_swatch<M: Clone + 'static>(color: Color, selected: bool) -> Element
         .square(26.0)
         .pill()
         .shrink(0.0)
+        .role(Role::RadioButton)
+        .aria_checked(selected)
         .border(2.0, if selected { color } else { Color::TRANSPARENT })
         .transition(0.12)
         .hover(move |s| if selected { s } else { s.border_color(c.border_strong) })
@@ -776,7 +829,8 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
         .bg(c.elevated)
         .border(1.0, c.border_strong)
         .rounded(th.radius + 2.0)
-        .shadows(th.shadow_popover.clone());
+        .shadows(th.shadow_popover.clone())
+        .role(Role::Menu);
     let item_row = |label: String, lead: Element<M>, trail: Option<Element<M>>, msg: M, disabled: bool| {
         let mut r = row()
             .items_center()
@@ -786,6 +840,8 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
             .rounded(th.radius_sm)
             .color(c.text)
             .transition(0.06)
+            .role(Role::MenuItem)
+            .aria_label(label.clone())
             .child(lead)
             .child(text(label).nowrap().grow(1.0));
         if let Some(t) = trail {
@@ -809,7 +865,7 @@ pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
             }
             MenuItem::Check { label, checked, msg } => {
                 let lead = if checked { icon(Icon::Check).font_size(15.0) } else { div().w(15.0).shrink(0.0) };
-                panel.child(item_row(label, lead, None, msg, false))
+                panel.child(item_row(label, lead, None, msg, false).aria_checked(checked))
             }
             MenuItem::Separator => panel.child(div().h(1.0).my(4.0).mx(4.0).bg(c.border)),
             MenuItem::Header(h) => panel.child(
@@ -871,7 +927,7 @@ pub fn menu_bar<M: Clone + 'static>(
     let th = theme();
     let c = th.colors.clone();
     let on_open = Rc::new(on_open);
-    let mut bar = row().h_full().items_center().px(4.0).gap(1.0);
+    let mut bar = row().h_full().items_center().px(4.0).gap(1.0).role(Role::MenuBar);
     for (i, m) in menus.into_iter().enumerate() {
         let is_open = open == Some(i);
         let o = on_open.clone();
@@ -885,6 +941,9 @@ pub fn menu_bar<M: Clone + 'static>(
             .transition(0.06)
             .hover(|s| s.bg(c.hover).color(c.text))
             .on_click(on_open(if is_open { None } else { Some(i) }))
+            .role(Role::MenuItem)
+            .aria_label(m.title.clone())
+            .aria_expanded(is_open)
             .child(text(m.title).nowrap());
         if open.is_some() && !is_open {
             // While a menu is open, hovering another title switches to it.
@@ -910,10 +969,13 @@ pub fn modal<M: Clone + 'static>(
 ) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
-    div().child(backdrop(on_dismiss.clone(), true)).child(
+    let title = title.into();
+    div().child(backdrop(on_dismiss.clone(), true).aria_hidden()).child(
         div().fixed().top(0.0).left(0.0).right(0.0).bottom(0.0).z_index(95).center().pointer_events(false).child(
             col()
                 .pointer_events(true)
+                .aria_modal()
+                .aria_label(title.clone())
                 .w(440.0)
                 .max_w(pct(90.0))
                 .bg(c.elevated)
@@ -926,8 +988,8 @@ pub fn modal<M: Clone + 'static>(
                         .px(18.0)
                         .pt(16.0)
                         .pb(6.0)
-                        .child(text(title).font_size(th.font_size_lg).semibold().grow(1.0))
-                        .child(icon_button(Icon::Close).on_click(on_dismiss)),
+                        .child(text(title).font_size(th.font_size_lg).semibold().grow(1.0).heading(2))
+                        .child(icon_button(Icon::Close).aria_label("Close").on_click(on_dismiss)),
                 )
                 .child(col().px(18.0).py(8.0).gap(10.0).color(c.text_muted).child(body))
                 .child(row().justify(Justify::End).gap(8.0).px(18.0).pt(10.0).pb(16.0).children(actions)),
@@ -950,6 +1012,7 @@ pub fn status_bar<M: 'static>() -> Element<M> {
         .border_t(1.0, th.colors.border)
         .color(th.colors.status_text)
         .font_size(11.5)
+        .role(Role::Status)
 }
 
 /// An item in the status bar.

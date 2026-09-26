@@ -8,6 +8,9 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use taffy as tf;
+
+#[cfg(feature = "accessibility")]
+mod a11y;
 use tiny_skia::Pixmap;
 
 use crate::anim::Anim;
@@ -585,6 +588,8 @@ pub(crate) struct Node<M> {
     pub pane: Option<(u64, usize)>,
     /// For virtual list rows: (list id, row index).
     pub virt_item: Option<(u64, usize)>,
+    #[cfg_attr(not(feature = "accessibility"), allow(dead_code))]
+    pub sem: Option<Box<crate::semantics::Semantics>>,
 }
 
 struct Frame<M> {
@@ -1072,6 +1077,7 @@ impl<A: App> Runtime<A> {
             pointer_events,
             tooltip,
             follow_end,
+            sem,
             ..
         } = el;
 
@@ -1199,6 +1205,7 @@ impl<A: App> Runtime<A> {
             split: None,
             pane: None,
             virt_item: None,
+            sem,
         });
         frame.by_id.insert(id, idx);
         if let Some(p) = parent {

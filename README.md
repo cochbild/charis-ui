@@ -226,6 +226,24 @@ Icons are crisp vectors. There's a built-in set, and any 24×24 SVG path works v
 `Icon::svg("M…")`, so you can paste in Lucide or Feather icons. For fully custom drawing, use
 `canvas(|cv, rect| …)`.
 
+### Accessibility
+
+Screen readers work through [AccessKit](https://accesskit.dev): UI Automation on Windows (Narrator,
+NVDA, JAWS), NSAccessibility on macOS (VoiceOver) and AT-SPI on Linux (Orca). Built-in widgets
+expose their role, name and state: a checkbox is a checked or unchecked "Remember me" check box,
+a slider has its value and range, and a dialog is modal. Text inside a button becomes the
+button's name rather than a separate node, and icon-only buttons are named by their tooltip.
+Screen-reader actions (activate, focus, set value, increment, scroll) run through the same code
+as mouse and keyboard input.
+
+Custom widgets use ARIA-style methods:
+
+```rust
+div().role(Role::Switch).aria_checked(on).aria_label("Wi-Fi").on_click(Msg::ToggleWifi)
+```
+
+`Runtime::accessibility_tree()` returns the tree, so tests can assert on it headlessly.
+
 ### Custom window chrome
 
 ```rust
@@ -282,7 +300,7 @@ This is an early but working foundation. Known gaps and planned work:
 - Incremental layout (reuse taffy's cache between frames) and damage-region repainting on the
   CPU backend
 - Virtualized trees (lists and tables are done)
-- Accessibility (AccessKit) and screen-reader support
+- High-contrast theme and reduced-motion support
 - Multiple windows, native menus, file dialogs
 - Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows
   (needs multi-window support)

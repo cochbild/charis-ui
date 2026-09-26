@@ -22,6 +22,7 @@ use crate::color::{Color, Fill};
 use crate::geometry::{Axis, Point, Rect};
 use crate::icons::Icon;
 use crate::paint::Canvas;
+use crate::semantics::{Role, Semantics};
 use crate::style::*;
 
 /// Keyboard key, platform independent.
@@ -396,6 +397,7 @@ pub struct Element<M> {
     pub(crate) pointer_events: bool,
     pub(crate) tooltip: Option<String>,
     pub(crate) follow_end: bool,
+    pub(crate) sem: Option<Box<Semantics>>,
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -435,7 +437,12 @@ impl<M> Element<M> {
             pointer_events: true,
             tooltip: None,
             follow_end: false,
+            sem: None,
         }
+    }
+
+    fn sem_mut(&mut self) -> &mut Semantics {
+        self.sem.get_or_insert_with(Default::default)
     }
 }
 
@@ -665,6 +672,7 @@ impl<M: 'static> Element<M> {
             pointer_events: self.pointer_events,
             tooltip: self.tooltip,
             follow_end: self.follow_end,
+            sem: self.sem,
         }
     }
 
@@ -1248,6 +1256,61 @@ impl<M: 'static> Element<M> {
     /// re-pins it.
     pub fn follow_end(mut self) -> Self {
         self.follow_end = true;
+        self
+    }
+
+    /// What this element is to assistive technology (like ARIA `role`).
+    pub fn role(mut self, role: Role) -> Self {
+        self.sem_mut().role = Some(role);
+        self
+    }
+    /// Accessible name (like `aria-label`). Defaults to the element's text.
+    pub fn aria_label(mut self, label: impl Into<String>) -> Self {
+        self.sem_mut().label = Some(label.into());
+        self
+    }
+    /// Longer accessible description (like `aria-description`).
+    pub fn aria_description(mut self, d: impl Into<String>) -> Self {
+        self.sem_mut().description = Some(d.into());
+        self
+    }
+    /// Checked / on state for checkboxes, switches and radio buttons.
+    pub fn aria_checked(mut self, on: bool) -> Self {
+        self.sem_mut().checked = Some(on);
+        self
+    }
+    /// Selected state for tabs, list items and rows.
+    pub fn aria_selected(mut self, on: bool) -> Self {
+        self.sem_mut().selected = Some(on);
+        self
+    }
+    /// Expanded state for tree items and disclosure controls.
+    pub fn aria_expanded(mut self, on: bool) -> Self {
+        self.sem_mut().expanded = Some(on);
+        self
+    }
+    /// A numeric value with its range, e.g. for progress bars.
+    pub fn aria_value(mut self, value: f64, min: f64, max: f64) -> Self {
+        self.sem_mut().value = Some((value, min, max));
+        self
+    }
+    /// Mark as a heading of `level` 1–6.
+    pub fn heading(mut self, level: u8) -> Self {
+        let s = self.sem_mut();
+        s.role = Some(Role::Heading);
+        s.level = Some(level.clamp(1, 6));
+        self
+    }
+    /// Mark as a modal dialog.
+    pub fn aria_modal(mut self) -> Self {
+        let s = self.sem_mut();
+        s.role = Some(Role::Dialog);
+        s.modal = true;
+        self
+    }
+    /// Hide this subtree from assistive technology (decorations, duplicates).
+    pub fn aria_hidden(mut self) -> Self {
+        self.sem_mut().hidden = true;
         self
     }
 

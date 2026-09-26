@@ -42,4 +42,15 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
       not swallowed by the IME.
 - [ ] Wheel and touchpad scrolling are smooth.
 
+**Accessibility** (turn on Narrator with Ctrl+Win+Enter; NVDA works too)
+- [ ] Narrator reads the window, and Tab moves between controls, announcing each one's name and
+      type ("Save, button"; "Remember me, check box, not checked").
+- [ ] Pressing Space or Enter (or Narrator's Caps Lock+Enter) activates the focused button or
+      checkbox, and the new state is announced.
+- [ ] In the lmfast demo's Settings screen, the accent swatches read as radio buttons, and the
+      corner-radius slider announces its value and changes with the arrow keys.
+- [ ] Narrator's scan mode (Caps Lock+Space) can move through headings and text in a chat reply.
+- [ ] Accessibility Insights for Windows (optional) shows the tree with sensible names and no
+      unnamed buttons.
+
 Report anything that fails, with a screenshot if possible.

@@ -113,12 +113,19 @@ struct Shell<A: App> {
     dark: Option<bool>,
     /// Last IME state sent to the OS (enabled, caret area).
     ime: (bool, Option<crate::geometry::Rect>),
+    /// Screen reader bridge (created with the window).
+    #[cfg(feature = "accessibility")]
+    a11y: Option<accesskit_winit::Adapter>,
+    #[cfg(feature = "accessibility")]
+    a11y_proxy: winit::event_loop::EventLoopProxy<UserEvent>,
 }
 
 /// Open a window and run the app until it is closed.
 pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::<Wake>::with_user_event().build()?;
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let loop_proxy = event_loop.create_proxy();
+    #[cfg(feature = "accessibility")]
+    let a11y_proxy = event_loop.create_proxy();
     let mut rt = Runtime::new(app);
     rt.frameless = opts.frameless;
     let mut shell = Shell {
@@ -136,9 +143,13 @@ pub fn run<A: App>(app: A, opts: WindowOptions) -> Result<(), Box<dyn std::error
         native_chrome: false,
         dark: None,
         ime: (false, None),
+        #[cfg(feature = "accessibility")]
+        a11y: None,
+        #[cfg(feature = "accessibility")]
+        a11y_proxy,
     };
     shell.rt.set_waker(move || {
-        let _ = loop_proxy.send_event(Wake);
+        let _ = loop_proxy.send_event(UserEvent::Wake);
     });
     event_loop.run_app(&mut shell)?;
     match shell.error {
@@ -316,6 +327,8 @@ impl<A: App> Shell<A> {
             self.dark = Some(dark);
             crate::platform::set_dark_mode(&g.window, dark);
         }
+        #[cfg(feature = "accessibility")]
+        self.push_a11y_tree();
         if self.gpu_failed {
             self.gpu_failed = false;
             if let Some(g) = &mut self.gfx {
@@ -349,6 +362,15 @@ impl<A: App> Shell<A> {
         Ok(Presenter::Cpu { surface, _context: context })
     }
 
+    /// Send the current accessibility tree (a no-op unless a screen reader is active).
+    #[cfg(feature = "accessibility")]
+    fn push_a11y_tree(&mut self) {
+        if let Some(ad) = &mut self.a11y {
+            let rt = &mut self.rt;
+            ad.update_if_active(|| rt.accessibility_tree());
+        }
+    }
+
     fn modifiers(&self) -> Modifiers {
         Modifiers {
             shift: self.mods.shift_key(),
@@ -359,14 +381,43 @@ impl<A: App> Shell<A> {
     }
 }
 
-/// User event used to wake the event loop when background tasks post messages.
-#[derive(Debug, Clone, Copy)]
-struct Wake;
+/// Events sent to the event loop from other threads.
+#[derive(Debug)]
+enum UserEvent {
+    /// Background tasks posted messages.
+    Wake,
+    /// A screen reader connected, disconnected, or requested an action.
+    #[cfg(feature = "accessibility")]
+    A11y(accesskit_winit::Event),
+}
 
-impl<A: App> ApplicationHandler<Wake> for Shell<A> {
-    fn user_event(&mut self, el: &ActiveEventLoop, _: Wake) {
+#[cfg(feature = "accessibility")]
+impl From<accesskit_winit::Event> for UserEvent {
+    fn from(e: accesskit_winit::Event) -> Self {
+        UserEvent::A11y(e)
+    }
+}
+
+impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
+    fn user_event(&mut self, el: &ActiveEventLoop, ev: UserEvent) {
         self.rt.set_time(self.now());
-        self.rt.poll();
+        match ev {
+            UserEvent::Wake => self.rt.poll(),
+            #[cfg(feature = "accessibility")]
+            UserEvent::A11y(e) => {
+                use accesskit_winit::WindowEvent as A;
+                match e.window_event {
+                    A::InitialTreeRequested => self.push_a11y_tree(),
+                    A::ActionRequested(req) => {
+                        self.rt.accessibility_action(req);
+                        if let Some(g) = &self.gfx {
+                            g.window.request_redraw();
+                        }
+                    }
+                    A::AccessibilityDeactivated => {}
+                }
+            }
+        }
         self.apply_requests(el);
     }
 
@@ -385,6 +436,9 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
             .with_window_icon(
                 self.opts.icon.as_ref().and_then(|(w, h, d)| winit::window::Icon::from_rgba(d.clone(), *w, *h).ok()),
             );
+        // The accessibility adapter must be attached before the window is first shown.
+        #[cfg(feature = "accessibility")]
+        let attrs = attrs.with_visible(false);
         let window = match el.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -393,6 +447,11 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
                 return;
             }
         };
+        #[cfg(feature = "accessibility")]
+        {
+            self.a11y = Some(accesskit_winit::Adapter::with_event_loop_proxy(el, &window, self.a11y_proxy.clone()));
+            window.set_visible(true);
+        }
         // Enabled on demand when a text input gets focus (see `redraw`).
         window.set_ime_allowed(false);
         if self.opts.frameless && crate::platform::install_frameless(&window, self.chrome.clone()) {
@@ -416,6 +475,10 @@ impl<A: App> ApplicationHandler<Wake> for Shell<A> {
         let now = self.now();
         self.rt.set_time(now);
         let scale = self.gfx.as_ref().map(|g| g.window.scale_factor() as f32).unwrap_or(1.0);
+        #[cfg(feature = "accessibility")]
+        if let (Some(ad), Some(g)) = (&mut self.a11y, &self.gfx) {
+            ad.process_event(&g.window, &event);
+        }
         match event {
             WindowEvent::CloseRequested => {
                 if self.rt.request_close() {

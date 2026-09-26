@@ -29,7 +29,7 @@ frameworks don't provide.
 
 **Missing for production:**
 - Platforms other than Linux have never been tested.
-- No accessibility.
+- Accessibility has not been tried with a real screen reader yet.
 - IME composition has only been tested by simulating the events (no real IME on Linux CI).
 - Only one window per app.
 - Layout is fully rebuilt every frame.
@@ -120,12 +120,14 @@ systems; a 100k-line file scrolls at 120fps.
 
 ### M3: Accessibility
 
-- [ ] AccessKit integration:
-  - roles, names, states and actions for every widget;
-  - a tree kept in sync with the element tree;
-  - focus following keyboard focus.
+- [x] AccessKit integration (`accessibility` feature, on by default):
+  - roles, names, states and actions for every built-in widget, and ARIA-style `.role()`,
+    `.aria_label()`, `.aria_checked()`… for custom ones;
+  - the tree is rebuilt each frame while a screen reader is active (incremental updates later);
+  - focus follows keyboard focus; click, focus, set value, increment, decrement, scroll and
+    expand/collapse actions are supported.
 - [ ] High-contrast theme generated from the token system; respect the OS reduced-motion setting.
-- [ ] Headless tests assert on the accessibility tree (as GPUI Kit's tests do).
+- [x] Headless tests assert on the accessibility tree (`tests/accessibility.rs`).
 
 **Exit:** the showcase is usable with NVDA (Windows), VoiceOver (macOS) and Orca (Linux).
 

@@ -18,7 +18,7 @@ style. This page covers:
 | Default font and text rendering | Text looks thin or blurry next to browser apps | Bundled Inter font, DirectWrite-style contrast and gamma correction, pixel-snapped baselines |
 | `pane_grid`: resizable, rearrangeable panes, no tabs | No IDE-style docking | Tabbed dock groups: drag tabs between groups or onto edges, reorder, maximize, save layouts; splits with animated collapse |
 | Window decorations left to the OS; custom title bars take manual work | Can't get an Electron-style title bar | `titlebar()`, `window_controls()`, menu bars. On Windows these include native snap, Snap Layouts, shadow and rounded corners |
-| No AccessKit upstream (the libcosmic fork has it) | Weak accessibility | Planned (roadmap M3) |
+| No AccessKit upstream (the libcosmic fork has it) | Weak accessibility | AccessKit built in: roles, names, states and actions for every widget; ARIA-style methods for custom ones |
 
 ## Concept map
 

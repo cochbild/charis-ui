@@ -66,6 +66,7 @@ pub mod paint;
 mod platform;
 pub mod runtime;
 pub mod scene;
+pub mod semantics;
 pub mod style;
 pub mod subscription;
 pub mod table;
@@ -85,6 +86,7 @@ pub use icons::Icon;
 pub use markdown::markdown;
 pub use paint::Canvas;
 pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
+pub use semantics::{Role, Semantics};
 pub use style::*;
 pub use subscription::Subscriptions;
 pub use table::{cell_text, table, Column, ColumnWidth, SortDir, Table};
@@ -111,6 +113,7 @@ pub mod prelude {
     pub use crate::markdown::markdown;
     pub use crate::paint::Canvas;
     pub use crate::runtime::{window_info, App, Cx};
+    pub use crate::semantics::Role;
     pub use crate::style::{
         pct, Align, Corners, Cursor, Direction, Edges, FontFamily, Justify, Length, Overflow, Shadow, StylePatch,
         TextAlign, Track, Weight,

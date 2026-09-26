@@ -251,6 +251,7 @@ fn render_block<M: Clone + 'static>(b: &Block) -> Element<M> {
                 .font_size((base * k).round())
                 .line_height(1.3)
                 .mt(if *level <= 2 { 6.0 } else { 2.0 })
+                .heading(*level)
         }
         Block::Code(lang, code) => {
             let header = row()
@@ -262,7 +263,7 @@ fn render_block<M: Clone + 'static>(b: &Block) -> Element<M> {
                 .child(
                     text(lang.clone().unwrap_or_else(|| "text".into())).font_size(11.5).color(c.text_faint).grow(1.0),
                 )
-                .child(tooltip_icon_button(Icon::Files, "Copy").copy_on_click(code.clone()));
+                .child(tooltip_icon_button(Icon::Files, "Copy").aria_label("Copy code").copy_on_click(code.clone()));
             col().bg(c.input).border(1.0, c.border).rounded(th.radius).clip().min_w(0.0).child(header).child(
                 div()
                     .scroll_x()

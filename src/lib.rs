@@ -63,6 +63,7 @@ pub mod geometry;
 pub mod gpu;
 pub mod headless;
 pub mod icons;
+pub mod image;
 pub mod layouts;
 #[cfg(feature = "markdown")]
 pub mod markdown;

@@ -195,6 +195,7 @@ pub(crate) struct Handlers<M> {
     pub drag: Option<Cb<DragEvent, M>>,
     pub key: Option<KeyCb<M>>,
     pub key_capture: Option<KeyCb<M>>,
+    pub focus: Option<Cb<bool, M>>,
     pub value: Option<Cb<f32, M>>,
     pub input: Option<Cb<String, M>>,
     pub submit: Option<M>,
@@ -216,6 +217,7 @@ impl<M: Clone> Clone for Handlers<M> {
             drag: self.drag.clone(),
             key: self.key.clone(),
             key_capture: self.key_capture.clone(),
+            focus: self.focus.clone(),
             value: self.value.clone(),
             input: self.input.clone(),
             submit: self.submit.clone(),
@@ -239,6 +241,7 @@ impl<M> Default for Handlers<M> {
             drag: None,
             key: None,
             key_capture: None,
+            focus: None,
             value: None,
             input: None,
             submit: None,
@@ -274,6 +277,7 @@ impl<M: 'static> Handlers<M> {
                 let f = f.clone();
                 Rc::new(move |e: &KeyEvent| k(e).map(|m| f(m))) as KeyCb<N>
             }),
+            focus: wrap(self.focus, &f),
             value: wrap(self.value, &f),
             input: wrap(self.input, &f),
             submit: self.submit.map(|m| f(m)),
@@ -476,6 +480,15 @@ pub(crate) enum Content<M> {
     Dropdown(DropdownSpec),
     Virtual(VirtualSpec<M>),
     Lazy(LazySpec<M>),
+    Image(ImageSpec),
+}
+
+/// An image element's content.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ImageSpec {
+    pub source: crate::image::ImageSource,
+    pub fit: crate::image::Fit,
+    pub tint: Option<Color>,
 }
 
 /// Special interactive behaviours implemented by the runtime.
@@ -828,6 +841,7 @@ impl<M: 'static> Element<M> {
             Content::None => Content::None,
             Content::Text(t) => Content::Text(t),
             Content::Icon(i) => Content::Icon(i),
+            Content::Image(i) => Content::Image(i),
             Content::Canvas(c) => Content::Canvas(c),
             Content::Input(i) => Content::Input(i),
             Content::Dropdown(d) => Content::Dropdown(d),
@@ -1412,6 +1426,12 @@ impl<M: 'static> Element<M> {
     /// recorder or a list driven from its search field.
     pub fn on_key_capture(mut self, f: impl Fn(&KeyEvent) -> Option<M> + 'static) -> Self {
         self.handlers.key_capture = Some(Rc::new(move |e: &KeyEvent| f(e).map(Out::Msg)));
+        self
+    }
+    /// Called with `true` when this element gets keyboard focus and `false`
+    /// when it loses it (focus and blur).
+    pub fn on_focus_change(mut self, f: impl Fn(bool) -> M + 'static) -> Self {
+        self.handlers.focus = Some(cb(f));
         self
     }
     /// For split containers: called when the user collapses/expands a pane by

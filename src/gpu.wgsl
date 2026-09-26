@@ -41,6 +41,7 @@ struct VOut {
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var mask_atlas: texture_2d<f32>;
 @group(0) @binding(2) var color_atlas: texture_2d<f32>;
+@group(0) @binding(3) var image_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VOut {
@@ -175,6 +176,18 @@ fn fs_main(v: VOut) -> @location(0) vec4<f32> {
         } else {
             a = m;
         }
+    } else if kind == 5u {
+        // Image (premultiplied), stretched from its atlas slot, with rounded
+        // corners. Samples stay half a texel inside the slot (no bleeding).
+        let t = (p - v.rect.xy) / v.rect.zw;
+        let lo = v.uv.xy + vec2<f32>(0.5, 0.5);
+        let hi = v.uv.xy + v.uv.zw - vec2<f32>(0.5, 0.5);
+        let texel = clamp(v.uv.xy + t * v.uv.zw, lo, hi);
+        let dims = vec2<f32>(textureDimensions(color_atlas));
+        let c = textureSampleLevel(color_atlas, image_sampler, texel / dims, 0.0);
+        let shape_a = coverage(sd_rrect(p, v.shape, v.radii));
+        let clip_a = coverage(sd_rrect(p, v.clip, v.clip_radii));
+        return c * v.color.a * shape_a * clip_a;
     } else {
         // Color sprite (emoji), premultiplied in the atlas.
         let texel = vec2<i32>(floor(p - v.rect.xy) + v.uv.xy);

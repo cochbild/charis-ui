@@ -46,7 +46,36 @@ impl App for Gallery {
                     [Icon::Search, Icon::Settings, Icon::GitBranch, Icon::Star].map(|i| icon(i).font_size(20.0)),
                 ),
             )
+            .child(
+                row()
+                    .gap(12.0)
+                    .child(image(photo()).w(120.0).h(60.0).fit(rust_ui::image::Fit::Cover).rounded(12.0))
+                    .child(image(photo()).w(40.0))
+                    .children(logo().map(|l| image(l).w(48.0).tint(th.colors.accent))),
+            )
     }
+}
+
+/// A 64×32 gradient "photo".
+fn photo() -> rust_ui::image::Image {
+    let mut px = Vec::new();
+    for y in 0..32u32 {
+        for x in 0..64u32 {
+            px.extend_from_slice(&[(x * 4) as u8, (y * 8) as u8, 200, 255]);
+        }
+    }
+    rust_ui::image::Image::from_rgba(64, 32, &px).unwrap()
+}
+
+#[cfg(feature = "svg")]
+fn logo() -> Option<rust_ui::image::Svg> {
+    rust_ui::image::Svg::parse(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10"/></svg>"#,
+    )
+}
+#[cfg(not(feature = "svg"))]
+fn logo() -> Option<rust_ui::image::Image> {
+    None
 }
 
 #[test]

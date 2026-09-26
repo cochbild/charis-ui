@@ -14,7 +14,11 @@ exclude = ["docs/*.png", "tests/golden/*"]
 name = "rust_ui"
 
 [features]
-default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs", "native-menu"]
+default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs", "native-menu", "svg", "jpeg"]
+# SVG images (resvg).
+svg = ["dep:resvg"]
+# JPEG decoding for images (PNG is always supported).
+jpeg = ["dep:zune-jpeg"]
 window = ["dep:winit", "dep:softbuffer", "dep:objc2", "dep:objc2-app-kit"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
@@ -48,6 +52,8 @@ tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 accesskit = { version = "0.25", optional = true }
 accesskit_winit = { version = "0.34", optional = true }
 rfd = { version = "0.17", optional = true }
+resvg = { version = "0.48", optional = true, default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+zune-jpeg = { version = "0.5", optional = true }
 
 
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]

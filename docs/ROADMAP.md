@@ -98,7 +98,9 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
       done, on a small runtime.
 - [x] Subscriptions: `App::subscriptions()` for timers and intervals, window events, and a
       `Sender<Msg>` handle that background threads can use to push messages.
-- [ ] Widgets: pick list/dropdown, combo box, radio group, image, SVG, number input.
+- [x] Widgets: pick list/dropdown, combo box, radio group (arrow keys), image (PNG, JPEG; object-fit,
+      rounded, cached per device size, GPU atlas with a linear sampler), SVG (resvg, tinting),
+      number input (range, step, decimals, steppers, keyboard, draft text). `on_focus_change`.
 - [x] Native file dialogs: `cx.open_file / open_files / pick_folder / save_file`, answered as
       messages; rfd underneath (Windows common item dialog, macOS panels, XDG portal or zenity on
       Linux), modal to the asking window; scripted in tests with `set_dialog_responder`.

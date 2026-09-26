@@ -315,6 +315,32 @@ impl<'a> Raster<'a> {
         self.clipped(rect, |pm, t, m| pm.fill_path(&path, &paint, FillRule::Winding, t, m));
     }
 
+    /// Draw an image's cached raster 1:1 at `dest` (whole device pixels),
+    /// clipped to its rounded corners.
+    pub fn image(
+        &mut self,
+        source: &crate::image::ImageSource,
+        crop: Rect,
+        dest: Rect,
+        radius: Corners,
+        tint: Option<Color>,
+    ) {
+        let s = self.scale;
+        let (w, h) = ((dest.w * s).round() as u32, (dest.h * s).round() as u32);
+        let Some(img) = crate::image::raster(source, crop, w, h, tint) else { return };
+        let (x, y) = ((dest.x * s).round(), (dest.y * s).round());
+        let shader = tiny_skia::Pattern::new(
+            (*img).as_ref(),
+            tiny_skia::SpreadMode::Pad,
+            tiny_skia::FilterQuality::Nearest,
+            1.0,
+            Transform::from_translate(x, y),
+        );
+        let paint = Paint { shader, anti_alias: true, ..Default::default() };
+        let Some(path) = rrect_path(Rect::new(x, y, w as f32, h as f32), scale_corners(radius, s)) else { return };
+        self.clipped(dest, |pm, t, m| pm.fill_path(&path, &paint, FillRule::Winding, t, m));
+    }
+
     /// Draw a border inside `rect` with per-side widths.
     pub fn border(&mut self, rect: Rect, radius: Corners, widths: Edges, color: Color) {
         if widths.is_zero() || color.a <= 0.0 || rect.is_empty() {
@@ -634,6 +660,7 @@ pub fn render_cpu(scene: &Scene, pixmap: Option<Pixmap>, text: &mut TextSystem, 
             Cmd::Shadow { rect, radius, shadow } => r.box_shadow(*rect, *radius, shadow),
             Cmd::Path { path, transform, color, stroke, bounds } => r.path(path, *transform, *color, *stroke, *bounds),
             Cmd::Glyphs { glyphs, color } => r.glyphs(glyphs, *color),
+            Cmd::Image { source, crop, dest, radius, tint } => r.image(source, *crop, *dest, *radius, *tint),
             Cmd::PushClip { rect, radius } => r.push_clip(*rect, *radius),
             Cmd::PopClip => r.pop_clip(),
             Cmd::SetClips(c) => r.set_clips(c),

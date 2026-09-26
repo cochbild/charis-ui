@@ -50,6 +50,15 @@ pub(crate) enum Cmd {
         glyphs: Vec<GlyphInst>,
         color: Color,
     },
+    /// The `crop` part of an image (source units) drawn into `dest`
+    /// (logical px), with rounded corners.
+    Image {
+        source: crate::image::ImageSource,
+        crop: Rect,
+        dest: Rect,
+        radius: Corners,
+        tint: Option<Color>,
+    },
     /// Intersected clip rect (logical px).
     PushClip {
         rect: Rect,

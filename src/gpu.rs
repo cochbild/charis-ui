@@ -39,6 +39,7 @@ const KIND_BORDER: f32 = 1.0;
 const KIND_SHADOW: f32 = 2.0;
 const KIND_MASK: f32 = 3.0;
 const KIND_COLOR: f32 = 4.0;
+const KIND_IMAGE: f32 = 5.0;
 const FLAG_GRADIENT: f32 = 1.0;
 const FLAG_TEXT: f32 = 2.0;
 
@@ -142,6 +143,8 @@ pub struct GpuRenderer {
     color: Atlas,
     glyphs: HashMap<cosmic_text::CacheKey, Option<Slot>>,
     paths: HashMap<u64, (Option<Slot>, u64)>,
+    /// Image rasters in the color atlas.
+    images: HashMap<crate::image::RasterKey, Slot>,
     frame: u64,
     format: wgpu::TextureFormat,
     healthy: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -214,10 +217,16 @@ impl GpuRenderer {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -271,7 +280,15 @@ impl GpuRenderer {
         });
         let max = device.limits().max_texture_dimension_2d.min(4096);
         let mask = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::R8Unorm, 1, "rust-ui mask atlas");
-        let color = Atlas::new(&device, max.min(1024), wgpu::TextureFormat::Rgba8Unorm, 4, "rust-ui color atlas");
+        // Color emoji and images.
+        let color = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::Rgba8Unorm, 4, "rust-ui color atlas");
+        // Images drawn larger than their raster in the atlas (very big ones) stretch smoothly.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("rust-ui image sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let mask_view = mask.texture.create_view(&Default::default());
         let color_view = color.texture.create_view(&Default::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -281,6 +298,7 @@ impl GpuRenderer {
                 wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&mask_view) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&color_view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&sampler) },
             ],
         });
         Self {
@@ -294,6 +312,7 @@ impl GpuRenderer {
             color,
             glyphs: HashMap::new(),
             paths: HashMap::new(),
+            images: HashMap::new(),
             frame: 0,
             format,
             healthy,
@@ -440,6 +459,7 @@ impl GpuRenderer {
         self.color.clear();
         self.glyphs.clear();
         self.paths.clear();
+        self.images.clear();
     }
 
     /// Convert the scene into instances, rasterizing new glyphs/paths into the
@@ -551,6 +571,20 @@ impl GpuRenderer {
                         ..base
                     });
                 }
+                Cmd::Image { source, crop, dest, radius, tint } => {
+                    let r = phys(*dest);
+                    let (w, h) = (r[2].round().max(1.0), r[3].round().max(1.0));
+                    let Some(slot) = self.image_slot(source, *crop, w as u32, h as u32, *tint)? else { continue };
+                    out.push(Instance {
+                        rect: r,
+                        shape: r,
+                        radii: rad(*radius),
+                        uv: [slot.x as f32, slot.y as f32, slot.w as f32, slot.h as f32],
+                        color: [1.0, 1.0, 1.0, op],
+                        params: [KIND_IMAGE, 0.0, 0.0, 0.0],
+                        ..base
+                    });
+                }
                 Cmd::PushClip { rect, radius } => clips.push((*rect, *radius)),
                 Cmd::PopClip => {
                     clips.pop();
@@ -611,6 +645,32 @@ impl GpuRenderer {
             }
         };
         self.glyphs.insert(g.key, Some(slot));
+        Some(Some(slot))
+    }
+
+    /// Put an image raster in the color atlas (or reuse it). Images too big
+    /// for the atlas are rasterized smaller and stretched by the sampler.
+    /// `None` = atlas full; `Some(None)` = nothing to draw.
+    fn image_slot(
+        &mut self,
+        source: &crate::image::ImageSource,
+        crop: Rect,
+        w: u32,
+        h: u32,
+        tint: Option<Color>,
+    ) -> Option<Option<Slot>> {
+        let cap = self.color.size / 2;
+        let k = (cap as f32 / w.max(h) as f32).min(1.0);
+        let (w, h) = (((w as f32 * k).round() as u32).max(1), ((h as f32 * k).round() as u32).max(1));
+        let key = crate::image::key(source, crop, w, h, tint);
+        if let Some(s) = self.images.get(&key) {
+            return Some(Some(*s));
+        }
+        let Some(img) = crate::image::raster(source, crop, w, h, tint) else { return Some(None) };
+        let (x, y) = self.color.alloc(w, h)?;
+        self.color.upload(&self.queue, x, y, w, h, img.data());
+        let slot = Slot { x, y, w, h, left: 0, top: 0, color: true };
+        self.images.insert(key, slot);
         Some(Some(slot))
     }
 

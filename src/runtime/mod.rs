@@ -549,6 +549,11 @@ fn content_signature<M>(n: &Node<M>, scale: f32) -> u64 {
             2u8.hash(&mut h);
             n.text.size.to_bits().hash(&mut h);
         }
+        NodeContent::Image(spec) => {
+            3u8.hash(&mut h);
+            let (w, hh) = spec.source.size();
+            (w.to_bits(), hh.to_bits()).hash(&mut h);
+        }
         _ => return 0,
     }
     h.finish()
@@ -742,6 +747,7 @@ pub(crate) enum NodeContent {
     None,
     Text(TextSpec),
     Icon(Icon),
+    Image(crate::element::ImageSpec),
     Canvas(PaintFn),
     Input(InputSpec),
 }
@@ -1458,6 +1464,7 @@ impl<A: App> Runtime<A> {
             Content::None => (NodeContent::None, None),
             Content::Text(t) => (NodeContent::Text(t), None),
             Content::Icon(i) => (NodeContent::Icon(i), None),
+            Content::Image(i) => (NodeContent::Image(i), None),
             Content::Canvas(c) => (NodeContent::Canvas(c), None),
             Content::Input(i) => (NodeContent::Input(i), None),
             Content::Split(s) => (NodeContent::None, Some(s)),
@@ -2005,6 +2012,16 @@ impl<A: App> Runtime<A> {
                 }
                 ts.flex_shrink = 0.0;
             }
+            // Images: natural size, or the other side from their aspect ratio.
+            if let NodeContent::Image(spec) = &n.content {
+                let (w, h) = spec.source.size();
+                if ts.aspect_ratio.is_none() && w > 0.0 && h > 0.0 {
+                    ts.aspect_ratio = Some(w / h);
+                }
+                if n.style.width == Length::Auto && n.style.height == Length::Auto && n.style.grow == 0.0 {
+                    ts.size.width = tf::Dimension::length(w);
+                }
+            }
             let sig = content_signature(n, scale);
             let kids: Vec<tf::NodeId> = n.children.iter().map(|&c| frame.nodes[c].tnode).collect();
             let t = match self.lnodes.get_mut(&n.id) {
@@ -2459,6 +2476,7 @@ impl<A: App> Runtime<A> {
         if self.frame.nodes.is_empty() {
             self.render();
         }
+        let focus_before = self.focused;
         match ev {
             Event::PointerMove(p) => self.pointer_move(p),
             Event::PointerDown(p, b) => self.pointer_down(p, b),
@@ -2504,11 +2522,24 @@ impl<A: App> Runtime<A> {
                 }
             }
         }
+        self.notify_focus(focus_before);
         self.flush();
         // A composition belongs to the input that had focus when it started.
         if self.preedit.as_ref().is_some_and(|p| Some(p.node) != self.focused) {
             self.preedit = None;
             self.dirty = true;
+        }
+    }
+
+    /// Tell the elements that lost and got focus (`on_focus_change`).
+    fn notify_focus(&mut self, before: Option<u64>) {
+        if before == self.focused {
+            return;
+        }
+        for (id, on) in [(before, false), (self.focused, true)] {
+            if let Some(h) = id.and_then(|i| self.node_by_id(i)).and_then(|n| n.handlers.focus.clone()) {
+                self.queue.push(h(on));
+            }
         }
     }
 
@@ -4457,6 +4488,10 @@ fn paint_node<M>(
         NodeContent::Icon(icon) => {
             let stroke = 2.0 * (n.text.weight as f32 / 400.0).clamp(0.6, 1.6) * 0.9;
             c.icon(icon, cr, n.color, stroke);
+        }
+        NodeContent::Image(spec) => {
+            let radius = s.radius.shrink(s.border_width.top.max(s.border_width.left));
+            c.image(&spec.source, cr, spec.fit, radius, spec.tint);
         }
         NodeContent::Canvas(f) => {
             c.push_clip(r, Corners::ZERO);

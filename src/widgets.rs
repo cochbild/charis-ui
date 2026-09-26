@@ -326,6 +326,266 @@ pub fn checkbox<M: 'static>(label: impl Into<String>, checked: bool) -> Element<
         .class("checkbox")
 }
 
+/// A set of mutually exclusive options (radio buttons). Click one, or focus
+/// the group and use the arrow keys, which select the next or previous
+/// option (WAI-ARIA). Vertical; `.flex_row()` lays it out in a row.
+pub fn radio_group<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let options: Vec<String> = options.into_iter().map(Into::into).collect();
+    let n = options.len();
+    let on_select = Rc::new(on_select);
+    let mut group = col().gap(8.0).focusable().role(Role::RadioGroup).rounded(4.0).class("radio-group");
+    for (i, label) in options.into_iter().enumerate() {
+        let on = selected == Some(i);
+        let dot = div()
+            .center()
+            .square(16.0)
+            .rounded(8.0)
+            .shrink(0.0)
+            .transition(th.transition)
+            .bg(c.input)
+            .border(if on { 5.0 } else { 1.0 }, if on { c.accent } else { c.border_strong })
+            .class("radio-dot");
+        group = group.child(
+            row()
+                .items_center()
+                .gap(8.0)
+                .role(Role::RadioButton)
+                .aria_checked(on)
+                .aria_label(label.clone())
+                .cursor(Cursor::Pointer)
+                .on_click(on_select(i))
+                .child(dot)
+                .child(text(label).nowrap())
+                .class("radio"),
+        );
+    }
+    let f = on_select.clone();
+    group.on_key(move |k| {
+        if n == 0 {
+            return None;
+        }
+        let cur = selected.unwrap_or(0);
+        let next = match k.key {
+            Key::Down | Key::Right => (cur + 1) % n,
+            Key::Up | Key::Left => (cur + n - 1) % n,
+            Key::Home => 0,
+            Key::End => n - 1,
+            Key::Space if selected.is_none() => 0,
+            _ => return None,
+        };
+        Some(f(next))
+    })
+}
+
+/// A numeric field with − / + steppers (see [`NumberInput`]).
+///
+/// `id` keeps its editing state (the text being typed); it must be unique
+/// in the window.
+pub fn number_input<M: 'static>(
+    id: impl Into<String>,
+    value: f64,
+    on_change: impl Fn(f64) -> M + 'static,
+) -> NumberInput<M> {
+    NumberInput {
+        id: id.into(),
+        value,
+        on_change: Rc::new(on_change),
+        min: f64::NEG_INFINITY,
+        max: f64::INFINITY,
+        step: 1.0,
+        decimals: None,
+        label: None,
+    }
+}
+
+/// A numeric field: typing parses as you go, ↑/↓ (and the − / + buttons)
+/// step, PageUp/PageDown step by ten, Enter or leaving the field shows the
+/// value clamped and formatted again. Build it with [`number_input`].
+pub struct NumberInput<M> {
+    id: String,
+    value: f64,
+    on_change: Rc<dyn Fn(f64) -> M>,
+    min: f64,
+    max: f64,
+    step: f64,
+    decimals: Option<usize>,
+    label: Option<String>,
+}
+
+impl<M> NumberInput<M> {
+    /// The accessible name (what screen readers announce).
+    pub fn label(mut self, l: impl Into<String>) -> Self {
+        self.label = Some(l.into());
+        self
+    }
+    /// Allowed range (values are clamped to it).
+    pub fn range(mut self, min: f64, max: f64) -> Self {
+        (self.min, self.max) = (min.min(max), max.max(min));
+        self
+    }
+    /// Amount added or removed by the steppers and arrow keys.
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = step.abs().max(f64::EPSILON);
+        self
+    }
+    /// Digits shown after the decimal point (default: as many as needed).
+    pub fn decimals(mut self, n: usize) -> Self {
+        self.decimals = Some(n);
+        self
+    }
+}
+
+#[derive(Clone)]
+enum NumEv {
+    Edit(String),
+    Focus,
+    Blur,
+    Step(f64),
+    Commit,
+}
+
+impl<M: 'static> From<NumberInput<M>> for Element<M> {
+    fn from(n: NumberInput<M>) -> Element<M> {
+        let NumberInput { id, value, on_change, min, max, step, decimals, label } = n;
+        let label = label.unwrap_or_else(|| id.clone());
+        let fmt = move |v: f64| match decimals {
+            Some(d) => format!("{v:.d$}"),
+            None => {
+                // Up to 6 decimals, without trailing zeros.
+                let s = format!("{v:.6}");
+                let s = s.trim_end_matches('0').trim_end_matches('.');
+                if s == "-0" {
+                    "0".into()
+                } else {
+                    s.to_string()
+                }
+            }
+        };
+        let round = move |v: f64| match decimals {
+            Some(d) => {
+                let k = 10f64.powi(d as i32);
+                (v * k).round() / k
+            }
+            None => v,
+        };
+        let clamp = move |v: f64| round(v).clamp(min, max);
+        let key = ("number_input", id.clone());
+        crate::component::stateful(
+            key,
+            move |draft: &Option<String>| {
+                let th = theme();
+                let c = &th.colors;
+                let shown = draft.clone().unwrap_or_else(|| fmt(value));
+                let stepper = |i: Icon, d: f64, label: &str, enabled: bool| {
+                    div()
+                        .center()
+                        .w(26.0)
+                        .h_full()
+                        .shrink(0.0)
+                        .color(c.text_muted)
+                        .cursor(Cursor::Default)
+                        .role(Role::Button)
+                        .aria_label(label)
+                        .when(enabled, |b| b.hover(|s| s.bg(c.hover).color(c.text)).on_click(NumEv::Step(d)))
+                        .when(!enabled, |b| b.opacity(0.4))
+                        .child(icon(i).font_size(14.0))
+                };
+                row()
+                    .h(th.control_height)
+                    .min_w(110.0)
+                    .items(Align::Stretch)
+                    .bg(c.input)
+                    .border(1.0, c.border_strong)
+                    .rounded(th.radius)
+                    .clip()
+                    .child(stepper(Icon::Minus, -1.0, "Decrease", value > min))
+                    .child(
+                        text_input(shown, NumEv::Edit)
+                            .id(&format!("{id}/field"))
+                            .grow(1.0)
+                            .min_w(30.0)
+                            .border(0.0, Color::TRANSPARENT)
+                            .rounded(0.0)
+                            .h_full()
+                            .text_align(TextAlign::Center)
+                            .aria_label(label.clone())
+                            .on_submit(NumEv::Commit)
+                            .on_focus_change(|on| if on { NumEv::Focus } else { NumEv::Blur })
+                            .on_key_capture(|k| match k.key {
+                                Key::Up => Some(NumEv::Step(1.0)),
+                                Key::Down => Some(NumEv::Step(-1.0)),
+                                Key::PageUp => Some(NumEv::Step(10.0)),
+                                Key::PageDown => Some(NumEv::Step(-10.0)),
+                                _ => None,
+                            }),
+                    )
+                    .child(stepper(Icon::Plus, 1.0, "Increase", value < max))
+                    .class("number-input")
+            },
+            move |draft: &mut Option<String>, e| match e {
+                NumEv::Focus => None,
+                NumEv::Edit(t) => {
+                    let parsed = t.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite());
+                    *draft = Some(t);
+                    parsed.map(|v| on_change(v.clamp(min, max)))
+                }
+                NumEv::Step(k) => {
+                    *draft = None;
+                    let v = clamp(value + k * step);
+                    (v != value).then(|| on_change(v))
+                }
+                NumEv::Commit | NumEv::Blur => {
+                    *draft = None;
+                    let v = clamp(value);
+                    (v != value).then(|| on_change(v))
+                }
+            },
+        )
+    }
+}
+
+/// An image (a decoded [`Image`](crate::image::Image), or an
+/// [`Svg`](crate::image::Svg) with the `svg` feature). It takes its natural
+/// size, or keeps its aspect ratio when you set one side; `.fit()` says how
+/// it fills its box, `.rounded()` rounds it, `.aria_label()` describes it.
+pub fn image<M: 'static>(source: impl Into<crate::image::ImageSource>) -> Element<M> {
+    Element::new(Content::Image(ImageSpec { source: source.into(), fit: crate::image::Fit::Contain, tint: None }))
+        .role(Role::Image)
+        .class("image")
+}
+
+/// An SVG image; see [`image`]. `.tint(color)` recolors a monochrome one
+/// (like an icon).
+#[cfg(feature = "svg")]
+pub fn svg<M: 'static>(svg: &crate::image::Svg) -> Element<M> {
+    image(svg.clone())
+}
+
+impl<M> Element<M> {
+    /// How an [`image`] fills its box (CSS `object-fit`).
+    pub fn fit(mut self, fit: crate::image::Fit) -> Self {
+        if let Content::Image(spec) = &mut self.content {
+            spec.fit = fit;
+        }
+        self
+    }
+
+    /// Recolor an [`image`] with one color, keeping its shape (for
+    /// monochrome SVG icons).
+    pub fn tint(mut self, color: Color) -> Self {
+        if let Content::Image(spec) = &mut self.content {
+            spec.tint = Some(color);
+        }
+        self
+    }
+}
+
 /// An iOS/macOS-style toggle switch. Attach `.on_click(...)` to toggle.
 pub fn switch<M: 'static>(on: bool) -> Element<M> {
     let th = theme();

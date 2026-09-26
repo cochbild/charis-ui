@@ -333,7 +333,8 @@ useful for indicators, previews and reordering.
 
 `button`, `primary_button`, `ghost_button`, `danger_button`, `icon_button`, `text_input`
 (selection, word navigation, clipboard, undo/redo, IME composition, password mode), `text_area`, `search_input`, `checkbox`, `switch`,
-`slider`, `progress`, `segmented`, `tab_bar`, `tree_row`/`list_item`, `menu_bar`, `menu_panel`,
+`radio_group`, `number_input`, `image` and `svg` (with `.fit(Fit::Cover)`, `.rounded()`,
+`.tint()`), `slider`, `progress`, `segmented`, `tab_bar`, `tree_row`/`list_item`, `menu_bar`, `menu_panel`,
 `context_menu`, `modal`, `backdrop`, `titlebar`, `window_controls`, `status_bar`/`status_item`,
 `card`, `badge`, `tag`, `kbd`, `avatar`, `section_header`, `separator`, and `.tooltip(..)` on any
 element.

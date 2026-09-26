@@ -111,6 +111,30 @@ impl<'a> Canvas<'a> {
         self.scene.cmds.push(Cmd::Fill { rect, radius, fill: fill.clone() });
     }
 
+    /// Draw an image into `rect` (logical px) as `fit` says, with rounded
+    /// corners; `tint` recolors it (monochrome SVG icons).
+    pub fn image(
+        &mut self,
+        source: &crate::image::ImageSource,
+        rect: Rect,
+        fit: crate::image::Fit,
+        radius: Corners,
+        tint: Option<Color>,
+    ) {
+        let (dest, crop) = crate::image::place(fit, source.size(), rect);
+        if dest.is_empty() || crop.is_empty() || !self.visible(dest) {
+            return;
+        }
+        // Whole device pixels: the raster is drawn 1:1.
+        let s = self.scale;
+        let x0 = (dest.x * s).round();
+        let y0 = (dest.y * s).round();
+        let x1 = ((dest.x + dest.w) * s).round().max(x0 + 1.0);
+        let y1 = ((dest.y + dest.h) * s).round().max(y0 + 1.0);
+        let dest = Rect::new(x0 / s, y0 / s, (x1 - x0) / s, (y1 - y0) / s);
+        self.scene.cmds.push(Cmd::Image { source: source.clone(), crop, dest, radius, tint });
+    }
+
     /// Convenience: fill a rect with a solid color.
     pub fn fill_rect(&mut self, rect: Rect, color: Color) {
         self.fill_rrect(rect, Corners::ZERO, &Fill::Solid(color));

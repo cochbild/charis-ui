@@ -423,6 +423,8 @@ impl LmFast {
                 })
                 .hover(|s| s.bg(c.hover).color(c.text))
                 .on_click(Msg::Switch(s))
+                .focusable()
+                .aria_selected(active)
                 .child(icon(i).font_size(15.0).color(if active { c.accent } else { c.text_faint }))
                 .child(text(label).medium())
         };

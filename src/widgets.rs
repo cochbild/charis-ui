@@ -347,7 +347,13 @@ pub fn switch_row<M: 'static>(label: impl Into<String>, on: bool) -> Element<M> 
         .role(Role::Switch)
         .aria_checked(on)
         .aria_label(label.clone())
-        .child(switch(on).aria_hidden())
+        .focusable()
+        .child({
+            // The row is the control; the inner switch is just its visual.
+            let mut sw = switch(on).aria_hidden();
+            sw.focusable = false;
+            sw
+        })
         .child(text(label).nowrap())
 }
 
@@ -634,7 +640,8 @@ pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
             .on_click(t.on_select.clone())
             .cursor(Cursor::Default)
             .role(Role::Tab)
-            .aria_selected(t.active);
+            .aria_selected(t.active)
+            .focusable();
         if t.active {
             tab = tab.bg(c.surface).child(div().absolute().top(0.0).left(0.0).right(0.0).h(2.0).bg(c.accent));
             // Cover the bar's bottom border so the active tab merges into content.
@@ -694,6 +701,7 @@ pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M
             .on_click(msg)
             .role(Role::RadioButton)
             .aria_checked(active)
+            .focusable()
             .child(text(label).nowrap());
         b = if active {
             b.bg(c.elevated).color(c.text).shadows(th.shadow_sm.clone())
@@ -717,6 +725,7 @@ pub fn color_swatch<M: Clone + 'static>(color: Color, selected: bool) -> Element
         .shrink(0.0)
         .role(Role::RadioButton)
         .aria_checked(selected)
+        .focusable()
         .border(2.0, if selected { color } else { Color::TRANSPARENT })
         .transition(0.12)
         .hover(move |s| if selected { s } else { s.border_color(c.border_strong) })
@@ -944,6 +953,7 @@ pub fn menu_bar<M: Clone + 'static>(
             .role(Role::MenuItem)
             .aria_label(m.title.clone())
             .aria_expanded(is_open)
+            .focusable()
             .child(text(m.title).nowrap());
         if open.is_some() && !is_open {
             // While a menu is open, hovering another title switches to it.

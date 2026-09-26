@@ -248,7 +248,7 @@ impl<M: 'static> Table<M> {
                         Some(d) => d.flip(),
                         None => SortDir::Asc,
                     };
-                    cell = cell.transition(0.1).hover(|s| s.bg(c.hover)).on_click(f(ci, next));
+                    cell = cell.transition(0.1).hover(|s| s.bg(c.hover)).focusable().on_click(f(ci, next));
                 }
             }
             // The last column has nothing after it to resize against.

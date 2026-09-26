@@ -161,3 +161,28 @@ fn modal_dialogs_are_marked_modal_and_named() {
     act(&mut h, close, Action::Click, None);
     assert!(!h.rt.app.dialog);
 }
+
+#[test]
+fn keyboard_reaches_and_activates_built_in_controls() {
+    use rust_ui::Event;
+    let mut h = Headless::new(Form::default(), 500.0, 500.0, 1.0);
+    h.settle();
+    let tab = |h: &mut Headless<Form>| {
+        h.event(Event::Key(KeyEvent { key: Key::Tab, mods: Modifiers::default(), repeat: false }));
+    };
+    // Tab until the "Light" segment is focused, then press Space.
+    let mut reached = false;
+    for _ in 0..20 {
+        tab(&mut h);
+        let t = h.rt.accessibility_tree();
+        let focused = t.nodes.iter().find(|(id, _)| *id == t.focus).map(|(_, n)| n.clone());
+        if focused.is_some_and(|n| n.role() == Ak::RadioButton && n.label() == Some("Light")) {
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "Tab reaches the segmented control's options");
+    let saved = h.rt.app.saved;
+    h.event(Event::Key(KeyEvent { key: Key::Space, mods: Modifiers::default(), repeat: false }));
+    assert_eq!(h.rt.app.saved, saved + 1, "Space activates the focused option");
+}

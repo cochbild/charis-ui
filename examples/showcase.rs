@@ -9,14 +9,14 @@
 use rust_ui::prelude::*;
 
 #[derive(Clone, Copy, PartialEq)]
-enum Activity {
+pub enum Activity {
     Explorer,
     Search,
     Git,
     Extensions,
 }
 
-struct Nebula {
+pub struct Nebula {
     dark: bool,
     accent: usize,
     activity: Activity,
@@ -44,7 +44,7 @@ struct Nebula {
 }
 
 #[derive(Clone)]
-enum Msg {
+pub enum Msg {
     Activity(Activity),
     ToggleSidebar,
     TogglePanel,
@@ -82,7 +82,7 @@ const GRAYS: [(&str, GrayTint); 4] =
 const ACCENTS: [&str; 6] = ["#5b8cff", "#a371f7", "#3ecf8e", "#f5a524", "#f0616d", "#22d3ee"];
 
 impl Nebula {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             dark: true,
             accent: 0,
@@ -109,6 +109,12 @@ impl Nebula {
             show_modal: false,
             notifications: 3,
         }
+    }
+}
+
+impl Default for Nebula {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

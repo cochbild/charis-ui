@@ -905,6 +905,14 @@ pub struct Runtime<A: App> {
     native_menu: bool,
     /// Strokes of a key chord typed so far.
     chord: Vec<KeyEvent>,
+    /// Time of the last frame built (see `next_frame`).
+    built_at: f64,
+    /// Damage tracking: last frame's command fingerprints, and what the
+    /// last render redrew.
+    damage_items: Vec<Option<crate::damage::Item>>,
+    damage_key: Option<(Color, f32)>,
+    last_damage: crate::damage::Damage,
+    damage_tracking: bool,
     /// Text editing keys follow macOS conventions (Cmd for commands and
     /// line ends, Option for words). On by default on macOS.
     mac_keys: bool,
@@ -995,6 +1003,11 @@ impl<A: App> Runtime<A> {
             queue: Vec::new(),
             native_menu: false,
             chord: Vec::new(),
+            built_at: f64::NEG_INFINITY,
+            damage_items: Vec::new(),
+            damage_key: None,
+            last_damage: crate::damage::Damage::Full,
+            damage_tracking: std::env::var_os("RUI_NO_DAMAGE").is_none(),
             mac_keys: cfg!(target_os = "macos"),
             window_state: WindowInfo::DEFAULT,
             dialog_requests: Vec::new(),
@@ -1160,13 +1173,17 @@ impl<A: App> Runtime<A> {
             return Some(0.0);
         }
         let now = self.now;
-        let animating = self.transitions.values().any(|t| ((now - t.start) as f32) < t.dur)
-            || self.rect_anims.values().any(|a| ((now - a.start) as f32) < a.dur)
-            || self.splits.values().any(|s| s.collapse.iter().any(|a| a.is_animating(now)))
+        // Animating as of the last frame built: that frame wasn't the final
+        // one, so draw another (even if the animation has ended since, its
+        // end state must be shown).
+        let at = self.built_at;
+        let animating = self.transitions.values().any(|t| ((at - t.start) as f32) < t.dur)
+            || self.rect_anims.values().any(|a| ((at - a.start) as f32) < a.dur)
+            || self.splits.values().any(|s| s.collapse.iter().any(|a| a.is_animating(at)))
             || self.scrolls.values().any(|s| {
-                s.x.is_some_and(|a| a.is_animating(now))
-                    || s.y.is_some_and(|a| a.is_animating(now))
-                    || (now - s.last_activity) < 1.2
+                s.x.is_some_and(|a| a.is_animating(at))
+                    || s.y.is_some_and(|a| a.is_animating(at))
+                    || (at - s.last_activity) < 1.2
             });
         if animating {
             return Some(0.0);
@@ -1230,12 +1247,59 @@ impl<A: App> Runtime<A> {
 
     /// Rebuild, lay out and paint a frame on the CPU. Returns the rendered pixmap.
     pub fn render(&mut self) -> &Pixmap {
+        use crate::damage::Damage;
         self.render_scene();
         let pm = match &self.scene {
-            Some(scene) => crate::cpu::render_cpu(scene, self.pixmap.take(), &mut self.text, &mut self.paint_cache),
+            Some(scene) => {
+                // Redraw only what changed since the last frame.
+                let items = crate::damage::items(scene);
+                let same_target =
+                    self.pixmap.as_ref().is_some_and(|p| (p.width(), p.height()) == (scene.width, scene.height))
+                        && self.damage_key == Some((scene.background, scene.scale));
+                let damage = if self.damage_tracking && same_target {
+                    crate::damage::diff(&self.damage_items, &items, self.size.w, self.size.h)
+                } else {
+                    Damage::Full
+                };
+                let s = scene.scale;
+                let (damage, area) = match damage {
+                    Damage::Area(a) => {
+                        // Whole device pixels, so the redraw's clip is exact.
+                        let x0 = (a.x * s).floor();
+                        let y0 = (a.y * s).floor();
+                        let x1 = ((a.x + a.w) * s).ceil();
+                        let y1 = ((a.y + a.h) * s).ceil();
+                        let a = Rect::new(x0 / s, y0 / s, (x1 - x0) / s, (y1 - y0) / s);
+                        (Damage::Area(a), Some(a))
+                    }
+                    d => (d, None),
+                };
+                let pm = match (damage, self.pixmap.take()) {
+                    (Damage::None, Some(p)) => p,
+                    (_, prev) => {
+                        crate::cpu::render_cpu_area(scene, prev, &mut self.text, &mut self.paint_cache, area, &items)
+                    }
+                };
+                self.last_damage = damage;
+                self.damage_items = items;
+                self.damage_key = Some((scene.background, scene.scale));
+                pm
+            }
             None => Pixmap::new(1, 1).unwrap_or_else(|| unreachable!()),
         };
         self.pixmap.insert(pm)
+    }
+
+    /// What the last [`render`](Self::render) redrew: everything, nothing,
+    /// or an area (logical px). The window shell presents just that area.
+    pub fn last_damage(&self) -> crate::damage::Damage {
+        self.last_damage
+    }
+
+    /// Turn damage tracking off (every frame redrawn in full) or on (the
+    /// default; `RUI_NO_DAMAGE=1` turns it off too).
+    pub fn set_damage_tracking(&mut self, on: bool) {
+        self.damage_tracking = on;
     }
 
     /// Rebuild, lay out and record a frame's display list without rasterizing
@@ -1310,6 +1374,7 @@ impl<A: App> Runtime<A> {
     }
 
     fn build(&mut self) {
+        self.built_at = self.now;
         // The app has seen every emitted value by now; the view is authoritative again.
         self.pending_values.clear();
         set_window_info(self.window_info());

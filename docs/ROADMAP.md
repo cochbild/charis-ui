@@ -160,11 +160,11 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Virtualized table (`table`: sortable headers, resizable columns, selection).
 - [x] Virtualized tree (`tree::TreeState` over a lazy `TreeModel`): only on-screen rows are
       built, and keyboard navigation scrolls the selection into view.
-- [ ] Damage tracking on the CPU backend (repaint only dirty regions).
-- [ ] Frame budget targets:
-  - under 4 ms of CPU per frame for the showcase;
-  - a 100k-row table at 120fps;
-  - benchmarks tracked in CI.
+- [x] Damage tracking on the CPU backend (repaint only dirty regions), pixel-identical to full
+      redraws, presented with `present_with_damage`.
+- [x] Frame budget targets: under 4 ms of CPU per frame for the showcase (0.8–1.3 ms), a
+      100k-row table at 120 fps (0.5 ms scene, 1.4 ms on the CPU backend), measured by
+      `cargo bench --bench frames` (`--json` for tracking). Tracking them in CI comes with CI.
 
 **Exit:** benchmark suite published; no frame over 8 ms in the showcase on mid-range hardware.
 

@@ -13,6 +13,41 @@ the build container, not a fast desktop.
 A 200,000-row `virtual_list` costs about the same per frame as a 100-row one (0.6 ms vs 0.24 ms),
 because only the rows near the viewport exist.
 
+## Frame budgets
+
+`cargo bench --bench frames` measures CPU time per frame against the roadmap's budgets (release
+build, this container's CPU; `-- --json out.json` writes the numbers for tracking). "scene" is
+the work the GPU backend needs (view, layout, paint recording); "cpu" adds rasterizing on the CPU
+backend.
+
+| Scenario | Median | p95 | Budget |
+|---|---|---|---|
+| showcase: unchanged frame, scene | 0.79 ms | 1.13 ms | 4.0 ms ✓ |
+| showcase: unchanged frame, cpu | 0.90 ms | 1.41 ms | 4.0 ms ✓ |
+| showcase: hovering, scene | 0.83 ms | 1.04 ms | 4.0 ms ✓ |
+| showcase: hovering, cpu | 1.31 ms | 1.58 ms | 8.0 ms ✓ |
+| showcase: full redraw, cpu | 6.38 ms | 8.45 ms | — |
+| 100k-row table: scrolling, scene | 0.48 ms | 0.64 ms | 8.3 ms ✓ |
+| 100k-row table: scrolling, cpu | 1.37 ms | 1.97 ms | 8.3 ms ✓ |
+| 100k-row tree: scrolling, scene | 0.48 ms | 0.61 ms | 8.3 ms ✓ |
+
+## Damage tracking (CPU backend)
+
+The CPU renderer redraws only what changed. Every drawing command gets a fingerprint (its content
+plus the clip and opacity it's drawn under) and bounds; commands are matched against last frame's,
+and the bounding box of those that appeared, disappeared or changed drawing order is redrawn:
+- into its own pixmap, offset like a layer, with a margin, so every drawing decision is the same
+  as in a full frame;
+- then copied over last frame's pixels.
+
+Frames where nothing changed skip rasterizing entirely. The window presents only the redrawn
+rectangle (softbuffer's `present_with_damage`, keeping older back buffers up to date by their
+age). Tests check that partial frames are pixel-identical to full ones through hover, typing,
+overlays, scrolling, fades, shadows and images, and through 600 random interactions at four
+scales. `RUI_NO_DAMAGE=1` or `Runtime::set_damage_tracking(false)` turns it off.
+
+With it, a hover frame in the showcase costs 1.3 ms instead of a 6.4 ms full redraw.
+
 ## What makes it scale
 
 - **Incremental layout.** The taffy layout tree persists between frames, keyed by element id.

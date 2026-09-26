@@ -199,6 +199,9 @@ struct Win<A: App> {
     /// What the shell knows about the window (native buttons, backdrop);
     /// full screen is refreshed every frame.
     state: crate::runtime::WindowInfo,
+    /// What the last few CPU frames redrew (newest first), to update
+    /// softbuffer's older back buffers.
+    damage_history: Vec<crate::damage::Damage>,
     /// Where the macOS traffic lights go (frameless windows).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     traffic_lights: Option<(f32, f32)>,
@@ -357,6 +360,7 @@ impl<A: App> Shell<A> {
             ime: (false, None),
             state: crate::runtime::WindowInfo::default(),
             traffic_lights: None,
+            damage_history: Vec::new(),
             #[cfg(feature = "accessibility")]
             a11y: None,
         }
@@ -758,7 +762,12 @@ impl<A: App> Shell<A> {
                 }
             }
             Presenter::Cpu { surface, .. } => {
-                let pm = w.rt.render();
+                use crate::damage::Damage;
+                let damage = {
+                    let _ = w.rt.render();
+                    w.rt.last_damage()
+                };
+                let Some(pm) = w.rt.pixmap() else { return };
                 if surface.resize(pw, ph).is_err() {
                     return;
                 }
@@ -767,14 +776,51 @@ impl<A: App> Shell<A> {
                 let pmw = pm.width() as usize;
                 let pmh = pm.height() as usize;
                 let (bw, bh) = (pw.get() as usize, ph.get() as usize);
-                for y in 0..bh.min(pmh) {
-                    let row = &data[y * pmw * 4..(y * pmw + pmw.min(bw)) * 4];
-                    let out = &mut buf[y * bw..y * bw + pmw.min(bw)];
+                // The buffer holds the frame from `age` frames ago (0 =
+                // unknown): bring it up to date with the damage since.
+                w.damage_history.insert(0, damage);
+                w.damage_history.truncate(4);
+                let age = buf.age() as usize;
+                let mut region: Option<(usize, usize, usize, usize)> = None;
+                let mut full = age == 0 || age > w.damage_history.len();
+                for d in w.damage_history.iter().take(age) {
+                    match d {
+                        Damage::Full => full = true,
+                        Damage::None => {}
+                        Damage::Area(a) => {
+                            let r = (
+                                (a.x * scale).floor().max(0.0) as usize,
+                                (a.y * scale).floor().max(0.0) as usize,
+                                ((a.right() * scale).ceil() as usize).min(bw.min(pmw)),
+                                ((a.bottom() * scale).ceil() as usize).min(bh.min(pmh)),
+                            );
+                            region = Some(match region {
+                                Some(o) => (o.0.min(r.0), o.1.min(r.1), o.2.max(r.2), o.3.max(r.3)),
+                                None => r,
+                            });
+                        }
+                    }
+                }
+                let (x0, y0, x1, y1) =
+                    if full { (0, 0, pmw.min(bw), bh.min(pmh)) } else { region.unwrap_or((0, 0, 0, 0)) };
+                for y in y0..y1 {
+                    let row = &data[(y * pmw + x0) * 4..(y * pmw + x1) * 4];
+                    let out = &mut buf[y * bw + x0..y * bw + x1];
                     for (o, px) in out.iter_mut().zip(row.chunks_exact(4)) {
                         *o = (px[0] as u32) << 16 | (px[1] as u32) << 8 | px[2] as u32;
                     }
                 }
-                let _ = buf.present();
+                if full {
+                    let _ = buf.present();
+                } else if let (Some(w_), Some(h_)) =
+                    (NonZeroU32::new((x1 - x0) as u32), NonZeroU32::new((y1 - y0) as u32))
+                {
+                    let r = softbuffer::Rect { x: x0 as u32, y: y0 as u32, width: w_, height: h_ };
+                    let _ = buf.present_with_damage(&[r]);
+                } else {
+                    // Nothing changed.
+                    let _ = buf.present_with_damage(&[]);
+                }
             }
         }
         g.window.set_cursor(map_cursor(w.rt.cursor()));

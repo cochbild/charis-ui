@@ -52,6 +52,7 @@ pub mod color;
 pub mod commands;
 pub mod component;
 pub mod cpu;
+pub mod damage;
 pub mod dialog;
 pub mod dock;
 pub mod edit;
@@ -98,7 +99,8 @@ pub use icons::Icon;
 pub use markdown::markdown;
 pub use paint::Canvas;
 pub use runtime::{
-    window_info, App, ChromeHit, ChromeMap, ClipboardContent, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest,
+    window_info, App, ChromeHit, ChromeMap, ClipboardContent, Cx, Event, MouseButton, Runtime, WindowInfo,
+    WindowRequest,
 };
 pub use semantics::{Role, Semantics};
 pub use style::*;

@@ -469,8 +469,9 @@ impl<'a> Raster<'a> {
             .or_insert_with_key(|k| (build_shadow_mask(k.w as f32, k.h as f32, &k.radius, blur_px, pad), frame));
         entry.1 = frame;
         let mask = &entry.0;
-        let x0 = (r.x * s - self.origin.0).round() as i32 - mask.pad as i32;
-        let y0 = (r.y * s - self.origin.1).round() as i32 - mask.pad as i32;
+        // Round in window space: the same pixel whatever the target's origin.
+        let x0 = ((r.x * s).round() - self.origin.0) as i32 - mask.pad as i32;
+        let y0 = ((r.y * s).round() - self.origin.1) as i32 - mask.pad as i32;
         let clip = self.clips.last().map(|c| {
             let p = scale_rect(c.rect, s);
             Rect::new(p.x - self.origin.0, p.y - self.origin.1, p.w, p.h)
@@ -643,16 +644,73 @@ const MAX_DIM: u32 = 16384;
 
 /// Rasterize a scene on the CPU.
 pub fn render_cpu(scene: &Scene, pixmap: Option<Pixmap>, text: &mut TextSystem, cache: &mut PaintCache) -> Pixmap {
+    render_cpu_area(scene, pixmap, text, cache, None, &[])
+}
+
+/// Rasterize `scene`; with `area` (logical px), only that part, on top of
+/// `pixmap`'s previous frame. `bounds` are the commands' bounds (from
+/// damage tracking), to skip those outside the area.
+pub(crate) fn render_cpu_area(
+    scene: &Scene,
+    pixmap: Option<Pixmap>,
+    text: &mut TextSystem,
+    cache: &mut PaintCache,
+    area: Option<Rect>,
+    bounds: &[Option<crate::damage::Item>],
+) -> Pixmap {
     cache.begin_frame();
+    let reuse = pixmap.as_ref().is_some_and(|p| p.width() == scene.width && p.height() == scene.height);
+    let area = area.filter(|_| reuse);
     let mut pm = match pixmap {
-        Some(p) if p.width() == scene.width && p.height() == scene.height => p,
+        Some(p) if reuse => p,
         _ => Pixmap::new(scene.width.clamp(1, MAX_DIM), scene.height.clamp(1, MAX_DIM))
             .or_else(|| Pixmap::new(1, 1))
             .unwrap_or_else(|| unreachable!("a 1x1 pixmap always allocates")),
     };
-    pm.fill(scene.background.to_skia());
-    let mut r = Raster::new(pm, scene.scale, text, cache);
-    for cmd in &scene.cmds {
+    // Redrawing part of the window: draw into a pixmap covering just that
+    // part, offset like a layer, so every drawing decision (clips, scratch
+    // pixmaps, rounding) is the same as in a full frame, then copy it over
+    // last frame's pixels.
+    //
+    // The pixmap has a margin: anti-aliased edges of shapes cut by a
+    // pixmap's border come out slightly different, so only the inside is
+    // copied back.
+    const MARGIN: u32 = 16;
+    let mut inner = (0, 0, 0, 0);
+    let sub = area.and_then(|a| {
+        let s = scene.scale;
+        let (pw, ph) = (pm.width(), pm.height());
+        let x0 = ((a.x * s).floor().max(0.0) as u32).min(pw);
+        let y0 = ((a.y * s).floor().max(0.0) as u32).min(ph);
+        let x1 = ((a.right() * s).ceil().max(0.0) as u32).min(pw);
+        let y1 = ((a.bottom() * s).ceil().max(0.0) as u32).min(ph);
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        inner = (x0, y0, x1, y1);
+        let (sx0, sy0) = (x0.saturating_sub(MARGIN), y0.saturating_sub(MARGIN));
+        let (sx1, sy1) = ((x1 + MARGIN).min(pw), (y1 + MARGIN).min(ph));
+        let mut sub = Pixmap::new(sx1 - sx0, sy1 - sy0)?;
+        sub.fill(scene.background.to_skia());
+        Some((sub, sx0, sy0))
+    });
+    let (target, origin, base) = match sub {
+        Some((sub, x0, y0)) => (sub, (x0 as f32, y0 as f32), Some(pm)),
+        None => {
+            pm.fill(scene.background.to_skia());
+            (pm, (0.0, 0.0), None)
+        }
+    };
+    let mut r = Raster::new(target, scene.scale, text, cache);
+    r.origin = origin;
+    let area = base.as_ref().and(area);
+    for (i, cmd) in scene.cmds.iter().enumerate() {
+        // Outside the redrawn area: nothing to do.
+        if let (Some(a), Some(Some(it))) = (area, bounds.get(i)) {
+            if it.bounds.intersect(&a).is_empty() {
+                continue;
+            }
+        }
         match cmd {
             Cmd::Fill { rect, radius, fill } => r.fill_rrect(*rect, *radius, fill),
             Cmd::Border { rect, radius, widths, color } => r.border(*rect, *radius, *widths, *color),
@@ -668,5 +726,23 @@ pub fn render_cpu(scene: &Scene, pixmap: Option<Pixmap>, text: &mut TextSystem, 
             Cmd::PopLayer => r.pop_layer(),
         }
     }
-    r.finish()
+    let out = r.finish();
+    match base {
+        Some(mut pm) => {
+            // Copy the redrawn rows over the old frame.
+            let (x0, y0, x1, y1) = inner;
+            let (ox, oy) = (origin.0 as u32, origin.1 as u32);
+            let (dw, sw) = (pm.width() as usize * 4, out.width() as usize * 4);
+            let n = (x1 - x0) as usize * 4;
+            let src = out.data();
+            let dst = pm.data_mut();
+            for y in y0..y1 {
+                let d = y as usize * dw + x0 as usize * 4;
+                let s = (y - oy) as usize * sw + (x0 - ox) as usize * 4;
+                dst[d..d + n].copy_from_slice(&src[s..s + n]);
+            }
+            pm
+        }
+        None => out,
+    }
 }

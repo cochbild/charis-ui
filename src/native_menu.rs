@@ -215,8 +215,26 @@ pub(crate) fn build<M: Clone>(menus: &[Menu<M>], app_name: &str) -> NativeMenu<M
         }
         let _ = menu.append(&app);
     }
+    // macOS: the standard Window menu items (Minimize ⌘M, Zoom, Enter Full
+    // Screen ⌃⌘F, Close ⌘W) head the app's Window menu, or a Window menu of
+    // their own.
+    let window_items = || -> [PredefinedMenuItem; 5] {
+        [
+            PredefinedMenuItem::minimize(None),
+            PredefinedMenuItem::maximize(None),
+            PredefinedMenuItem::fullscreen(None),
+            PredefinedMenuItem::close_window(None),
+            PredefinedMenuItem::separator(),
+        ]
+    };
+    let has_window = menus.iter().any(|m| m.title == "Window");
     for m in menus {
         let sub = Submenu::with_id(b.id(), &m.title, true);
+        if cfg!(target_os = "macos") && m.title == "Window" {
+            for i in window_items() {
+                let _ = sub.append(&i);
+            }
+        }
         b.fill(&sub, &m.items);
         #[cfg(target_os = "macos")]
         match m.title.as_str() {
@@ -224,6 +242,16 @@ pub(crate) fn build<M: Clone>(menus: &[Menu<M>], app_name: &str) -> NativeMenu<M
             "Help" => sub.set_as_help_menu_for_nsapp(),
             _ => {}
         }
+        let _ = menu.append(&sub);
+    }
+    if cfg!(target_os = "macos") && !has_window {
+        let sub = Submenu::new("Window", true);
+        let items = window_items();
+        for i in &items[..4] {
+            let _ = sub.append(i);
+        }
+        #[cfg(target_os = "macos")]
+        sub.set_as_windows_menu_for_nsapp();
         let _ = menu.append(&sub);
     }
     NativeMenu { menu, msgs: b.msgs, sig: signature(menus) }

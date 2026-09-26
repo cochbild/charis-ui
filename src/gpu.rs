@@ -340,11 +340,13 @@ impl GpuRenderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
+                        // Premultiplied, so a transparent background (a
+                        // window with a system backdrop) composes correctly.
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg.r as f64,
-                            g: bg.g as f64,
-                            b: bg.b as f64,
-                            a: 1.0,
+                            r: (bg.r * bg.a) as f64,
+                            g: (bg.g * bg.a) as f64,
+                            b: (bg.b * bg.a) as f64,
+                            a: bg.a as f64,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -682,11 +684,22 @@ pub struct GpuSurface {
 
 impl GpuSurface {
     /// Create a surface for a window. Returns `None` if no suitable GPU is available.
-    pub fn new<W>(window: std::sync::Arc<W>, width: u32, height: u32) -> Option<Self>
+    ///
+    /// `transparent`: the window shows a system backdrop through transparent
+    /// pixels (Windows Mica / Acrylic). That takes a DirectComposition
+    /// swapchain on DX12 with premultiplied alpha; `None` if unavailable.
+    pub fn new<W>(window: std::sync::Arc<W>, width: u32, height: u32, transparent: bool) -> Option<Self>
     where
         W: wgpu::WindowHandle + wgpu::wgt::WgpuHasDisplayHandle + 'static,
     {
-        let desc = wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(window.clone()));
+        let mut desc = wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(window.clone()));
+        if transparent {
+            if !cfg!(windows) {
+                return None;
+            }
+            desc.backends = wgpu::Backends::DX12;
+            desc.backend_options.dx12.presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
+        }
         let instance = wgpu::Instance::new(desc);
         let surface = instance.create_surface(window).ok()?;
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -710,6 +723,11 @@ impl GpuSurface {
         } else {
             caps.present_modes[0]
         };
+        let alpha_mode = if transparent {
+            caps.alpha_modes.iter().copied().find(|m| *m == wgpu::CompositeAlphaMode::PreMultiplied)?
+        } else {
+            caps.alpha_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -717,7 +735,7 @@ impl GpuSurface {
             height: height.max(1),
             present_mode,
             desired_maximum_frame_latency: 2,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             color_space: wgpu::SurfaceColorSpace::Auto,
         };

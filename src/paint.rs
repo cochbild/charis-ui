@@ -90,11 +90,24 @@ impl<'a> Canvas<'a> {
 
     // ------------------------------------------------------------ primitives
 
+    /// At a fractional scale (125%, 150%…), logical pixel edges fall
+    /// between device pixels: returns the scale then, for snapping.
+    fn fractional(&self) -> Option<f32> {
+        let s = self.scale;
+        ((s - s.round()).abs() > 0.01).then_some(s)
+    }
+
     /// Fill a (rounded) rectangle.
     pub fn fill_rrect(&mut self, rect: Rect, radius: Corners, fill: &Fill) {
         if fill.is_transparent() || rect.is_empty() || !self.visible(rect) {
             return;
         }
+        // Square-cornered fills get whole device pixels at fractional
+        // scales, so edges and 1 px lines stay crisp instead of blending.
+        let rect = match self.fractional() {
+            Some(s) if radius.is_zero() => snap_rect(rect, s),
+            _ => rect,
+        };
         self.scene.cmds.push(Cmd::Fill { rect, radius, fill: fill.clone() });
     }
 
@@ -111,6 +124,26 @@ impl<'a> Canvas<'a> {
     /// Draw a border inside `rect` with per-side widths.
     pub fn border(&mut self, rect: Rect, radius: Corners, widths: Edges, color: Color) {
         if widths.is_zero() || color.a <= 0.0 || rect.is_empty() || !self.visible(rect) {
+            return;
+        }
+        if let (Some(s), true) = (self.fractional(), radius.is_zero()) {
+            // Each side as a whole number of device pixels (at least one),
+            // from the snapped outer edge, so every line has the same
+            // thickness wherever it lands.
+            let o = snap_rect(rect, s);
+            let px = |w: f32| if w > 0.0 { (w * s).round().max(1.0) / s } else { 0.0 };
+            let (t, b, l, r) = (px(widths.top), px(widths.bottom), px(widths.left), px(widths.right));
+            let sides = [
+                Rect::new(o.x, o.y, o.w, t),
+                Rect::new(o.x, o.bottom() - b, o.w, b),
+                Rect::new(o.x, o.y + t, l, o.h - t - b),
+                Rect::new(o.right() - r, o.y + t, r, o.h - t - b),
+            ];
+            for side in sides {
+                if side.w > 0.0 && side.h > 0.0 {
+                    self.scene.cmds.push(Cmd::Fill { rect: side, radius: Corners::ZERO, fill: Fill::Solid(color) });
+                }
+            }
             return;
         }
         self.scene.cmds.push(Cmd::Border { rect, radius, widths, color });
@@ -261,4 +294,14 @@ impl<'a> Canvas<'a> {
         }
         self.scene.cmds.push(Cmd::Shadow { rect, radius, shadow: *sh });
     }
+}
+
+/// `r` with its edges moved to the nearest device pixel boundaries (keeping
+/// at least one device pixel of size).
+fn snap_rect(r: Rect, s: f32) -> Rect {
+    let x0 = (r.x * s).round();
+    let y0 = (r.y * s).round();
+    let x1 = ((r.x + r.w) * s).round().max(x0 + 1.0);
+    let y1 = ((r.y + r.h) * s).round().max(y0 + 1.0);
+    Rect::new(x0 / s, y0 / s, (x1 - x0) / s, (y1 - y0) / s)
 }

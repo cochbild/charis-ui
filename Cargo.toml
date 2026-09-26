@@ -15,7 +15,7 @@ name = "rust_ui"
 
 [features]
 default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs", "native-menu"]
-window = ["dep:winit", "dep:softbuffer"]
+window = ["dep:winit", "dep:softbuffer", "dep:objc2", "dep:objc2-app-kit"]
 bundled-fonts = []
 clipboard = ["dep:arboard"]
 # Native file dialogs (Windows common item dialog, macOS panels, XDG portal on Linux).
@@ -52,6 +52,20 @@ rfd = { version = "0.17", optional = true }
 
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 muda = { version = "0.20", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Traffic light placement for frameless windows (same versions winit's
+# dependencies use).
+objc2 = { version = "0.6", optional = true }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "NSButton",
+    "NSControl",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+    "objc2-core-foundation",
+] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

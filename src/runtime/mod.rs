@@ -111,6 +111,7 @@ pub enum WindowRequest {
     DragResize(ResizeEdge),
     Minimize,
     ToggleMaximize,
+    ToggleFullscreen,
     Close,
     SetTitle(String),
     SetClipboard(String),
@@ -123,6 +124,8 @@ pub(crate) enum ScrollCmd {
     To(f32),
     /// Bring row `i` of a [`virtual_list`] to the top.
     ToItem(usize),
+    /// Scroll a [`virtual_list`] just enough to show row `i`.
+    Reveal(usize),
 }
 
 /// Answers file dialogs without showing them (headless runs).
@@ -177,6 +180,11 @@ impl<M> Cx<M> {
     pub fn toggle_maximize(&mut self) {
         self.requests.push(WindowRequest::ToggleMaximize);
     }
+    /// Enter or leave full screen (the native full-screen space on macOS,
+    /// borderless full screen elsewhere). See [`WindowInfo::fullscreen`].
+    pub fn toggle_fullscreen(&mut self) {
+        self.requests.push(WindowRequest::ToggleFullscreen);
+    }
     pub fn set_title(&mut self, t: impl Into<String>) {
         self.requests.push(WindowRequest::SetTitle(t.into()));
     }
@@ -201,6 +209,11 @@ impl<M> Cx<M> {
     /// Scroll a [`virtual_list`] with this `.id(...)` so row `index` is at the top.
     pub fn scroll_to_item(&mut self, id: &str, index: usize) {
         self.scrolls.push((crate::element::global_id(id), ScrollCmd::ToItem(index)));
+    }
+    /// Scroll a [`virtual_list`] with this `.id(...)` just enough to show row
+    /// `index` (no scrolling if it's visible), e.g. after keyboard navigation.
+    pub fn scroll_item_into_view(&mut self, id: &str, index: usize) {
+        self.scrolls.push((crate::element::global_id(id), ScrollCmd::Reveal(index)));
     }
     /// A handle for sending messages from other threads.
     pub fn proxy(&self) -> Proxy<M> {
@@ -234,14 +247,49 @@ impl<M: Send + 'static> Cx<M> {
 }
 
 /// Information about the window, readable from views via [`window_info`].
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindowInfo {
     pub maximized: bool,
     pub focused: bool,
+    /// In full screen ([`Cx::toggle_fullscreen`]; native full screen on macOS).
+    pub fullscreen: bool,
+    /// The OS draws the window buttons over the app's title bar (the macOS
+    /// traffic lights of a frameless window): custom title bars leave
+    /// [`buttons_inset`](Self::buttons_inset) free at their left and draw
+    /// no buttons of their own.
+    pub native_buttons: bool,
+    /// Width (logical px) to keep clear at the title bar's left for native
+    /// buttons; 0 when there are none (or in full screen, where macOS hides
+    /// them).
+    pub buttons_inset: f32,
+    /// A system backdrop material (Windows Mica or Acrylic) shows through
+    /// the window background: surfaces painted with transparent or
+    /// translucent colors reveal it.
+    pub backdrop: bool,
+    /// The display's scale factor (1.0, 1.25, 2.0…).
+    pub scale: f32,
+}
+
+impl WindowInfo {
+    const DEFAULT: WindowInfo = WindowInfo {
+        maximized: false,
+        focused: true,
+        fullscreen: false,
+        native_buttons: false,
+        buttons_inset: 0.0,
+        backdrop: false,
+        scale: 1.0,
+    };
+}
+
+impl Default for WindowInfo {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
 }
 
 thread_local! {
-    static WINDOW_INFO: std::cell::Cell<WindowInfo> = const { std::cell::Cell::new(WindowInfo { maximized: false, focused: true }) };
+    static WINDOW_INFO: std::cell::Cell<WindowInfo> = const { std::cell::Cell::new(WindowInfo::DEFAULT) };
 }
 
 /// The current window state (for drawing maximize/restore icons, etc.).
@@ -829,6 +877,12 @@ pub struct Runtime<A: App> {
     native_menu: bool,
     /// Strokes of a key chord typed so far.
     chord: Vec<KeyEvent>,
+    /// Text editing keys follow macOS conventions (Cmd for commands and
+    /// line ends, Option for words). On by default on macOS.
+    mac_keys: bool,
+    /// Window state set by the shell (fullscreen, native buttons, backdrop);
+    /// `maximized`, `focused` and `scale` come from the runtime itself.
+    window_state: WindowInfo,
     dialog_requests: Vec<(u64, DialogRequest)>,
     dialogs_pending: HashMap<u64, DialogCb<A::Msg>>,
     next_dialog: u64,
@@ -907,6 +961,8 @@ impl<A: App> Runtime<A> {
             queue: Vec::new(),
             native_menu: false,
             chord: Vec::new(),
+            mac_keys: cfg!(target_os = "macos"),
+            window_state: WindowInfo::DEFAULT,
             dialog_requests: Vec::new(),
             dialogs_pending: HashMap::default(),
             next_dialog: 0,
@@ -1218,6 +1274,7 @@ impl<A: App> Runtime<A> {
     fn build(&mut self) {
         // The app has seen every emitted value by now; the view is authoritative again.
         self.pending_values.clear();
+        set_window_info(self.window_info());
         let prev_theme = std::mem::replace(&mut self.theme, Rc::new(self.app.theme()));
         theme::set_theme(self.theme.clone());
         self.memo_begin(&prev_theme, self.built_scale);
@@ -1226,11 +1283,13 @@ impl<A: App> Runtime<A> {
         let view = self.app.view();
         let t_view = t0.elapsed();
         let th = self.theme.clone();
+        // With a system backdrop the window background is see-through.
+        let bg = if self.window_state.backdrop { Color::TRANSPARENT } else { th.colors.background };
         let root = div()
             .id("__root")
             .size(self.size.w, self.size.h)
             .flex_col()
-            .bg(th.colors.background)
+            .bg(bg)
             .color(th.colors.text)
             .font_size(th.font_size)
             .font(th.font.clone())
@@ -1519,6 +1578,16 @@ impl<A: App> Runtime<A> {
             Some(ScrollCmd::ToEnd) => total - vh,
             Some(ScrollCmd::To(y)) => y - pad_top,
             Some(ScrollCmd::ToItem(i)) => vs.pos(i) - pad_top,
+            Some(ScrollCmd::Reveal(i)) => {
+                let (p, h, cur) = (vs.pos(i), vs.h(i), offset - pad_top);
+                if p < cur {
+                    p
+                } else if p + h > cur + vh - pad_top {
+                    p + h - vh + pad_top
+                } else {
+                    cur
+                }
+            }
             None if pinned => total - vh,
             None => offset - pad_top,
         }
@@ -2141,6 +2210,20 @@ impl<A: App> Runtime<A> {
                         ScrollCmd::ToEnd => max.y,
                         ScrollCmd::To(v) => v.clamp(0.0, max.y),
                         ScrollCmd::ToItem(k) => self.virt.get(&n.id).map_or(0.0, |vs| vs.pos(k)).clamp(0.0, max.y),
+                        ScrollCmd::Reveal(k) => {
+                            let cur = a.target();
+                            let vh = l.size.height - l.padding.top - l.padding.bottom;
+                            let (p, h) = self.virt.get(&n.id).map_or((0.0, 0.0), |vs| (vs.pos(k), vs.h(k)));
+                            let p = p + l.padding.top;
+                            if p < cur {
+                                p
+                            } else if p + h > cur + vh {
+                                p + h - vh
+                            } else {
+                                cur
+                            }
+                            .clamp(0.0, max.y)
+                        }
                     };
                     if self.virt.contains_key(&n.id) {
                         // Virtual lists jump: the rows in between were never
@@ -2198,7 +2281,8 @@ impl<A: App> Runtime<A> {
         let ph = (self.size.h * self.scale).round().max(1.0) as u32;
         let mut order = Vec::new();
         let th = self.theme.clone();
-        let scene = Scene::new(pw, ph, self.scale, th.colors.background);
+        let clear = if self.window_state.backdrop { Color::TRANSPARENT } else { th.colors.background };
+        let scene = Scene::new(pw, ph, self.scale, clear);
         let mut canvas = Canvas::new(scene, &mut self.text);
         let ctx = PaintCtx {
             nodes: &self.frame.nodes,
@@ -2345,7 +2429,7 @@ impl<A: App> Runtime<A> {
     }
 
     fn resize_edge(&self, p: Point) -> Option<ResizeEdge> {
-        if !self.frameless || self.maximized {
+        if !self.frameless || self.maximized || self.window_state.fullscreen {
             return None;
         }
         let b = RESIZE_BORDER;
@@ -3471,8 +3555,12 @@ impl<A: App> Runtime<A> {
         st.blink_start = self.now;
         let mut sel = st.sel;
         let before = sel;
-        let cmd = k.mods.command();
-        let word = if cfg!(target_os = "macos") { k.mods.alt } else { k.mods.ctrl };
+        let mac = self.mac_keys;
+        let cmd = if mac { k.mods.meta } else { k.mods.ctrl };
+        let word = if mac { k.mods.alt } else { k.mods.ctrl };
+        // Logical line bounds around the cursor (for macOS Cmd+←/→/⌫).
+        let line_start = value[..sel.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = value[sel.cursor..].find('\n').map(|i| sel.cursor + i).unwrap_or(value.len());
         let mut new_value: Option<String> = None;
         // How the edit is recorded for undo (None = undo/redo itself).
         let mut kind = Some(EditKind::Other);
@@ -3483,6 +3571,20 @@ impl<A: App> Runtime<A> {
             }
         };
         match &k.key {
+            // macOS: Cmd+arrows go to the line's or text's ends, Cmd+⌫
+            // deletes to the line start.
+            Key::Left if mac && cmd => mv(&mut sel, line_start, k.mods.shift),
+            Key::Right if mac && cmd => mv(&mut sel, line_end, k.mods.shift),
+            Key::Up if mac && cmd => mv(&mut sel, 0, k.mods.shift),
+            Key::Down if mac && cmd => mv(&mut sel, value.len(), k.mods.shift),
+            Key::Backspace if mac && cmd => {
+                if sel.is_empty() {
+                    sel.anchor = line_start;
+                }
+                let (v, s) = edit::replace(&value, sel, "");
+                sel = s;
+                new_value = Some(v);
+            }
             Key::Left => {
                 let to = if !sel.is_empty() && !k.mods.shift {
                     sel.range().0
@@ -3798,9 +3900,60 @@ impl<A: App> Runtime<A> {
         self.frame.nodes.len()
     }
 
+    /// Use macOS text editing keys (Cmd+C/V/X/A/Z, Cmd+←/→ to the line's
+    /// ends, Cmd+↑/↓ to the text's, Cmd+⌫, Option+←/→/⌫ by word) or the
+    /// Windows/Linux ones (Ctrl). The default follows the platform; tests
+    /// can switch it.
+    pub fn set_mac_keys(&mut self, on: bool) {
+        self.mac_keys = on;
+    }
+
+    /// Use the platform's UI font ([`TextSystem::system_ui_family`]) for
+    /// [`FontFamily::Ui`] instead of the bundled
+    /// Inter. Returns the family, or `None` (nothing changes) if it isn't
+    /// installed.
+    pub fn use_system_font(&mut self) -> Option<String> {
+        let f = self.text.system_ui_family()?;
+        self.text.set_ui_family(&f);
+        self.invalidate();
+        Some(f)
+    }
+
+    /// This window's state, as views see it through [`window_info`].
+    pub fn window_info(&self) -> WindowInfo {
+        WindowInfo {
+            maximized: self.maximized,
+            focused: self.window_focused,
+            scale: self.scale,
+            buttons_inset: if self.window_state.native_buttons && !self.window_state.fullscreen {
+                self.window_state.buttons_inset
+            } else {
+                0.0
+            },
+            ..self.window_state
+        }
+    }
+
+    /// Set the window state the shell knows about (full screen, native
+    /// buttons, backdrop); also for tests of title bars. `maximized`,
+    /// `focused` and `scale` are tracked by the runtime and ignored here.
+    pub fn set_window_state(&mut self, info: WindowInfo) {
+        if info != self.window_state {
+            self.window_state = info;
+            self.dirty = true;
+            self.invalidate();
+        }
+    }
+
     /// Scroll a [`virtual_list`] (by `.id`) so row `index` is at the top.
     pub fn scroll_to_item(&mut self, id: &str, index: usize) {
         self.pending_scrolls.push((global_id(id), ScrollCmd::ToItem(index)));
+        self.dirty = true;
+    }
+
+    /// Scroll a [`virtual_list`] (by `.id`) just enough to show row `index`.
+    pub fn scroll_item_into_view(&mut self, id: &str, index: usize) {
+        self.pending_scrolls.push((global_id(id), ScrollCmd::Reveal(index)));
         self.dirty = true;
     }
 

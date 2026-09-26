@@ -82,6 +82,7 @@ pub mod table;
 pub mod text;
 pub mod theme;
 pub mod toolwin;
+pub mod tree;
 pub mod widgets;
 #[cfg(feature = "window")]
 pub mod window;
@@ -106,7 +107,7 @@ pub use theme::{
 };
 pub use widgets::*;
 #[cfg(feature = "window")]
-pub use window::{run, WindowOptions};
+pub use window::{run, Backdrop, WindowOptions};
 
 /// Everything needed to build an app.
 pub mod prelude {
@@ -142,5 +143,5 @@ pub mod prelude {
     pub use crate::theme::{theme, Accent, Density, GrayTint, Palette, Theme, ThemeConfig};
     pub use crate::widgets::*;
     #[cfg(feature = "window")]
-    pub use crate::window::{run, WindowOptions};
+    pub use crate::window::{run, Backdrop, WindowOptions};
 }

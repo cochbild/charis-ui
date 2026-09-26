@@ -39,6 +39,36 @@ pub struct WindowOptions {
     /// (off by default; apps usually draw [`menubar`](crate::widgets::menubar)
     /// in their title bar). Ignored on Linux.
     pub native_menu: bool,
+    /// A system backdrop material behind the window (Windows 11). See
+    /// [`Backdrop`].
+    pub backdrop: Backdrop,
+    /// macOS, frameless windows: where the traffic lights go (the close
+    /// button's top-left, logical px). By default they're 14 px from the
+    /// left, centered in the theme's title bar.
+    pub traffic_lights: Option<(f32, f32)>,
+    /// Use the platform's UI font (Segoe UI Variable, SF Pro, the desktop's
+    /// font on Linux) instead of the bundled Inter, when installed.
+    pub system_font: bool,
+}
+
+/// A system backdrop material shown behind a window, where the app paints
+/// transparent or translucent colors (Windows 11; ignored elsewhere).
+///
+/// It needs the GPU renderer (a DirectComposition swapchain): if that isn't
+/// available, the window opens without it. Views can check
+/// [`window_info().backdrop`](crate::runtime::WindowInfo::backdrop) and
+/// make their title bar or sidebars translucent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Backdrop {
+    #[default]
+    None,
+    /// Mica: the desktop wallpaper, blurred and tinted (main windows).
+    Mica,
+    /// Acrylic: a blurred, translucent view of what's behind (transient
+    /// windows, flyouts).
+    Acrylic,
+    /// Mica Alt: a stronger tint, for windows with tabs in the title bar.
+    Tabbed,
 }
 
 impl Default for WindowOptions {
@@ -54,6 +84,9 @@ impl Default for WindowOptions {
             icon: None,
             fonts: Vec::new(),
             native_menu: cfg!(target_os = "macos"),
+            backdrop: Backdrop::None,
+            traffic_lights: None,
+            system_font: false,
         }
     }
 }
@@ -102,8 +135,31 @@ impl WindowOptions {
         self
     }
 
+    /// Draw no OS title bar; the app draws its own (see
+    /// [`WindowOptions::frameless`](Self::frameless)). On macOS the window
+    /// keeps its traffic lights over the app's title bar (see
+    /// [`traffic_lights`](Self::traffic_lights)).
     pub fn frameless(mut self, f: bool) -> Self {
         self.frameless = f;
+        self
+    }
+
+    /// See [`Backdrop`].
+    pub fn backdrop(mut self, b: Backdrop) -> Self {
+        self.backdrop = b;
+        self
+    }
+
+    /// macOS, frameless windows: put the traffic lights' close button at
+    /// (x, y), logical px from the window's top-left.
+    pub fn traffic_lights(mut self, x: f32, y: f32) -> Self {
+        self.traffic_lights = Some((x, y));
+        self
+    }
+
+    /// See [`WindowOptions::system_font`](Self::system_font).
+    pub fn system_font(mut self, on: bool) -> Self {
+        self.system_font = on;
         self
     }
 }
@@ -140,6 +196,12 @@ struct Win<A: App> {
     dark: Option<bool>,
     /// Last IME state sent to the OS (enabled, caret area).
     ime: (bool, Option<crate::geometry::Rect>),
+    /// What the shell knows about the window (native buttons, backdrop);
+    /// full screen is refreshed every frame.
+    state: crate::runtime::WindowInfo,
+    /// Where the macOS traffic lights go (frameless windows).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    traffic_lights: Option<(f32, f32)>,
     /// Screen reader bridge (created with the window).
     #[cfg(feature = "accessibility")]
     a11y: Option<accesskit_winit::Adapter>,
@@ -268,6 +330,9 @@ impl<A: App> Shell<A> {
             rt.load_font(f.clone());
         }
         rt.frameless = opts.frameless;
+        if opts.system_font {
+            rt.use_system_font();
+        }
         // macOS menus handle their own key equivalents.
         rt.set_native_menu(self.native_menu && cfg!(target_os = "macos"));
         let proxy = self.proxy.clone();
@@ -289,6 +354,8 @@ impl<A: App> Shell<A> {
             native_chrome: false,
             dark: None,
             ime: (false, None),
+            state: crate::runtime::WindowInfo::default(),
+            traffic_lights: None,
             #[cfg(feature = "accessibility")]
             a11y: None,
         }
@@ -310,14 +377,33 @@ impl<A: App> Shell<A> {
             .with_inner_size(LogicalSize::new(o.width as f64, o.height as f64))
             .with_min_inner_size(LogicalSize::new(o.min_width as f64, o.min_height as f64))
             // On Windows, frameless windows keep their native styles (for snap,
-            // shadow and resizing); the platform layer hides the frame.
-            .with_decorations(!o.frameless || cfg!(windows))
+            // shadow and resizing); the platform layer hides the frame. On
+            // macOS the title bar stays, transparent, for the traffic lights.
+            .with_decorations(!o.frameless || cfg!(windows) || cfg!(target_os = "macos"))
             .with_resizable(o.resizable)
             .with_window_icon(
                 o.icon.as_ref().and_then(|(w, h, d)| winit::window::Icon::from_rgba(d.clone(), *w, *h).ok()),
             );
         if let Some((x, y)) = w.position {
             attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
+        }
+        #[cfg(target_os = "macos")]
+        if o.frameless {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            attrs = attrs.with_titlebar_transparent(true).with_title_hidden(true).with_fullsize_content_view(true);
+        }
+        let backdrop = o.backdrop != Backdrop::None && cfg!(windows);
+        #[cfg(windows)]
+        if backdrop {
+            use winit::platform::windows::{BackdropType, WindowAttributesExtWindows};
+            let kind = match o.backdrop {
+                Backdrop::Mica => BackdropType::MainWindow,
+                Backdrop::Acrylic => BackdropType::TransientWindow,
+                Backdrop::Tabbed => BackdropType::TabbedWindow,
+                Backdrop::None => BackdropType::Auto,
+            };
+            // Composition swapchain: no GDI redirection surface under it.
+            attrs = attrs.with_transparent(true).with_no_redirection_bitmap(true).with_system_backdrop(kind);
         }
         // The accessibility adapter must be attached before the window is first shown.
         #[cfg(feature = "accessibility")]
@@ -344,7 +430,21 @@ impl<A: App> Shell<A> {
             // The OS now handles edge resizing and dragging.
             w.rt.frameless = false;
         }
-        let presenter = match create_presenter(&window, true) {
+        let mut state = crate::runtime::WindowInfo::default();
+        #[cfg(target_os = "macos")]
+        if w.opts.frameless {
+            // Native title bar (transparent): the OS resizes the window at its
+            // edges and draws the traffic lights where the app wants them.
+            w.native_chrome = true;
+            w.rt.frameless = false;
+            let bar = crate::runtime::App::theme(&*self.app.borrow()).titlebar_height;
+            let (x, y) = w.opts.traffic_lights.unwrap_or((14.0, ((bar - 14.0) / 2.0).max(0.0)));
+            crate::platform::macos::position_traffic_lights(&window, x, y);
+            w.traffic_lights = Some((x, y));
+            state.native_buttons = true;
+            state.buttons_inset = crate::platform::macos::buttons_inset(x);
+        }
+        let presenter = match create_presenter(&window, true, backdrop) {
             Ok(p) => p,
             Err(e) => {
                 if w.key.is_none() {
@@ -354,6 +454,25 @@ impl<A: App> Shell<A> {
                 return;
             }
         };
+        if backdrop {
+            if matches!(presenter, Presenter::Cpu { .. }) {
+                // No composition swapchain (no GPU): the window can't be
+                // transparent. Open it again without the backdrop.
+                w.opts.backdrop = Backdrop::None;
+                drop(presenter);
+                drop(window);
+                #[cfg(feature = "accessibility")]
+                {
+                    w.a11y = None;
+                }
+                self.open(el, i);
+                return;
+            }
+            crate::platform::extend_frame_into_client(&window);
+            state.backdrop = true;
+        }
+        w.state = state;
+        w.rt.set_window_state(state);
         window.request_redraw();
         w.gfx = Some(Gfx { window, presenter });
     }
@@ -545,6 +664,11 @@ impl<A: App> Shell<A> {
                     }
                     WindowRequest::Minimize => g.window.set_minimized(true),
                     WindowRequest::ToggleMaximize => g.window.set_maximized(!g.window.is_maximized()),
+                    WindowRequest::ToggleFullscreen => g.window.set_fullscreen(match g.window.fullscreen() {
+                        Some(_) => None,
+                        // Native full screen (its own Space) on macOS.
+                        None => Some(winit::window::Fullscreen::Borderless(None)),
+                    }),
                     WindowRequest::Close => {
                         if i == 0 {
                             self.exiting = true;
@@ -576,7 +700,8 @@ impl<A: App> Shell<A> {
         let (Some(pw), Some(ph)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else { return };
         let scale = g.window.scale_factor() as f32;
         w.rt.maximized = g.window.is_maximized();
-        crate::runtime::set_window_info(crate::runtime::WindowInfo { maximized: w.rt.maximized, focused: true });
+        let state = crate::runtime::WindowInfo { fullscreen: g.window.fullscreen().is_some(), ..w.state };
+        w.rt.set_window_state(state);
         w.rt.resize(Size::new(size.width as f32 / scale, size.height as f32 / scale), scale);
         if let Ok(p) = g.window.inner_position() {
             let s = scale as f64;
@@ -648,10 +773,14 @@ impl<A: App> Shell<A> {
         if w.gpu_failed {
             w.gpu_failed = false;
             if let Some(g) = &mut w.gfx {
-                if let Ok(p) = create_presenter(&g.window, false) {
+                if let Ok(p) = create_presenter(&g.window, false, false) {
                     g.presenter = p;
                     g.window.request_redraw();
                 }
+                // The CPU renderer is opaque: no backdrop any more. (A window
+                // created for a backdrop has no GDI surface, so it stays blank
+                // until reopened; this only happens when the GPU is lost.)
+                w.state.backdrop = false;
             }
         }
     }
@@ -670,11 +799,14 @@ fn hwnd(w: &Window) -> Option<isize> {
 /// GPU by default; falls back to the CPU renderer when no adapter is
 /// available or `RUI_RENDERER=cpu` is set.
 #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
-fn create_presenter(window: &Arc<Window>, allow_gpu: bool) -> Result<Presenter, String> {
+/// The GPU presenter when possible (`transparent`: with a see-through
+/// swapchain for a system backdrop), else the CPU one.
+#[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
+fn create_presenter(window: &Arc<Window>, allow_gpu: bool, transparent: bool) -> Result<Presenter, String> {
     #[cfg(feature = "gpu")]
     if allow_gpu && std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
         let size = window.inner_size();
-        if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height) {
+        if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height, transparent) {
             if std::env::var("RUI_PROFILE").is_ok() {
                 eprintln!("rust-ui: GPU renderer on {}", gs.renderer.adapter_name);
             }
@@ -798,7 +930,14 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
             WindowEvent::CloseRequested => self.close(el, i),
             WindowEvent::RedrawRequested => self.redraw(i),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                // A new scale re-lays out and re-rasterizes everything (text
+                // and icons are cached per scale), keeping the logical size.
                 self.wins[i].rt.invalidate();
+                // AppKit puts the traffic lights back after resizes and full screen.
+                #[cfg(target_os = "macos")]
+                if let (Some((x, y)), Some(g)) = (self.wins[i].traffic_lights, &self.wins[i].gfx) {
+                    crate::platform::macos::position_traffic_lights(&g.window, x, y);
+                }
                 // Redraw synchronously for smooth live resizing.
                 self.redraw(i);
             }

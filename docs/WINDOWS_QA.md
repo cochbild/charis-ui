@@ -109,6 +109,18 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
       only after the dock's panels reached their minimum, and gets its width back when the
       window is wide again.
 
+**Backdrop, full screen, fonts, tree** (dock example)
+- [ ] `cargo run --release --example dock -- --mica` on Windows 11: the title bar and the tool
+      window stripes show Mica (the wallpaper's tint shows through); panels stay opaque.
+      Without a GPU (`$env:RUI_RENDERER="cpu"`), the window opens normally, without Mica.
+- [ ] F11 toggles full screen; the frame edges don't resize while in full screen.
+- [ ] `-- --system-font`: text uses Segoe UI Variable.
+- [ ] Move the window between monitors with different scaling (100 % and 150 %): text and 1 px
+      lines stay sharp on both, and the window keeps its size in logical pixels.
+- [ ] Alt+1 opens the Project tree; expand "generated (100000 files)", scroll with the wheel and
+      the keyboard (↓, PageDown, End); it stays smooth. Double-clicking a file opens it in the
+      editor group.
+
 **File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
 - [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
       "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.

@@ -5,6 +5,11 @@
 //! a tab for its commands. Window ▸ Layouts switches between saved layouts.
 //! Every command has a rebindable key: Ctrl+Shift+P (⇧⌘P) searches them,
 //! Ctrl+K Ctrl+S (⌘K ⌘S) edits the bindings, Ctrl+1…6 focus panel 1…6.
+//! Alt+1 opens the Project tree (a virtualized tree with a 100,000-file
+//! folder). F11 (⌃⌘F on macOS) toggles full screen.
+//!
+//! Options: `--mica` (Windows 11 Mica backdrop), `--system-font` (the
+//! platform's UI font instead of Inter).
 //!
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
@@ -14,6 +19,7 @@ use rust_ui::dock::{DockSpace, DockSpaceMsg};
 use rust_ui::layouts::{LayoutMsg, Layouts};
 use rust_ui::prelude::*;
 use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+use rust_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Panel {
@@ -54,6 +60,7 @@ impl Panel {
 /// Tool windows in the edge stripes (JetBrains style), around the dock.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Tool {
+    Project,
     Bookmarks,
     Git,
     Build,
@@ -63,6 +70,7 @@ enum Tool {
 impl Tool {
     fn icon(&self) -> Icon {
         match self {
+            Tool::Project => Icon::Folder,
             Tool::Bookmarks => Icon::Star,
             Tool::Git => Icon::GitBranch,
             Tool::Build => Icon::Play,
@@ -73,6 +81,7 @@ impl Tool {
 
 fn tools() -> ToolWindows<Tool> {
     ToolWindows::new()
+        .add(Tool::Project, Side::Left, ToolMode::AutoHide)
         .add(Tool::Bookmarks, Side::Left, ToolMode::AutoHide)
         .add(Tool::Git, Side::Right, ToolMode::AutoHide)
         .add(Tool::Todo, Side::Right, ToolMode::Pinned)
@@ -83,6 +92,7 @@ fn tool_content(t: &Tool) -> Element<Msg> {
     let th = theme();
     let c = &th.colors;
     match t {
+        Tool::Project => div(), // drawn by DockDemo::tool_view (it needs the tree state)
         Tool::Bookmarks => col().p(10.0).gap(2.0).children(
             ["main.rs:12  fn main", "dock.rs:88  fn update", "theme.rs:210  Palette"]
                 .map(|b| tree_row(0, None, Some(Icon::Star), b, false)),
@@ -114,6 +124,54 @@ struct DockDemo {
     palette: CommandPalette,
     keys: KeymapEditor,
     show_keys: bool,
+    files: std::rc::Rc<Repo>,
+    project: TreeState<String>,
+}
+
+/// A made-up repository for the Project tree, with one very large folder.
+struct Repo;
+
+const BIG: usize = 100_000;
+
+impl TreeModel for Repo {
+    type Id = String;
+    fn children(&self, parent: Option<&String>) -> Vec<String> {
+        let names: &[&str] = match parent.map(String::as_str) {
+            None => &["rust-ui"],
+            Some("rust-ui") => {
+                &["rust-ui/src", "rust-ui/examples", "rust-ui/generated", "rust-ui/Cargo.toml", "rust-ui/README.md"]
+            }
+            Some("rust-ui/src") => {
+                &["rust-ui/src/dock.rs", "rust-ui/src/tree.rs", "rust-ui/src/widgets.rs", "rust-ui/src/runtime"]
+            }
+            Some("rust-ui/src/runtime") => &["rust-ui/src/runtime/mod.rs", "rust-ui/src/runtime/memo.rs"],
+            Some("rust-ui/examples") => &["rust-ui/examples/dock.rs", "rust-ui/examples/showcase.rs"],
+            Some("rust-ui/generated") => {
+                return (0..BIG).map(|i| format!("rust-ui/generated/file_{i:06}.rs")).collect()
+            }
+            _ => &[],
+        };
+        names.iter().map(|s| s.to_string()).collect()
+    }
+    fn has_children(&self, id: &String) -> bool {
+        !id.contains('.')
+    }
+    fn label(&self, id: &String) -> String {
+        match id.rsplit('/').next() {
+            Some("generated") => format!("generated ({BIG} files)"),
+            Some(n) => n.to_string(),
+            None => id.clone(),
+        }
+    }
+    fn icon(&self, id: &String, _: bool) -> Option<Icon> {
+        Some(if !id.contains('.') {
+            Icon::Folder
+        } else if id.ends_with(".rs") {
+            Icon::Code
+        } else {
+            Icon::File
+        })
+    }
 }
 
 /// What a saved layout holds: the dock (including floating windows) and
@@ -139,6 +197,13 @@ impl DockDemo {
             palette: CommandPalette::new(),
             keys: KeymapEditor::new(),
             show_keys: false,
+            files: std::rc::Rc::new(Repo),
+            project: {
+                let mut t = TreeState::new("project-tree");
+                t.expand("rust-ui".into());
+                t.expand("rust-ui/src".into());
+                t
+            },
         }
     }
 }
@@ -158,6 +223,8 @@ enum Msg {
     /// Focus the active tab of dock group N (from 0).
     FocusPanel(usize),
     ToggleTool(Tool),
+    Project(TreeMsg<String>),
+    ToggleFullscreen,
 }
 
 impl App for DockDemo {
@@ -184,6 +251,15 @@ impl App for DockDemo {
                 }
             }
             Msg::ToggleTool(t) => self.tools.update(ToolMsg::Toggle(t)),
+            Msg::ToggleFullscreen => cx.toggle_fullscreen(),
+            Msg::Project(m) => {
+                // Opening a file opens it in the editor group.
+                if let Some(TreeEvent::Activated(path)) = self.project.update(m, &*self.files, cx) {
+                    let name: &'static str =
+                        Box::leak(path.rsplit('/').next().unwrap_or("file").to_string().into_boxed_str());
+                    self.dock.open(Panel::Editor(name));
+                }
+            }
             Msg::Dock(m) => self.dock.update(m),
             Msg::Theme => self.dark = !self.dark,
             Msg::ResetLayout => {
@@ -220,6 +296,10 @@ impl App for DockDemo {
                 .key("Mod+Shift+T")
                 .checked(self.dark),
             Command::new("view.resetLayout", "Reset Layout", Msg::ResetLayout).category("View").key("Mod+Shift+R"),
+            Command::new("view.fullscreen", "Full Screen", Msg::ToggleFullscreen)
+                .category("View")
+                .key(if cfg!(target_os = "macos") { "Ctrl+Cmd+F" } else { "F11" })
+                .checked(window_info().fullscreen),
             Command::new("view.hideToolWindows", "Hide All Tool Windows", Msg::Tool(ToolMsg::HideAll))
                 .category("View")
                 .key("Mod+Shift+F12"),
@@ -240,9 +320,13 @@ impl App for DockDemo {
             );
         }
         // JetBrains-style Alt+number for tool windows.
-        for (t, key) in
-            [(Tool::Bookmarks, "Alt+2"), (Tool::Build, "Alt+4"), (Tool::Todo, "Alt+6"), (Tool::Git, "Alt+9")]
-        {
+        for (t, key) in [
+            (Tool::Project, "Alt+1"),
+            (Tool::Bookmarks, "Alt+2"),
+            (Tool::Build, "Alt+4"),
+            (Tool::Todo, "Alt+6"),
+            (Tool::Git, "Alt+9"),
+        ] {
             list.push(
                 Command::new(format!("view.tool.{t:?}"), format!("{t:?}"), Msg::ToggleTool(t))
                     .category("Tool Window")
@@ -273,9 +357,10 @@ impl App for DockDemo {
                     MenuItem::Separator,
                     c.menu_item("view.toggleTheme"),
                     c.menu_item("view.resetLayout"),
+                    c.menu_item("view.fullscreen"),
                     MenuItem::submenu(
                         "Tool Windows",
-                        ["Bookmarks", "Build", "Todo", "Git"]
+                        ["Project", "Bookmarks", "Build", "Todo", "Git"]
                             .iter()
                             .map(|t| c.menu_item(&format!("view.tool.{t}")))
                             .collect(),
@@ -335,7 +420,7 @@ impl App for DockDemo {
             window_info().maximized,
         );
         let dock = self.dock.view_with_icons(None, Panel::title, |p| Some(p.icon()), panel_content, Msg::Dock);
-        let body = self.tools.view(dock, |t| format!("{t:?}"), Tool::icon, tool_content, Msg::Tool);
+        let body = self.tools.view(dock, |t| format!("{t:?}"), Tool::icon, |t| self.tool_view(t), Msg::Tool);
         let cmds = self.commands();
         // A chord's first stroke, like VS Code's status bar hint.
         let status = status_bar().child(text(match pending_chord() {
@@ -469,6 +554,14 @@ fn initial() -> DockSpace<Panel> {
 }
 
 impl DockDemo {
+    /// A tool window's content (the Project tree needs the app's state).
+    fn tool_view(&self, t: &Tool) -> Element<Msg> {
+        match t {
+            Tool::Project => self.project.view(&self.files, Msg::Project),
+            other => tool_content(other),
+        }
+    }
+
     /// The keyboard shortcuts editor, in a large dialog.
     fn keys_dialog(&self, cmds: &Commands<Msg>) -> Element<Msg> {
         let th = theme();
@@ -644,6 +737,20 @@ fn main() {
             println!("saved {out}");
             return;
         }
+        if state.as_deref() == Some("tree") {
+            // The Project tree with the 100k-file folder open, near its end.
+            h.rt.send(Msg::ToggleTool(Tool::Project));
+            h.rt.app.project.expand("rust-ui/generated".into());
+            h.rt.app.project.select(Some("rust-ui/generated/file_099990.rs".into()));
+            h.rt.invalidate();
+            h.settle();
+            let i = h.rt.app.project.index_of(&*h.rt.app.files, &"rust-ui/generated/file_099990.rs".into()).unwrap();
+            h.rt.scroll_item_into_view("project-tree", i + 8);
+            h.settle();
+            h.save_png(&out).expect("save");
+            println!("saved {out}");
+            return;
+        }
         if state.as_deref() == Some("maximize") {
             let t = h.rt.rect_of_text("Terminal").unwrap().center();
             h.click(t.x, t.y);
@@ -672,5 +779,12 @@ fn main() {
         println!("saved {out} and {after}");
         return;
     }
-    rust_ui::run(DockDemo::new(), WindowOptions::new("Dock demo").size(1280.0, 800.0).frameless(true)).expect("run");
+    let mut opts = WindowOptions::new("Dock demo").size(1280.0, 800.0).frameless(true);
+    if args.iter().any(|a| a == "--mica") {
+        opts = opts.backdrop(Backdrop::Mica);
+    }
+    if args.iter().any(|a| a == "--system-font") {
+        opts = opts.system_font(true);
+    }
+    rust_ui::run(DockDemo::new(), opts).expect("run");
 }

@@ -82,6 +82,17 @@ pub(crate) fn install(window: &winit::window::Window, chrome: SharedChrome) -> b
     true
 }
 
+/// Extend the DWM frame over the whole client area, so a system backdrop
+/// (Mica, Acrylic) shows through transparent pixels.
+pub(crate) fn extend_frame_into_client(window: &winit::window::Window) {
+    let Some(hwnd) = hwnd_of(window) else { return };
+    let margins = MARGINS { cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1 };
+    // SAFETY: valid HWND owned by winit on this thread.
+    unsafe {
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
+}
+
 pub(crate) fn set_dark_mode(window: &winit::window::Window, dark: bool) {
     let Some(hwnd) = hwnd_of(window) else { return };
     let v: i32 = dark as i32;

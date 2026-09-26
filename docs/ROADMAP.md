@@ -73,18 +73,19 @@ final name.
   - hit testing for the custom title bar (maximize-button hover shows the Snap Layouts flyout);
   - rounded corners and shadow on Windows 11;
   - dark or light system menus that follow the theme.
-- [ ] Windows: Mica/Acrylic backdrop (optional).
-- [ ] macOS:
-  - transparent title bar with traffic lights positioned by the app;
-  - native full-screen;
-  - Cmd shortcuts;
-  - Retina scaling.
-- [ ] Linux:
-  - Wayland client-side decorations with xdg-decoration negotiation;
-  - fractional scaling;
-  - X11 edge resize.
-- [ ] Per-monitor DPI changes: re-layout and a crisp re-raster of glyphs and icons.
-- [ ] A system font per platform (Segoe UI Variable, SF Pro, Cantarell/Inter) as an option.
+- [x] Windows: Mica/Acrylic/Tabbed backdrop (`WindowOptions::backdrop`) through a
+      DirectComposition swapchain with premultiplied alpha, with a fallback to an opaque window
+      without a GPU.
+- [x] macOS: a transparent title bar with traffic lights placed by the app
+      (`traffic_lights`) and re-placed after resizes; native full screen
+      (`Cx::toggle_fullscreen`); Cmd editing keys and standard Window menu items; Retina
+      scaling.
+- [x] Linux: winit's xdg-decoration negotiation with Adwaita CSD fallback, themed from the app;
+      fractional scaling with device-pixel snapping; frameless edge resizing on X11 and Wayland.
+- [x] Per-monitor DPI changes: re-layout and re-raster, identical to a window opened at that
+      scale (tested at 1×, 1.25×, 1.5×, 1.75× and 2×).
+- [x] A system font per platform (Segoe UI Variable, SF Pro, the desktop's font on Linux) as an
+      option (`WindowOptions::system_font`).
 
 **Exit:** a manual QA checklist signed off on Windows 11, macOS 15 and Ubuntu (GNOME Wayland plus
 X11). Screenshots go in the docs.
@@ -154,7 +155,8 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Virtualized list (`virtual_list`: variable heights, anchored scrolling, follow-end,
   scroll-to-item).
 - [x] Virtualized table (`table`: sortable headers, resizable columns, selection).
-- [ ] Virtualized tree.
+- [x] Virtualized tree (`tree::TreeState` over a lazy `TreeModel`): only on-screen rows are
+      built, and keyboard navigation scrolls the selection into view.
 - [ ] Damage tracking on the CPU backend (repaint only dirty regions).
 - [ ] Frame budget targets:
   - under 4 ms of CPU per frame for the showcase;

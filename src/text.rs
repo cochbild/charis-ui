@@ -248,6 +248,35 @@ impl TextSystem {
         self.cache.clear();
     }
 
+    /// The platform's UI font, if installed: Segoe UI Variable (Segoe UI
+    /// before Windows 11) on Windows, the system font (SF Pro) on macOS,
+    /// and the desktop's font on Linux (Adwaita Sans or Cantarell on GNOME,
+    /// Noto Sans on KDE, Ubuntu on Ubuntu).
+    pub fn system_ui_family(&self) -> Option<String> {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+        let candidates: Vec<&str> = if cfg!(windows) {
+            vec!["Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI"]
+        } else if cfg!(target_os = "macos") {
+            vec![
+                "SF Pro Text",
+                "SF Pro",
+                ".SF NS Text",
+                ".SF NS",
+                "System Font",
+                ".AppleSystemUIFont",
+                "Helvetica Neue",
+            ]
+        } else if desktop.contains("kde") {
+            vec!["Noto Sans", "Inter", "DejaVu Sans"]
+        } else if desktop.contains("ubuntu") {
+            vec!["Ubuntu Sans", "Ubuntu", "Cantarell", "Noto Sans", "DejaVu Sans"]
+        } else {
+            vec!["Adwaita Sans", "Cantarell", "Noto Sans", "Ubuntu Sans", "Ubuntu", "DejaVu Sans", "Liberation Sans"]
+        };
+        let db = self.fs.db();
+        candidates.into_iter().find(|c| db.faces().any(|f| f.families.iter().any(|(n, _)| n == c))).map(str::to_string)
+    }
+
     /// Use a registered family as the UI font.
     pub fn set_ui_family(&mut self, name: &str) {
         self.ui_family = Some(name.to_string());

@@ -344,6 +344,16 @@ the scroll position stays anchored while estimates are replaced by real heights.
 `.follow_end()`, `.on_scroll()`, `cx.scroll_to_end(id)` and `cx.scroll_to_item(id, i)`. A frame
 with 200k rows costs about the same as one with 100.
 
+**Trees** of any size: implement `TreeModel` for your data (children are asked for only when a
+node is expanded, so it can load lazily), keep a `TreeState`, and call
+`tree.view(&model, Msg::Tree)`. It builds only the rows on screen, like `virtual_list`. It has
+indent guides, chevrons that toggle, and double-click to open. The keyboard works like VS Code's
+explorer: ↑/↓, → to expand or go to the first child, ← to collapse or go to the parent,
+Home/End, PageUp/PageDown, Enter, Space, and type-ahead. `tree.update(msg, &model, cx)` reports
+`Selected`, `Activated`, `Expanded` and `Collapsed`, and scrolls the selection into view.
+
+![A tree with a 100,000-file folder](docs/tree.png)
+
 `table(id, columns, rows, |row, col| cell)` is a data grid. It supports fixed and weighted
 columns (`Column::new("Size").fixed(90.0).align_end().sortable()`), a header that stays put with
 sort indicators, and a virtualized body. Rows are clickable and can be selected and striped, and
@@ -402,6 +412,30 @@ titlebar(title, left_content, right_content, window_info().maximized)
 
 Any element can become a drag area (`.window_drag_area()`) or a window button
 (`.window_control(WindowControl::Close)`). Frameless windows stay resizable from their edges.
+
+Per platform:
+- **Windows:** frameless windows keep Snap Layouts, the shadow and rounded corners.
+  `WindowOptions::backdrop(Backdrop::Mica)` (or `Acrylic`, `Tabbed`) puts the Windows 11 material
+  behind the window. The title bar and tool-window stripes show it, and anything painted with a
+  transparent or translucent color does too. It needs the GPU renderer; without one, the window
+  opens without the backdrop.
+- **macOS:** a frameless window keeps its traffic lights over the app's title bar (transparent,
+  full-size content), with native resizing and full screen. `titlebar()` leaves room for them
+  and draws no buttons of its own. Move them with `.traffic_lights(x, y)`. Text fields use the
+  macOS editing keys (Cmd+←/→, Cmd+⌫, Option for words), and the menu bar gets the standard
+  Window items (Minimize, Zoom, Enter Full Screen, Close).
+- **Linux:** winit negotiates server-side decorations and draws client-side ones on GNOME
+  Wayland, which now follow the app's light or dark theme. Frameless windows resize from their
+  edges on X11 and Wayland.
+- **Full screen:** `cx.toggle_fullscreen()` (the native full-screen Space on macOS).
+- **Scaling:** moving to a monitor with another scale re-lays out and re-rasterizes text and
+  icons for it. At fractional scales (125 %, 150 %), square fills and borders snap to device
+  pixels, so 1 px lines stay sharp.
+- **System font:** `WindowOptions::system_font(true)` uses the platform's UI font (Segoe UI
+  Variable, SF Pro, or the desktop's font on Linux) instead of the bundled Inter.
+
+`window_info()` tells views about the window: `maximized`, `focused`, `fullscreen`,
+`native_buttons` and `buttons_inset`, `backdrop`, and `scale`.
 
 ### App menus and shortcuts
 

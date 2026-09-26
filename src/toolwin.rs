@@ -314,7 +314,7 @@ impl<T: Clone + PartialEq> ToolWindows<T> {
                 .items_center()
                 .gap(4.0)
                 .shrink(0.0)
-                .bg(c.chrome)
+                .bg(if crate::runtime::window_info().backdrop { crate::color::Color::TRANSPARENT } else { c.chrome })
                 .role(Role::Toolbar)
                 .aria_label(match side {
                     Side::Left => "Left tool windows",

@@ -776,6 +776,11 @@ pub fn window_controls<M: 'static>(maximized: bool) -> Element<M> {
     let c = th.colors.clone();
     let btn = |i: Icon, ctl: WindowControl, danger: bool| {
         div()
+            .id(match ctl {
+                WindowControl::Minimize => "window-control/minimize",
+                WindowControl::ToggleMaximize => "window-control/maximize",
+                WindowControl::Close => "window-control/close",
+            })
             .center()
             .w(46.0)
             .h_full()
@@ -798,6 +803,10 @@ pub fn window_controls<M: 'static>(maximized: bool) -> Element<M> {
 
 /// A custom title bar: `left` content, a centered title, `right` content and
 /// window controls. The empty areas drag the window; double-click maximizes.
+///
+/// Where the OS draws the window buttons itself (the macOS traffic lights of
+/// a frameless window, see [`WindowInfo::native_buttons`](crate::runtime::WindowInfo)),
+/// it leaves room for them at the left instead of drawing its own.
 pub fn titlebar<M: 'static>(
     title: impl Into<String>,
     left: Element<M>,
@@ -806,12 +815,17 @@ pub fn titlebar<M: 'static>(
 ) -> Element<M> {
     let th = theme();
     let c = th.colors.clone();
+    let win = crate::runtime::window_info();
     row()
         .h(th.titlebar_height)
         .shrink(0.0)
         .items_center()
-        .bg(c.chrome)
+        // Over a system backdrop, the title bar shows the material.
+        .bg(if win.backdrop { Color::TRANSPARENT } else { c.chrome })
         .border_b(1.0, c.border)
+        .child_if(win.buttons_inset > 0.0, || {
+            div().w(win.buttons_inset).h_full().shrink(0.0).window_drag_area().id("titlebar-native-buttons")
+        })
         .child(left.shrink(0.0))
         .child(
             row()
@@ -825,7 +839,7 @@ pub fn titlebar<M: 'static>(
                 .child(text(title).ellipsis().pointer_events(false)),
         )
         .child(right.shrink(0.0))
-        .child(window_controls(maximized))
+        .child_if(!win.native_buttons, || window_controls(maximized))
         .class("titlebar")
 }
 

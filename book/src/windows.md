@@ -57,8 +57,8 @@ with `.window_control(WindowControl::Close)`. Frameless windows still resize fro
   Text fields use the macOS editing keys, and the menu bar gets the standard Window items.
 - **Linux.** winit negotiates server-side decorations and draws client-side ones on GNOME
   Wayland, themed to match the app. Frameless windows resize from their edges on X11 and
-  Wayland. On Wayland, windows can't learn their screen position, so dock tear-out places new
-  windows where the compositor chooses.
+  Wayland. On Wayland, apps can't position windows or learn where they are, so a torn-out dock
+  tab opens where the compositor puts it; dropping a tab onto another window still works.
 - **Scaling.** Moving to a monitor with another scale re-lays out and re-rasterizes for it. At
   fractional scales, fills and borders snap to device pixels so 1 px lines stay sharp.
 

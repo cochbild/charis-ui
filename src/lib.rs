@@ -86,6 +86,7 @@ pub mod subscription;
 pub mod system;
 pub mod table;
 pub mod text;
+mod text_doc;
 pub mod theme;
 pub mod toolwin;
 pub mod tree;

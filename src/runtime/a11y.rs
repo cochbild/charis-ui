@@ -13,6 +13,7 @@ use accesskit::{
 };
 
 use super::*;
+use crate::fxhash::FxHashMap;
 use crate::semantics::{Role, Semantics};
 
 fn ak_role(r: Role) -> Option<AkRole> {
@@ -97,6 +98,36 @@ impl<A: App> Runtime<A> {
         tree.toolkit_name = Some(env!("CARGO_PKG_NAME").to_string());
         tree.toolkit_version = Some(env!("CARGO_PKG_VERSION").to_string());
         TreeUpdate { nodes: out, tree: Some(tree), tree_id: TreeId::ROOT, focus: NodeId(focus) }
+    }
+
+    /// What changed in the accessibility tree since the last call: the
+    /// nodes that are new or differ from what was sent before, and the focus.
+    /// The first call (and the first after [`Runtime::reset_accessibility`])
+    /// returns the full tree. The window sends these to screen readers, so
+    /// they only process what changed.
+    pub fn accessibility_update(&mut self) -> TreeUpdate {
+        let full = self.accessibility_tree();
+        if self.a11y_sent.is_empty() {
+            self.a11y_sent = full.nodes.iter().map(|(id, n)| (id.0, n.clone())).collect();
+            return full;
+        }
+        let mut nodes = Vec::new();
+        let mut sent = FxHashMap::default();
+        sent.reserve(full.nodes.len());
+        for (id, node) in full.nodes {
+            if self.a11y_sent.get(&id.0) != Some(&node) {
+                nodes.push((id, node.clone()));
+            }
+            sent.insert(id.0, node);
+        }
+        self.a11y_sent = sent;
+        TreeUpdate { nodes, tree: None, tree_id: full.tree_id, focus: full.focus }
+    }
+
+    /// Forget what was sent, so the next [`Runtime::accessibility_update`] is
+    /// a full tree (a screen reader just started, or asked for the tree).
+    pub fn reset_accessibility(&mut self) {
+        self.a11y_sent.clear();
     }
 
     fn ak_rect(&self, r: Rect) -> AkRect {
@@ -250,7 +281,7 @@ impl<A: App> Runtime<A> {
             (NodeContent::Input(spec), _) => {
                 if !spec.password {
                     let v = self.pending_values.get(&n.id).unwrap_or(&spec.value);
-                    node.set_value(v.clone());
+                    node.set_value(v.to_string());
                 }
                 if !spec.placeholder.is_empty() {
                     node.set_placeholder(spec.placeholder.clone());
@@ -352,7 +383,7 @@ impl<A: App> Runtime<A> {
                             nv
                         };
                         if let Some(h) = self.frame.nodes[i].handlers.input.clone() {
-                            self.pending_values.insert(id, new.clone());
+                            self.pending_values.insert(id, std::rc::Rc::from(new.as_str()));
                             self.queue.push(h(new));
                         }
                     }

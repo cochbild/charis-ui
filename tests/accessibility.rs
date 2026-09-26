@@ -186,3 +186,77 @@ fn keyboard_reaches_and_activates_built_in_controls() {
     h.event(Event::Key(KeyEvent { key: Key::Space, mods: Modifiers::default(), repeat: false }));
     assert_eq!(h.rt.app.saved, saved + 1, "Space activates the focused option");
 }
+
+/// Apply an update to a copy of the tree, as an assistive technology would:
+/// listed nodes replace old ones, and only nodes reachable from the root stay.
+fn apply(tree: &mut std::collections::HashMap<NodeId, Node>, root: NodeId, u: TreeUpdate) {
+    for (id, n) in u.nodes {
+        tree.insert(id, n);
+    }
+    let mut keep = std::collections::HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if keep.insert(id) {
+            if let Some(n) = tree.get(&id) {
+                stack.extend(n.children().iter().copied());
+            }
+        }
+    }
+    tree.retain(|id, _| keep.contains(id));
+}
+
+#[test]
+fn updates_send_only_what_changed() {
+    let mut h = Headless::new(Form::default(), 400.0, 500.0, 1.0);
+    h.settle();
+    let first = h.rt.accessibility_update();
+    assert!(first.tree.is_some(), "the first update is a full tree");
+    let root = first.tree.as_ref().unwrap().root;
+    let total = first.nodes.len();
+    let mut mirror: std::collections::HashMap<NodeId, Node> = Default::default();
+    apply(&mut mirror, root, first);
+
+    // Nothing changed: nothing to send.
+    h.rt.invalidate();
+    h.settle();
+    let idle = h.rt.accessibility_update();
+    assert!(idle.nodes.is_empty(), "unchanged frame sent {} nodes", idle.nodes.len());
+
+    // Toggling the checkbox sends the checkbox, not the whole tree.
+    h.rt.send(Msg::Remember);
+    h.settle();
+    let u = h.rt.accessibility_update();
+    assert!(!u.nodes.is_empty() && u.nodes.len() < total / 2, "sent {} of {total} nodes", u.nodes.len());
+    assert!(u.nodes.iter().any(|(_, n)| n.role() == Ak::CheckBox && n.toggled() == Some(Toggled::True)));
+    apply(&mut mirror, root, u);
+
+    // Adding and removing a dialog, and typing, keep the mirror identical to a full tree.
+    for msg in [Msg::Name("Ada".into()), Msg::Volume(7.0)] {
+        h.rt.send(msg);
+        h.settle();
+        let u = h.rt.accessibility_update();
+        apply(&mut mirror, root, u);
+    }
+    h.rt.app.dialog = true;
+    h.rt.invalidate();
+    h.settle();
+    let u = h.rt.accessibility_update();
+    apply(&mut mirror, root, u);
+    let full: std::collections::HashMap<NodeId, Node> = h.rt.accessibility_tree().nodes.into_iter().collect();
+    assert_eq!(mirror.len(), full.len());
+    for (id, n) in &full {
+        assert!(mirror.get(id) == Some(n), "node {id:?} differs");
+    }
+    h.rt.send(Msg::Close);
+    h.settle();
+    let u = h.rt.accessibility_update();
+    apply(&mut mirror, root, u);
+    let full: std::collections::HashMap<NodeId, Node> = h.rt.accessibility_tree().nodes.into_iter().collect();
+    assert_eq!(mirror, full, "after closing the dialog");
+
+    // A reset (a screen reader starting) sends everything again.
+    h.rt.reset_accessibility();
+    let again = h.rt.accessibility_update();
+    assert!(again.tree.is_some());
+    assert_eq!(again.nodes.len(), full.len());
+}

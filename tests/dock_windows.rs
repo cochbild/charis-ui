@@ -163,3 +163,36 @@ fn closing_a_floating_window_docks_its_tabs_back() {
     assert!(h.window_keys().is_empty());
     assert_eq!(tabs(&h.app().dock.main), [vec!["a", "b"], vec!["c"]]);
 }
+
+/// Like Wayland: no window knows where it is on the screen.
+fn harness_without_positions() -> HeadlessApp<Ide> {
+    let dock =
+        Dock::new(DockNode::hsplit(vec![(1.0, DockNode::tabs(vec!["a", "b"])), (1.0, DockNode::tabs(vec!["c"]))]));
+    HeadlessApp::new(Ide { dock: DockSpace::new(dock) }, 800.0, 500.0)
+}
+
+#[test]
+fn without_window_positions_tabs_still_tear_out_and_dock_into_other_windows() {
+    let mut h = harness_without_positions();
+    let from = tab_center(&mut h, None, "b");
+    h.drag(None, from, Point::new(1200.0, 300.0), 8);
+    assert_eq!(h.window_keys(), ["dock-1"], "torn out");
+    assert_eq!(h.app().dock.floating[0].position, None, "the compositor places it");
+
+    // Drag "b" back out of its window and release over group "c" in the main window.
+    let from = tab_center(&mut h, Some("dock-1"), "b");
+    let target = h.main().rt.rect_of("content-c").unwrap().center();
+    h.drag_to_window(Some("dock-1"), from, None, target);
+    assert_eq!(tabs(&h.app().dock.main), [vec!["a"], vec!["c", "b"]]);
+    assert!(h.window_keys().is_empty(), "the empty floating window closed");
+    assert!(!h.app().dock.main.dragging(), "no leftover drag state");
+
+    // And onto an edge: "a" to the bottom of group "c" splits it.
+    let from = tab_center(&mut h, None, "c");
+    h.drag(None, from, Point::new(1200.0, 300.0), 8);
+    let key = h.window_keys().remove(0);
+    let from = tab_center(&mut h, Some(&key), "c");
+    let r = h.main().rt.rect_of("content-a").unwrap();
+    h.drag_to_window(Some(&key), from, None, Point::new(r.center().x, r.bottom() - 10.0));
+    assert_eq!(tabs(&h.app().dock.main), [vec!["a"], vec!["c"], vec!["b"]]);
+}

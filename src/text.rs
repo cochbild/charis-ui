@@ -194,6 +194,8 @@ pub struct TextSystem {
     fs: FontSystem,
     swash: SwashCache,
     cache: IdMap<Entry>,
+    /// Paragraph layouts of multi-line inputs, by node id.
+    pub(crate) docs: IdMap<crate::text_doc::Doc>,
     frame: u64,
     ui_family: Option<String>,
     /// Apply DirectWrite-style contrast/gamma correction to glyph coverage.
@@ -226,7 +228,15 @@ impl TextSystem {
         }
         let (db, ui_family) = BASE.with(|b| b.borrow_mut().get_or_insert_with(Self::scan_fonts).clone());
         let fs = FontSystem::new_with_locale_and_db("en-US".into(), db);
-        Self { fs, swash: SwashCache::new(), cache: IdMap::default(), frame: 0, ui_family, text_correction: true }
+        Self {
+            fs,
+            swash: SwashCache::new(),
+            cache: IdMap::default(),
+            docs: IdMap::default(),
+            frame: 0,
+            ui_family,
+            text_correction: true,
+        }
     }
 
     fn scan_fonts() -> (fontdb::Database, Option<String>) {
@@ -276,6 +286,7 @@ impl TextSystem {
     pub fn load_font(&mut self, data: Vec<u8>) {
         self.fs.db_mut().load_font_data(data);
         self.cache.clear();
+        self.docs.clear();
     }
 
     /// The platform's UI font, if installed: Segoe UI Variable (Segoe UI
@@ -311,6 +322,7 @@ impl TextSystem {
     pub fn set_ui_family(&mut self, name: &str) {
         self.ui_family = Some(name.to_string());
         self.cache.clear();
+        self.docs.clear();
     }
 
     pub(crate) fn begin_frame(&mut self) {

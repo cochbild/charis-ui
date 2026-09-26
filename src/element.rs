@@ -344,7 +344,8 @@ pub(crate) struct TextSpec {
 /// Single-line text input configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InputSpec {
-    pub value: String,
+    /// Shared, so the runtime can hold on to large values without copying them.
+    pub value: std::rc::Rc<str>,
     pub placeholder: String,
     pub password: bool,
     /// Multi-line editing (text area).

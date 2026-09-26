@@ -30,6 +30,8 @@ backend.
 | 100k-row table: scrolling, scene | 0.48 ms | 0.64 ms | 8.3 ms ✓ |
 | 100k-row table: scrolling, cpu | 1.37 ms | 1.97 ms | 8.3 ms ✓ |
 | 100k-row tree: scrolling, scene | 0.48 ms | 0.61 ms | 8.3 ms ✓ |
+| 100k-line editor: scrolling, scene | 0.91 ms | 1.21 ms | 8.3 ms ✓ |
+| 100k-line editor: keystroke to frame, scene | 4.37 ms | 5.92 ms | 8.3 ms ✓ |
 
 ## Damage tracking (CPU backend)
 
@@ -103,7 +105,31 @@ bookkeeping.
 5. **Profile** with `RUI_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
    paint.
 
-## Next
+## Large text documents
 
-- Incremental accessibility-tree updates (currently a full tree per frame while a screen reader
-  is active).
+`text_area` lays its value out by paragraph (the text between newlines):
+
+- Only paragraphs on screen, at the caret, or under the pointer are shaped. The others get an
+  estimated height, replaced by the real one when they're first shown; the view stays anchored
+  meanwhile, like `virtual_list`.
+- An edit compares the new value with the old one (common prefix and suffix) and re-measures
+  only the paragraphs it touched.
+- The runtime shares the value instead of copying it, and undo stores edits rather than copies
+  of the text.
+
+| 100k-line document (3.5 MB) | Median | p95 |
+|---|---|---|
+| open (first frame) | 18 ms | — |
+| scrolling, scene | 0.91 ms | 1.21 ms |
+| typing, scene | 0.84 ms | 1.28 ms |
+| keystroke to frame (event, update, view, frame) | 4.37 ms | 5.92 ms |
+| arrow down, scene | 0.89 ms | 1.07 ms |
+
+Most of a keystroke's remaining cost is copying the document: the app gets the new value as a
+`String` and passes a copy back in `view`. Peak memory for the document above is about 60 MB.
+
+## Accessibility
+
+While a screen reader is active, each frame sends only the accessibility nodes that changed
+since the last update, so an idle frame sends nothing and toggling a checkbox sends a handful of
+nodes.

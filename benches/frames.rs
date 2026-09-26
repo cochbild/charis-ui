@@ -175,15 +175,107 @@ fn tree_benches(out: &mut Vec<Result>) {
     out.push(stats("100k-row tree: scrolling, scene", run(&mut h, 300, scroll, false), MS(8.3)));
 }
 
+struct Editor {
+    text: String,
+}
+
+#[derive(Clone)]
+enum EMsg {
+    Edit(String),
+}
+
+impl App for Editor {
+    type Msg = EMsg;
+    fn update(&mut self, m: EMsg, _: &mut Cx<EMsg>) {
+        let EMsg::Edit(t) = m;
+        self.text = t;
+    }
+    fn view(&self) -> Element<EMsg> {
+        col().size_full().child(text_area(self.text.clone(), EMsg::Edit).id("editor").mono().size_full())
+    }
+}
+
+/// A 100k-line document, like a large source file.
+pub fn big_document(lines: usize) -> String {
+    let mut s = String::new();
+    for i in 0..lines {
+        match i % 4 {
+            0 => s.push_str(&format!("fn function_{i}(arg: u32) -> u32 {{")),
+            1 => s.push_str(&format!("    let value = arg * {i} + compute(\"line {i}\");")),
+            2 => s.push_str("    value.wrapping_add(1)"),
+            _ => s.push('}'),
+        }
+        s.push('\n');
+    }
+    s
+}
+
+fn editor_benches(out: &mut Vec<Result>) {
+    let t0 = Instant::now();
+    let mut h = Headless::new(
+        Editor {
+            text: big_document(std::env::var("EDITOR_LINES").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000)),
+        },
+        1000.0,
+        800.0,
+        1.0,
+    );
+    let _ = h.rt.render_scene();
+    out.push(stats("100k-line editor: open", vec![t0.elapsed()], MS(250.0)));
+    let r = h.rt.rect_of("editor").expect("editor");
+    h.click(r.x + 40.0, r.y + 30.0);
+    h.settle();
+    let scroll = |h: &mut Headless<Editor>, i: usize| {
+        h.event(Event::Wheel(
+            Point::new(500.0, 400.0),
+            Point::new(0.0, if (i / 50).is_multiple_of(2) { 400.0 } else { -300.0 }),
+        ));
+        h.rt.set_time(h.rt.time() + 0.008);
+    };
+    out.push(stats("100k-line editor: scrolling, scene", run(&mut h, 200, scroll, false), MS(8.3)));
+    let typing = |h: &mut Headless<Editor>, _: usize| {
+        h.type_text("x");
+        h.rt.set_time(h.rt.time() + 0.008);
+    };
+    out.push(stats("100k-line editor: typing, scene", run(&mut h, 100, typing, false), MS(8.3)));
+    // The whole keystroke: event handling, the app's update and view, the frame.
+    let keystrokes = (0..100)
+        .map(|_| {
+            let t0 = Instant::now();
+            h.type_text("y");
+            let _ = h.rt.render_scene();
+            t0.elapsed()
+        })
+        .collect();
+    out.push(stats("100k-line editor: keystroke to frame, scene", keystrokes, MS(8.3)));
+    let down = |h: &mut Headless<Editor>, _: usize| {
+        h.event(Event::Key(KeyEvent { key: Key::Down, mods: Modifiers::default(), repeat: true }));
+        h.rt.set_time(h.rt.time() + 0.008);
+    };
+    out.push(stats("100k-line editor: arrow down, scene", run(&mut h, 200, down, false), MS(8.3)));
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--list") {
         return;
     }
+    // `cargo bench --bench frames -- editor` runs only the scenarios whose group matches.
+    let only: Vec<&String> = args.iter().skip(1).filter(|a| !a.starts_with('-') && !a.ends_with(".json")).collect();
+    let want = |g: &str| only.is_empty() || only.iter().any(|o| g.contains(o.as_str()));
     let mut out = Vec::new();
-    showcase_benches(&mut out);
-    table_benches(&mut out);
-    tree_benches(&mut out);
+    if want("showcase") {
+        showcase_benches(&mut out);
+    }
+    if want("table") {
+        table_benches(&mut out);
+    }
+    if want("tree") {
+        tree_benches(&mut out);
+    }
+    if want("editor") {
+        editor_benches(&mut out);
+    }
     let ms = |d: Duration| d.as_secs_f64() * 1000.0;
     println!("| Scenario | Median | p95 | Budget |");
     println!("|---|---|---|---|");

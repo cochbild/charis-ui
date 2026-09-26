@@ -318,6 +318,28 @@ impl<A: App> HeadlessApp<A> {
         self.sync();
     }
 
+    /// Drag from `from` in window `src` out of it and release over window
+    /// `dst` at `at` (`dst`'s coordinates), the way it goes where window
+    /// positions are unknown (Wayland): the source only sees the pointer
+    /// leave; the destination sees it arrive after the release and takes the
+    /// drop. Needs no screen origins.
+    pub fn drag_to_window(&mut self, src: Option<&str>, from: Point, dst: Option<&str>, at: Point) {
+        let (si, di) = (self.index(src), self.index(dst));
+        let size = self.get(src).rt.window_size();
+        let outside = Point::new(size.w + 40.0, from.y);
+        self.get(src).event(Event::PointerDown(from, MouseButton::Left));
+        for k in 1..=8 {
+            let t = k as f32 / 8.0;
+            let p = Point::new(from.x + (outside.x - from.x) * t, from.y);
+            self.get(src).move_to(p.x, p.y);
+            self.sync();
+        }
+        crate::runtime::drop_into(&mut self.runtimes(), si, di, at);
+        self.sync();
+        self.get(src).event(Event::PointerUp(outside, MouseButton::Left));
+        self.sync();
+    }
+
     /// The user closes an extra window (its `on_close` message is sent).
     pub fn close(&mut self, key: &str) {
         if let Some((spec, _)) = self.windows.iter().find(|(s, _)| s.key == key) {

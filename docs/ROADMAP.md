@@ -109,10 +109,12 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
 
 ### M2: Text and input
 
-- [~] Multi-line text editor widget (`text_area`, with undo/redo; still to do: 100k-line
-  documents):
-  - selection, undo/redo, word wrap, scrolling;
-  - large documents (100k lines) that only shape what is visible.
+- [x] Multi-line text editor widget (`text_area`): selection, undo/redo, word wrap, scrolling,
+      and large documents. The text is laid out by paragraph: only paragraphs on screen, at
+      the caret or hit-tested are shaped, the rest are estimated, and an edit re-measures only
+      what it touched. Undo keeps edits, not copies. A 100k-line file opens in about 20 ms and
+      scrolls, moves the caret and types in about 1 ms per frame (4–6 ms for a whole keystroke
+      including the app's update).
 - [x] IME: show pre-edit (the text being composed) with its underline, and position the candidate
       window. IME is enabled only while a text input has focus; editing keys go to the IME while
       composing.
@@ -131,7 +133,8 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] AccessKit integration (`accessibility` feature, on by default):
   - roles, names, states and actions for every built-in widget, and ARIA-style `.role()`,
     `.aria_label()`, `.aria_checked()`… for custom ones;
-  - the tree is rebuilt each frame while a screen reader is active (incremental updates later);
+  - incremental updates while a screen reader is active: only nodes that changed since the last
+    update are sent (`Runtime::accessibility_update`), and a full tree when one starts;
   - focus follows keyboard focus; click, focus, set value, increment, decrement, scroll and
     expand/collapse actions are supported.
 - [x] High-contrast theme generated from the token system (`Contrast::High`, WCAG ratios tested
@@ -173,6 +176,10 @@ systems; a 100k-line file scrolls at 120fps.
 - [x] Drag a dock tab out into a floating OS window, and dock it back (`DockSpace`): tear-out at
   the drop point, cross-window drop targets with previews, pop-out / dock-back buttons, closing
   a floating window re-docks its tabs. Verified end to end under Xvfb with real OS windows.
+  On Wayland (no window positions) a release over another window is handed to that window when
+  the compositor reports the pointer there, so drops between windows work without previews;
+  where a torn-out window opens is up to the compositor (tested headlessly; no Wayland session
+  in this container).
 - [x] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
       style): `ToolWindows` with pinned/auto-hide modes, one per edge, resizable, Escape and
       outside click hide, reduced-motion aware.

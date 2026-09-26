@@ -180,7 +180,7 @@ pub fn text_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String
     let th = theme();
     let c = &th.colors;
     let mut e = Element::new(Content::Input(InputSpec {
-        value: value.into(),
+        value: std::rc::Rc::from(value.into()),
         placeholder: String::new(),
         password: false,
         multiline: false,

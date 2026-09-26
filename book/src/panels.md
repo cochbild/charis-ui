@@ -126,8 +126,11 @@ impl App for Ide {
 
 Dragging a tab out of the window opens it in a new OS window where it was dropped; dragging it
 onto a group in any window docks it there. The header buttons "Open in new window" and "Dock
-back" do the same from the keyboard, and on Wayland, where windows can't learn their screen
-position. Closing a floating window docks its tabs back.
+back" do the same from the keyboard. Closing a floating window docks its tabs back.
+
+On Wayland, apps can't place their windows or learn where they are. A torn-out tab opens where
+the compositor puts it, and dragging over another window shows no drop preview, but releasing a
+tab over another window still docks it there, at the spot under the pointer.
 
 ## Tool windows
 

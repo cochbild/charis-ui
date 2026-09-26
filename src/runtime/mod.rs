@@ -14,7 +14,7 @@ mod a11y;
 mod inspector;
 pub(crate) mod memo;
 mod shared;
-pub(crate) use shared::route_drag;
+pub(crate) use shared::{drop_into, route_drag};
 pub use shared::{Shared, WindowSpec};
 use tiny_skia::Pixmap;
 
@@ -32,6 +32,7 @@ use crate::scene::Scene;
 use crate::style::*;
 use crate::subscription::Subscriptions;
 use crate::text::{TextStyle, TextSystem};
+use crate::text_doc::{DocPreedit, DocQuery};
 use crate::theme::{self, Theme};
 
 /// An application.
@@ -704,7 +705,12 @@ fn content_signature<M>(n: &Node<M>, scale: f32) -> u64 {
         NodeContent::Input(spec) => {
             1u8.hash(&mut h);
             if spec.multiline {
-                spec.value.hash(&mut h);
+                // The height depends on the text only up to the maximum rows
+                // (each paragraph is at least one row), so large documents
+                // hash a prefix.
+                let max_rows = spec.rows.1 as usize;
+                let end = spec.value.match_indices('\n').nth(max_rows).map_or(spec.value.len(), |(i, _)| i);
+                spec.value[..end].hash(&mut h);
                 spec.rows.hash(&mut h);
             }
             hash_text(&mut h);
@@ -804,14 +810,84 @@ enum EditKind {
     Other,
 }
 
-/// Undo/redo history of one text input.
+/// One text change: bytes `at..at + removed.len()` became `inserted`, and
+/// the selection to restore when the step is popped.
+#[derive(Clone, Debug)]
+struct TextEdit {
+    at: usize,
+    removed: String,
+    inserted: String,
+    sel: Selection,
+}
+
+impl TextEdit {
+    /// The change from `before` to `after` (their differing middle).
+    fn between(before: &str, after: &str, sel: Selection) -> TextEdit {
+        let (a, b) = (before.as_bytes(), after.as_bytes());
+        let mut p = crate::text_doc::common_prefix(a, b);
+        while !before.is_char_boundary(p) || !after.is_char_boundary(p) {
+            p -= 1;
+        }
+        let max = a.len().min(b.len()) - p;
+        let mut s = crate::text_doc::common_suffix(a, b, max);
+        while !before.is_char_boundary(a.len() - s) || !after.is_char_boundary(b.len() - s) {
+            s -= 1;
+        }
+        TextEdit {
+            at: p,
+            removed: before[p..a.len() - s].to_string(),
+            inserted: after[p..b.len() - s].to_string(),
+            sel,
+        }
+    }
+
+    /// Apply to `v` (which must be the text the edit starts from).
+    fn apply(&self, v: &str) -> Option<String> {
+        let end = self.at.checked_add(self.removed.len())?;
+        if v.get(self.at..end)? != self.removed {
+            return None;
+        }
+        let mut out = String::with_capacity(v.len() - self.removed.len() + self.inserted.len());
+        out.push_str(&v[..self.at]);
+        out.push_str(&self.inserted);
+        out.push_str(&v[end..]);
+        Some(out)
+    }
+
+    fn inverse(&self, sel: Selection) -> TextEdit {
+        TextEdit { at: self.at, removed: self.inserted.clone(), inserted: self.removed.clone(), sel }
+    }
+
+    /// This edit (`v0 → before`) followed by `next` (`before → after`), as one.
+    fn then(&self, next: &TextEdit, before: &str, after: &str) -> TextEdit {
+        let end1 = self.at + self.inserted.len();
+        let u0 = self.at.min(next.at);
+        let u1 = end1.max(next.at + next.removed.len());
+        let mut removed = String::with_capacity(u1 - u0 + self.removed.len());
+        removed.push_str(&before[u0..self.at]);
+        removed.push_str(&self.removed);
+        removed.push_str(&before[end1..u1]);
+        let end2 = u1 + next.inserted.len() - next.removed.len();
+        TextEdit { at: u0, removed, inserted: after[u0..end2].to_string(), sel: self.sel }
+    }
+}
+
+/// Undo/redo history of one text input: edits, not copies of the text, so
+/// large documents keep a small history.
 #[derive(Default)]
 struct History {
-    undo: Vec<(String, Selection)>,
-    redo: Vec<(String, Selection)>,
+    undo: Vec<TextEdit>,
+    redo: Vec<TextEdit>,
     /// The value after our last edit; if the app changes it, the history resets.
-    known: Option<String>,
+    known: Option<Rc<str>>,
     last: Option<(EditKind, f64)>,
+}
+
+impl History {
+    /// Whether `v` is the value after our last edit.
+    fn knows(&self, v: &Rc<str>) -> bool {
+        self.known.as_ref().is_some_and(|k| Rc::ptr_eq(k, v) || **k == **v)
+    }
 }
 
 const UNDO_LIMIT: usize = 200;
@@ -833,7 +909,7 @@ struct Composed {
 }
 
 fn compose(spec: &InputSpec, sel: Selection, pre: Option<&Preedit>) -> Composed {
-    let shown = if spec.multiline { spec.value.clone() } else { display_value(spec) };
+    let shown = if spec.multiline { spec.value.to_string() } else { display_value(spec) };
     let caret = if spec.multiline { sel.cursor } else { map_value_index(spec, sel.cursor) };
     match pre {
         Some(p) if !spec.password && shown.is_char_boundary(caret) => {
@@ -851,12 +927,40 @@ fn compose(spec: &InputSpec, sel: Selection, pre: Option<&Preedit>) -> Composed 
     }
 }
 
+/// A multi-line input's IME composition, for its document layout, and how
+/// far into it the caret is.
+fn doc_preedit(sel: Selection, pre: Option<&Preedit>) -> (Option<DocPreedit>, usize) {
+    match pre {
+        Some(p) if !p.text.is_empty() => {
+            let mut pc = p.cursor.map_or(p.text.len(), |c| c.1).min(p.text.len());
+            while !p.text.is_char_boundary(pc) {
+                pc -= 1;
+            }
+            (Some(DocPreedit { at: sel.cursor, text: p.text.clone() }), pc)
+        }
+        _ => (None, 0),
+    }
+}
+
+fn doc_query<'a, M>(
+    n: &'a Node<M>,
+    text: &'a Rc<str>,
+    cr: Rect,
+    scale: f32,
+    preedit: Option<&'a DocPreedit>,
+) -> DocQuery<'a> {
+    DocQuery { id: n.id, text, style: &n.text, width: cr.w.max(1.0), scale, preedit }
+}
+
 #[derive(Default, Clone, Copy)]
 struct InputState {
     sel: Selection,
     scroll: f32,
     /// Vertical scroll of multi-line inputs.
     scroll_y: f32,
+    /// The selection the scroll last followed: a multi-line input scrolls
+    /// to its caret only when the caret moves, so the wheel can look away.
+    shown_sel: Selection,
     blink_start: f64,
 }
 
@@ -1018,7 +1122,7 @@ pub struct Runtime<A: App> {
     /// Values emitted by inputs since the last rebuild. Inputs are controlled
     /// (the app owns the value), so several keystrokes between frames must
     /// build on each other rather than on the last rendered value.
-    pending_values: HashMap<u64, String>,
+    pending_values: HashMap<u64, Rc<str>>,
     dropdowns: HashMap<u64, DropdownState>,
     virt: HashMap<u64, VirtState>,
     /// State of [`component`](crate::component)s.
@@ -1084,6 +1188,9 @@ pub struct Runtime<A: App> {
     requests: Vec<WindowRequest>,
     dirty: bool,
     frame_no: u64,
+    /// The accessibility nodes last sent, for incremental updates.
+    #[cfg(feature = "accessibility")]
+    a11y_sent: crate::fxhash::FxHashMap<u64, accesskit::Node>,
     cursor: Cursor,
     pixmap: Option<Pixmap>,
     scene: Option<Scene>,
@@ -1180,6 +1287,8 @@ impl<A: App> Runtime<A> {
             requests: Vec::new(),
             dirty: true,
             frame_no: 0,
+            #[cfg(feature = "accessibility")]
+            a11y_sent: Default::default(),
             cursor: Cursor::Default,
             pixmap: None,
             scene: None,
@@ -1509,12 +1618,25 @@ impl<A: App> Runtime<A> {
             let Some(st) = self.inputs.get_mut(&n.id) else { continue };
             let cr = content_rect(n);
             st.sel.clamp(&spec.value);
-            let comp = compose(spec, st.sel, self.preedit.as_ref().filter(|p| p.node == n.id));
             if spec.multiline {
-                let w = Some(cr.w.max(1.0));
-                let caret = self.text.caret_rect(&comp.text, &n.text, w, self.scale, comp.caret);
-                let total = self.text.measure(&comp.text, &n.text, w, self.scale).h;
-                let mut sy = st.scroll_y;
+                let pre = self.preedit.as_ref().filter(|p| p.node == n.id);
+                let (dp, pc) = doc_preedit(st.sel, pre);
+                let q = doc_query(n, &spec.value, cr, self.scale, dp.as_ref());
+                // Keep the paragraph at the top of the view in place while
+                // estimated heights above it are replaced by measured ones.
+                let (anchor, off) = self.text.doc_anchor(&q, st.scroll_y);
+                let caret = self.text.doc_caret_rect(&q, st.sel.cursor, pc);
+                let top = self.text.doc_para_y(&q, anchor) + off;
+                self.text.doc_prepare(&q, top, top + cr.h);
+                let top = self.text.doc_para_y(&q, anchor) + off;
+                let total = self.text.doc_height(&q);
+                let moved = st.sel != st.shown_sel;
+                st.shown_sel = st.sel;
+                let mut sy = top;
+                if !moved {
+                    st.scroll_y = sy.clamp(0.0, (total - cr.h).max(0.0));
+                    continue;
+                }
                 if caret.bottom() - sy > cr.h {
                     sy = caret.bottom() - cr.h;
                 }
@@ -1524,6 +1646,7 @@ impl<A: App> Runtime<A> {
                 st.scroll_y = sy.clamp(0.0, (total - cr.h).max(0.0));
                 continue;
             }
+            let comp = compose(spec, st.sel, self.preedit.as_ref().filter(|p| p.node == n.id));
             let stops = self.text.caret_stops(&comp.text, &n.text, self.scale);
             let cb = comp.caret;
             let caret_x = stops.iter().find(|s| s.0 >= cb).map(|s| s.1).unwrap_or(0.0);
@@ -1609,6 +1732,7 @@ impl<A: App> Runtime<A> {
         // Like the web: an input that leaves the UI takes its undo history with it.
         let by_id = &self.frame.by_id;
         self.history.retain(|id, _| by_id.contains_key(id));
+        self.text.retain_docs(|id| by_id.contains_key(&id));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3484,7 +3608,7 @@ impl<A: App> Runtime<A> {
             let n = &self.frame.nodes[i];
             if let NodeContent::Input(spec) = &n.content {
                 let cr = content_rect(n);
-                let total = self.text.measure(&spec.value, &n.text, Some(cr.w.max(1.0)), self.scale).h;
+                let total = self.text.doc_height(&doc_query(n, &spec.value, cr, self.scale, None));
                 let max = (total - cr.h).max(0.0);
                 let st = self.inputs.entry(n.id).or_default();
                 let before = st.scroll_y;
@@ -3574,7 +3698,8 @@ impl<A: App> Runtime<A> {
         if spec.multiline {
             let sy = self.inputs.get(&id).map(|s| s.scroll_y).unwrap_or(0.0);
             let (x, y) = (p.x - inner.x, p.y - inner.y + sy);
-            return Some(self.text.hit_byte(&spec.value, None, &n.text, Some(inner.w.max(1.0)), self.scale, x, y));
+            let q = doc_query(n, &spec.value, inner, self.scale, None);
+            return Some(self.text.doc_hit(&q, x, y));
         }
         let shown = display_value(spec);
         let scroll = self.inputs.get(&id).map(|s| s.scroll).unwrap_or(0.0);
@@ -3977,19 +4102,10 @@ impl<A: App> Runtime<A> {
                 mv(&mut sel, to, k.mods.shift);
             }
             Key::Up | Key::Down if multiline => {
-                let scale = self.scale;
-                let r = self.text.caret_rect(&value, &tstyle, Some(wrap_w), scale, sel.cursor);
+                let q = DocQuery { id, text: &value, style: &tstyle, width: wrap_w, scale: self.scale, preedit: None };
+                let r = self.text.doc_caret_rect(&q, sel.cursor, 0);
                 let y = if k.key == Key::Up { r.y - 1.0 } else { r.bottom() + 1.0 };
-                let to = if y < 0.0 {
-                    0
-                } else {
-                    let total = self.text.measure(&value, &tstyle, Some(wrap_w), scale).h;
-                    if y >= total {
-                        value.len()
-                    } else {
-                        self.text.hit_byte(&value, None, &tstyle, Some(wrap_w), scale, r.x, y)
-                    }
-                };
+                let to = if y < 0.0 { 0 } else { self.text.doc_hit(&q, r.x, y) };
                 mv(&mut sel, to, k.mods.shift);
             }
             Key::Home if multiline && !cmd => {
@@ -4040,14 +4156,22 @@ impl<A: App> Runtime<A> {
                 'z' | 'y' => {
                     let redo = c.eq_ignore_ascii_case(&'y') || k.mods.shift;
                     kind = None;
-                    if let Some(h) = self.history.get_mut(&id).filter(|h| h.known.as_deref() == Some(value.as_str())) {
+                    if let Some(h) = self.history.get_mut(&id).filter(|h| h.knows(&value)) {
                         let (from, to) = if redo { (&mut h.redo, &mut h.undo) } else { (&mut h.undo, &mut h.redo) };
-                        if let Some((v, s)) = from.pop() {
-                            to.push((value.clone(), sel));
-                            h.known = Some(v.clone());
-                            h.last = None;
-                            sel = s;
-                            new_value = Some(v);
+                        if let Some(e) = from.pop() {
+                            // Both stacks hold forward edits: undo applies the
+                            // inverse, redo the edit itself. Each keeps the
+                            // selection to restore when it's popped.
+                            let step = if redo { e.clone() } else { e.inverse(sel) };
+                            if let Some(v) = step.apply(&value) {
+                                to.push(TextEdit { sel, ..e.clone() });
+                                h.known = Some(Rc::from(v.as_str()));
+                                h.last = None;
+                                sel = e.sel;
+                                new_value = Some(v);
+                            } else {
+                                *h = History::default();
+                            }
                         }
                     }
                 }
@@ -4084,11 +4208,12 @@ impl<A: App> Runtime<A> {
             st.sel = sel;
         }
         if let (Some(v), Some(h)) = (new_value, on_input) {
-            if v != value {
+            if *v != *value {
+                let rc: Rc<str> = Rc::from(v.as_str());
                 if let Some(kind) = kind {
-                    self.record_edit(id, &value, before, &v, kind, false);
+                    self.record_edit(id, &value, before, &rc, kind, false);
                 }
-                self.pending_values.insert(id, v.clone());
+                self.pending_values.insert(id, rc);
                 self.queue.push(h(v));
             }
         }
@@ -4098,23 +4223,35 @@ impl<A: App> Runtime<A> {
     /// Push the state before an edit onto the input's undo stack. Consecutive
     /// typing (or deleting) within a second is one step; whitespace starts a
     /// new step, like editors group by word.
-    fn record_edit(&mut self, id: u64, before: &str, sel: Selection, after: &str, kind: EditKind, boundary: bool) {
+    fn record_edit(
+        &mut self,
+        id: u64,
+        before: &Rc<str>,
+        sel: Selection,
+        after: &Rc<str>,
+        kind: EditKind,
+        boundary: bool,
+    ) {
         let now = self.now;
         let h = self.history.entry(id).or_default();
-        if h.known.as_deref() != Some(before) {
+        if !h.knows(before) {
             // The app changed the value itself (e.g. cleared it after sending).
             *h = History::default();
         }
         let group = kind != EditKind::Other && !boundary && h.last.is_some_and(|(k, t)| k == kind && now - t < 1.0);
-        if !group {
-            h.undo.push((before.to_string(), sel));
-            if h.undo.len() > UNDO_LIMIT {
-                h.undo.remove(0);
+        let edit = TextEdit::between(before, after, sel);
+        match h.undo.last_mut() {
+            Some(last) if group => *last = last.then(&edit, before, after),
+            _ => {
+                h.undo.push(edit);
+                if h.undo.len() > UNDO_LIMIT {
+                    h.undo.remove(0);
+                }
             }
         }
         h.redo.clear();
         h.last = Some((kind, now));
-        h.known = Some(after.to_string());
+        h.known = Some(after.clone());
     }
 
     fn text_input(&mut self, t: &str) {
@@ -4186,8 +4323,9 @@ impl<A: App> Runtime<A> {
         if let Some(h) = h {
             // Replacing a selection is its own step; so is text containing whitespace.
             let boundary = !before.is_empty() || t.chars().any(char::is_whitespace);
-            self.record_edit(fid, &value, before, &v, kind, boundary);
-            self.pending_values.insert(fid, v.clone());
+            let rc: Rc<str> = Rc::from(v.as_str());
+            self.record_edit(fid, &value, before, &rc, kind, boundary);
+            self.pending_values.insert(fid, rc);
             self.queue.push(h(v));
         }
         self.dirty = true;
@@ -4354,13 +4492,15 @@ impl<A: App> Runtime<A> {
         let st = self.inputs.get(&f).copied().unwrap_or_default();
         let mut sel = st.sel;
         sel.clamp(&spec.value);
-        let comp = compose(spec, sel, self.preedit.as_ref().filter(|p| p.node == f));
         let cr = content_rect(n);
         let line_h = n.text.size * n.text.line_height;
         if spec.multiline {
-            let r = self.text.caret_rect(&comp.text, &n.text, Some(cr.w.max(1.0)), self.scale, comp.caret);
+            let (dp, pc) = doc_preedit(sel, self.preedit.as_ref().filter(|p| p.node == f));
+            let q = doc_query(n, &spec.value, cr, self.scale, dp.as_ref());
+            let r = self.text.doc_caret_rect(&q, sel.cursor, pc);
             return Some(Rect::new(cr.x + r.x, cr.y - st.scroll_y + r.y, 1.0, r.h));
         }
+        let comp = compose(spec, sel, self.preedit.as_ref().filter(|p| p.node == f));
         let stops = self.text.caret_stops(&comp.text, &n.text, self.scale);
         let x = stops.iter().find(|s| s.0 >= comp.caret).or(stops.last()).map_or(0.0, |s| s.1);
         let ty = cr.y + ((cr.h - line_h) / 2.0).max(0.0);
@@ -4416,7 +4556,7 @@ fn display_value(spec: &InputSpec) -> String {
     if spec.password {
         "•".repeat(spec.value.chars().count())
     } else {
-        spec.value.clone()
+        spec.value.to_string()
     }
 }
 
@@ -4529,8 +4669,7 @@ fn measure_node<M>(
                 (Some(w), _) | (None, tf::AvailableSpace::Definite(w)) => Some(w.max(1.0)),
                 _ => None,
             };
-            let content = if spec.value.is_empty() { " " } else { spec.value.as_str() };
-            let h = text.measure(content, &node.text, w, scale).h;
+            let h = text.doc_height_capped(&spec.value, &node.text, w, scale, spec.rows.1 as f32 * lh);
             let rows = (h / lh).round().clamp(spec.rows.0 as f32, spec.rows.1 as f32);
             tf::Size { width: known.width.unwrap_or(0.0), height: known.height.unwrap_or((rows * lh).ceil()) }
         }
@@ -4950,41 +5089,41 @@ fn paint_input<M>(ctx: &PaintCtx<M>, n: &Node<M>, spec: &InputSpec, cr: Rect, c:
     let st = ctx.inputs.get(&n.id).copied().unwrap_or_default();
     let mut sel = st.sel;
     sel.clamp(&spec.value);
-    let comp = compose(spec, sel, ctx.preedit.filter(|p| focused && p.node == n.id));
     let blink_on = focused && ctx.window_focused && ((ctx.now - st.blink_start) / 0.53).floor() as i64 % 2 == 0;
     if spec.multiline {
-        let scale = c.scale;
-        let wrap = Some(cr.w.max(1.0));
+        let (dp, pc) = doc_preedit(sel, ctx.preedit.filter(|p| focused && p.node == n.id));
+        let q = doc_query(n, &spec.value, cr, c.scale, dp.as_ref());
+        let (y0, y1) = (st.scroll_y, st.scroll_y + cr.h);
         c.push_clip(cr.outset(1.0), Corners::ZERO);
-        let origin = Rect::new(cr.x, cr.y - st.scroll_y, cr.w, cr.h + st.scroll_y);
-        if comp.text.is_empty() && !spec.placeholder.is_empty() {
-            c.text_block(&spec.placeholder, &n.text, origin, wrap, th.colors.text_faint, false);
+        let top = cr.y - st.scroll_y;
+        if spec.value.is_empty() && dp.is_none() && !spec.placeholder.is_empty() {
+            let origin = Rect::new(cr.x, cr.y, cr.w, cr.h);
+            c.text_block(&spec.placeholder, &n.text, origin, Some(cr.w.max(1.0)), th.colors.text_faint, false);
         }
-        if focused && !sel.is_empty() && comp.underline.is_none() {
+        if focused && !sel.is_empty() && dp.is_none() {
             let (a, b) = sel.range();
-            for r in c.text.selection_rects(&comp.text, None, &n.text, wrap, scale, a, b) {
-                c.fill_rect(r.translate(origin.x, origin.y), th.colors.selection);
+            for r in c.text.doc_selection_rects(&q, a, b, y0, y1) {
+                c.fill_rect(r.translate(cr.x, top), th.colors.selection);
             }
         }
-        if !comp.text.is_empty() {
-            c.text_block(&comp.text, &n.text, origin, wrap, n.color, false);
-        }
-        if let Some((a, b)) = comp.underline {
-            for r in c.text.selection_rects(&comp.text, None, &n.text, wrap, scale, a, b) {
-                let r = r.translate(origin.x, origin.y);
-                c.fill_rect(Rect::new(r.x, r.bottom() - 2.0, r.w, 1.0), n.color);
+        for (para, y) in c.text.doc_visible(&q, y0, y1) {
+            if !para.is_empty() {
+                let rect = Rect::new(cr.x, top + y, cr.w, cr.h);
+                c.text_block(&para, &n.text, rect, Some(cr.w.max(1.0)), n.color, false);
             }
+        }
+        for r in c.text.doc_preedit_rects(&q, y0, y1) {
+            let r = r.translate(cr.x, top);
+            c.fill_rect(Rect::new(r.x, r.bottom() - 2.0, r.w, 1.0), n.color);
         }
         if blink_on {
-            let r = c.text.caret_rect(&comp.text, &n.text, wrap, scale, comp.caret);
-            c.fill_rect(
-                Rect::new((origin.x + r.x).round() - 0.5, origin.y + r.y + 2.0, 1.5, r.h - 4.0),
-                th.colors.accent,
-            );
+            let r = c.text.doc_caret_rect(&q, sel.cursor, pc);
+            c.fill_rect(Rect::new((cr.x + r.x).round() - 0.5, top + r.y + 2.0, 1.5, r.h - 4.0), th.colors.accent);
         }
         c.pop_clip();
         return;
     }
+    let comp = compose(spec, sel, ctx.preedit.filter(|p| focused && p.node == n.id));
     let scale = c.scale;
     c.push_clip(cr.outset(1.0), Corners::ZERO);
     let line_h = n.text.size * n.text.line_height;
@@ -5045,4 +5184,64 @@ fn paint_tooltip(c: &mut Canvas, th: &Theme, tip: &str, pos: Point, win: Size) {
     c.fill_rrect(r, Corners::all(th.radius_sm), &Fill::Solid(th.colors.elevated));
     c.border(r, Corners::all(th.radius_sm), Edges::all(1.0), th.colors.border_strong);
     c.text_block(tip, &ts, Rect::new(x + px, y + py, m.w + 1.0, m.h), Some(320.0), th.colors.text, false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_edits_merge_and_undo_exactly() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rnd = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n.max(1) as u64) as usize
+        };
+        let pieces = ["", "a", "é", "xy", "\n", "日本"];
+        for _ in 0..300 {
+            let original = String::from("hello wörld\nsecond line");
+            let mut v = original.clone();
+            let mut undo: Vec<TextEdit> = Vec::new();
+            let mut states = vec![v.clone()];
+            for step in 0..12 {
+                let mut a = rnd(v.len() + 1);
+                while !v.is_char_boundary(a) {
+                    a -= 1;
+                }
+                let mut b = (a + rnd(4)).min(v.len());
+                while !v.is_char_boundary(b) {
+                    b += 1;
+                }
+                let mut after = v.clone();
+                after.replace_range(a..b, pieces[rnd(pieces.len())]);
+                let e = TextEdit::between(&v, &after, Selection::default());
+                assert_eq!(e.apply(&v).as_deref(), Some(after.as_str()));
+                // Group every other edit into the previous step.
+                match undo.last_mut() {
+                    Some(last) if step % 2 == 1 => {
+                        *last = last.then(&e, &v, &after);
+                        states.pop();
+                    }
+                    _ => undo.push(e),
+                }
+                v = after;
+                states.push(v.clone());
+            }
+            // Undo every step, checking each intermediate state.
+            let mut redo = Vec::new();
+            for e in undo.iter().rev() {
+                states.pop();
+                v = e.inverse(Selection::default()).apply(&v).expect("undo applies");
+                assert_eq!(&v, states.last().unwrap());
+                redo.push(e.clone());
+            }
+            assert_eq!(v, original);
+            for e in redo.iter().rev() {
+                v = e.apply(&v).expect("redo applies");
+            }
+            assert_eq!(v, undo.iter().fold(original.clone(), |acc, e| e.apply(&acc).unwrap()));
+        }
+    }
 }

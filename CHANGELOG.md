@@ -24,10 +24,23 @@ All notable changes to rust-ui are listed here. The format follows
   (`#![warn(missing_docs)]`).
 - A widget gallery (`cargo run --example gallery`) and `cargo generate` templates for an IDE
   shell and a settings app (`templates/`).
+- `Runtime::accessibility_update` and `Runtime::reset_accessibility`: incremental accessibility
+  updates. The window now sends screen readers only the nodes that changed.
+- `HeadlessApp::drag_to_window`, for testing drags between windows without screen positions.
+
+### Changed
+
+- `text_area` handles large documents: text is laid out by paragraph and only what's visible,
+  at the caret or hit-tested is shaped. A 100k-line file opens in about 20 ms and edits in a few
+  milliseconds per keystroke (it used to run out of memory).
+- Undo history stores edits instead of copies of the text.
+- A multi-line input follows its caret only when the caret moves, so the mouse wheel can scroll
+  away from it.
 
 ### Fixed
 
 - Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
+- Dropping a dock tab onto another window didn't work on Wayland.
 
 ## [0.1.0] - unreleased snapshot
 

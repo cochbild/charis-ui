@@ -181,3 +181,15 @@ pub(crate) fn route_drag<A: App>(rts: &mut [&mut Runtime<Shared<A>>], src: usize
         }
     }
 }
+
+/// Drop a drag from window `src` into window `dst` at `local` (`dst`'s
+/// coordinates), for platforms that don't report window positions
+/// (Wayland). There the pointer shows up in `dst` right after the button is
+/// released over it: `dst` takes the drop, then `src`'s drag ends.
+pub(crate) fn drop_into<A: App>(rts: &mut [&mut Runtime<Shared<A>>], src: usize, dst: usize, local: Point) {
+    if src == dst {
+        return;
+    }
+    rts[dst].external_drag(Some(local), false);
+    rts[dst].external_drag(Some(local), true);
+}

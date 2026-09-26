@@ -297,7 +297,11 @@ What users can do:
 - drag it onto any group in another window to dock it there, with the same edge and center
   previews;
 - use the header buttons "Open in new window" and "Dock back", which also work for keyboard
-  users and on Wayland (where a window can't learn its screen position).
+  users.
+
+On Wayland, apps can't place windows or learn where they are, so a torn-out tab opens where the
+compositor puts it, and dragging over another window shows no drop preview. Dropping a tab onto
+another window still docks it there.
 
 Closing a floating window docks its tabs back.
 

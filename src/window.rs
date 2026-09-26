@@ -265,7 +265,24 @@ struct Shell<A: App> {
     /// A watched stylesheet: its path, last modification time and when it
     /// was last checked.
     stylesheet: Option<(std::path::PathBuf, Option<std::time::SystemTime>, Instant)>,
+    /// A drag released outside its window where window positions are unknown
+    /// (Wayland): held until another window reports the pointer (and takes
+    /// the drop) or a moment passes (the tab tears out).
+    held_release: Option<HeldRelease>,
 }
+
+/// See [`Shell::held_release`].
+struct HeldRelease {
+    /// Key of the window the drag started in (`None` = the main window).
+    src: Option<String>,
+    pos: Point,
+    button: MouseButton,
+    until: Instant,
+}
+
+/// How long a release outside the window waits for another window to report
+/// the pointer.
+const HELD_RELEASE: Duration = Duration::from_millis(250);
 
 /// Open a window and run the app until it is closed. Extra windows declared
 /// by [`App::windows`] open and close as the app's state changes.
@@ -301,6 +318,7 @@ pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::e
         menu: None,
         native_menu,
         stylesheet: opts.stylesheet.clone().map(|p| (p, None, Instant::now())),
+        held_release: None,
     };
     let main = shell.new_win(None, opts, None, None);
     shell.wins.push(main);
@@ -683,6 +701,23 @@ impl<A: App> Shell<A> {
         w.rt.set_screen_origin(origin);
     }
 
+    /// End a held release (see [`Shell::held_release`]). `over`: another
+    /// window reported the pointer at this position, so it takes the drop.
+    fn finish_held_release(&mut self, over: Option<(usize, Point)>) {
+        let Some(h) = self.held_release.take() else { return };
+        let Some(src) = self.wins.iter().position(|w| w.key == h.src) else { return };
+        if let Some((dst, p)) = over.filter(|(dst, _)| *dst != src) {
+            let mut rts: Vec<&mut Runtime<Shared<A>>> = self.wins.iter_mut().map(|w| &mut w.rt).collect();
+            crate::runtime::drop_into(&mut rts, src, dst, p);
+        }
+        self.wins[src].rt.handle(Event::PointerUp(h.pos, h.button));
+        for w in &self.wins {
+            if let Some(g) = &w.gfx {
+                g.window.request_redraw();
+            }
+        }
+    }
+
     /// Forward an in-progress drag from window `i` to the window under the
     /// pointer (tabs dragged between windows).
     fn route_drag(&mut self, i: usize, local: Point, drop: bool) {
@@ -984,12 +1019,12 @@ fn create_presenter(window: &Arc<Window>, allow_gpu: bool, transparent: bool) ->
     Ok(Presenter::Cpu { surface, _context: context })
 }
 
-/// Send the current accessibility tree (a no-op unless a screen reader is active).
+/// Send what changed in the accessibility tree (a no-op unless a screen reader is active).
 #[cfg(feature = "accessibility")]
 fn push_a11y_tree<A: App>(w: &mut Win<A>) {
     if let Some(ad) = &mut w.a11y {
         let rt = &mut w.rt;
-        ad.update_if_active(|| rt.accessibility_tree());
+        ad.update_if_active(|| rt.accessibility_update());
     }
 }
 
@@ -1054,14 +1089,17 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                     let w = &mut self.wins[i];
                     w.rt.set_time(now);
                     match e.window_event {
-                        A::InitialTreeRequested => push_a11y_tree(w),
+                        A::InitialTreeRequested => {
+                            w.rt.reset_accessibility();
+                            push_a11y_tree(w);
+                        }
                         A::ActionRequested(req) => {
                             w.rt.accessibility_action(req);
                             if let Some(g) = &w.gfx {
                                 g.window.request_redraw();
                             }
                         }
-                        A::AccessibilityDeactivated => {}
+                        A::AccessibilityDeactivated => w.rt.reset_accessibility(),
                     }
                 }
             }
@@ -1107,6 +1145,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
             WindowEvent::ModifiersChanged(m) => self.wins[i].mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Point::new(position.x as f32 / scale, position.y as f32 / scale);
+                self.finish_held_release(Some((i, p)));
                 self.wins[i].rt.handle(Event::PointerMove(p));
                 if self.wins.len() > 1 && self.wins[i].rt.element_dragging() {
                     self.route_drag(i, p, false);
@@ -1124,6 +1163,20 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 // Position comes from the last move event.
                 let p = self.wins[i].rt.pointer_pos().unwrap_or_default();
                 if state == ElementState::Released && self.wins.len() > 1 && self.wins[i].rt.element_dragging() {
+                    let size = self.wins[i].rt.window_size();
+                    let outside = p.x < 0.0 || p.y < 0.0 || p.x >= size.w || p.y >= size.h;
+                    if outside && self.wins[i].rt.screen_origin().is_none() {
+                        // Nothing says which window is under the pointer yet:
+                        // the compositor tells that window right after the release.
+                        self.finish_held_release(None);
+                        self.held_release = Some(HeldRelease {
+                            src: self.wins[i].key.clone(),
+                            pos: p,
+                            button: b,
+                            until: Instant::now() + HELD_RELEASE,
+                        });
+                        return;
+                    }
                     // The window under the pointer takes the drop before the drag ends.
                     self.route_drag(i, p, true);
                 }
@@ -1215,6 +1268,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
         if self.stylesheet.as_ref().is_some_and(|s| s.2.elapsed() >= Duration::from_millis(300) || s.1.is_none()) {
             self.poll_stylesheet();
         }
+        if self.held_release.as_ref().is_some_and(|h| Instant::now() >= h.until) {
+            self.finish_held_release(None);
+        }
         let now = self.now();
         // Deliver background messages and due timers.
         for w in &mut self.wins {
@@ -1243,6 +1299,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
         if let Some((_, _, checked)) = &self.stylesheet {
             let next = *checked + Duration::from_millis(300);
             wait = Some(wait.map_or(next, |w: Instant| w.min(next)));
+        }
+        if let Some(h) = &self.held_release {
+            wait = Some(wait.map_or(h.until, |w: Instant| w.min(h.until)));
         }
         el.set_control_flow(match wait {
             Some(t) => ControlFlow::WaitUntil(t),

@@ -56,10 +56,10 @@ Discover, Models, Tune, Developer, Settings).
 | 3 | Timer subscription (conditional interval) | ✅ |
 | 4 | Intercept window close (`on_close_request`) | ✅ |
 | 5 | Resize events to the app; window icon | ✅ |
-| 6 | Multi-line text editor (wrap, placeholder, Enter-to-submit option) | ⬜ |
-| 7 | Selectable read-only rich text (spans, drag-select, Ctrl+C, one global selection) | ⬜ |
-| 8 | Markdown view (headings, lists, code blocks with copy, links, quotes), cheap to re-render while streaming | ⬜ |
-| 9 | `pick_list` and a searchable `combo_box` | ⬜ |
+| 6 | Multi-line text editor (wrap, placeholder, Enter-to-submit option) | ✅ |
+| 7 | Selectable read-only rich text (spans, drag-select, Ctrl+C, one global selection) | ✅ |
+| 8 | Markdown view (headings, lists, code blocks with copy, links, quotes), cheap to re-render while streaming | ✅ |
+| 9 | `pick_list` and a searchable `combo_box` | ✅ |
 | 10 | Scroll to end / follow the bottom, plus scroll-position events | ✅ |
 
 **P1: already available**

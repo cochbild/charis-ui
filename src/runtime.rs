@@ -353,6 +353,19 @@ impl ScrollState {
     }
 }
 
+#[derive(Default)]
+struct DropdownState {
+    open: bool,
+    filter: String,
+    highlight: usize,
+    /// Option indices currently shown (after filtering).
+    visible: Vec<usize>,
+    /// Copied from the spec on every frame.
+    options: Vec<String>,
+    selected: Option<usize>,
+    searchable: bool,
+}
+
 #[derive(Default, Clone, Copy)]
 struct InputState {
     sel: Selection,
@@ -478,6 +491,7 @@ pub struct Runtime<A: App> {
     pane_meta: HashMap<(u64, usize), (f32, f32, bool)>,
     scrolls: HashMap<u64, ScrollState>,
     inputs: HashMap<u64, InputState>,
+    dropdowns: HashMap<u64, DropdownState>,
     tooltip: Option<(u64, f64, Point)>,
     splitter_hover: Option<(u64, f64)>,
     /// Read-only text selection: (node id, anchor byte, cursor byte).
@@ -534,6 +548,7 @@ impl<A: App> Runtime<A> {
             pane_meta: HashMap::new(),
             scrolls: HashMap::new(),
             inputs: HashMap::new(),
+            dropdowns: HashMap::new(),
             tooltip: None,
             splitter_hover: None,
             text_sel: None,
@@ -972,6 +987,7 @@ impl<A: App> Runtime<A> {
         }
         let pointer = inh_pointer && pointer_events;
 
+        let mut dropdown_spec: Option<DropdownSpec> = None;
         let (node_content, split_spec) = match content {
             Content::None => (NodeContent::None, None),
             Content::Text(t) => (NodeContent::Text(t), None),
@@ -979,6 +995,10 @@ impl<A: App> Runtime<A> {
             Content::Canvas(c) => (NodeContent::Canvas(c), None),
             Content::Input(i) => (NodeContent::Input(i), None),
             Content::Split(s) => (NodeContent::None, Some(s)),
+            Content::Dropdown(d) => {
+                dropdown_spec = Some(d);
+                (NodeContent::None, None)
+            }
         };
 
         // `position: fixed` elements are re-parented to the root (window) node.
@@ -1016,6 +1036,8 @@ impl<A: App> Runtime<A> {
 
         if let Some(spec) = split_spec {
             self.flatten_split(idx, id, spec, &text, color, pointer, frame);
+        } else if let Some(d) = dropdown_spec {
+            self.flatten_dropdown(idx, id, d, &text, color, pointer, frame);
         } else {
             for (i, c) in children.into_iter().enumerate() {
                 self.flatten(c, Some(idx), id, i, &text, color, pointer, frame);
@@ -1146,6 +1168,178 @@ impl<A: App> Runtime<A> {
             frame.nodes[w].pane = Some((id, i));
             child_i += 1;
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn flatten_dropdown(
+        &mut self,
+        idx: usize,
+        id: u64,
+        d: DropdownSpec,
+        text_st: &TextStyle,
+        color: Color,
+        pointer: bool,
+        frame: &mut Frame<A::Msg>,
+    ) {
+        let th = self.theme.clone();
+        let c = th.colors.clone();
+        let st = self.dropdowns.entry(id).or_default();
+        let open = st.open;
+        let filter = st.filter.to_lowercase();
+        let visible: Vec<usize> = (0..d.options.len())
+            .filter(|&i| !d.searchable || filter.is_empty() || d.options[i].to_lowercase().contains(&filter))
+            .collect();
+        if st.highlight >= visible.len() {
+            st.highlight = visible.len().saturating_sub(1);
+        }
+        st.visible = visible.clone();
+        st.options = d.options.clone();
+        st.selected = d.selected;
+        st.searchable = d.searchable;
+        let hi = st.highlight;
+        let filter_text = st.filter.clone();
+        let focused = self.focused == Some(id);
+        // Style the container itself as the trigger.
+        {
+            let n = &mut frame.nodes[idx];
+            n.style.direction = Direction::Row;
+            n.style.align_items = Some(Align::Center);
+            n.style.padding = Edges::new(0.0, 8.0, 0.0, 10.0);
+            n.style.radius = Corners::all(th.radius);
+            n.style.border_width = Edges::all(1.0);
+            n.style.border_color = if open || focused { c.accent } else { c.border_strong };
+            n.style.background = Some(c.input.into());
+            n.style.gap = (8.0, 8.0);
+            n.style.cursor = Some(Cursor::Pointer);
+            n.behavior = Behavior::DropdownToggle(id);
+        }
+        let label = d.selected.and_then(|i| d.options.get(i)).cloned();
+        let mut kids: Vec<Element<A::Msg>> = vec![
+            text(label.clone().unwrap_or_else(|| d.placeholder.clone()))
+                .ellipsis()
+                .grow(1.0)
+                .color(if label.is_some() { c.text } else { c.text_faint })
+                .pointer_events(false),
+            icon(if open { Icon::ChevronUp } else { Icon::ChevronDown })
+                .font_size(14.0)
+                .color(c.text_faint)
+                .pointer_events(false),
+        ];
+        if open {
+            let mut back = div::<A::Msg>().fixed().top(0.0).left(0.0).right(0.0).bottom(0.0).z_index(150);
+            back.behavior = Behavior::DropdownClose(id);
+            kids.push(back);
+            let mut list = col().gap(1.0).p(4.0).max_h(280.0).scroll_y();
+            for (vi, &oi) in visible.iter().enumerate() {
+                let selected = d.selected == Some(oi);
+                let mut row_ = row()
+                    .key(("opt", oi))
+                    .items_center()
+                    .h(th.row_height + 2.0)
+                    .px(8.0)
+                    .gap(8.0)
+                    .rounded(th.radius_sm)
+                    .cursor(Cursor::Pointer)
+                    .color(c.text)
+                    .child(text(d.options[oi].clone()).ellipsis().grow(1.0))
+                    .child_if(selected, || icon(Icon::Check).font_size(13.0).color(c.accent));
+                row_ = if vi == hi { row_.bg(c.accent_soft) } else { row_.hover(|s| s.bg(c.hover)) };
+                row_.behavior = Behavior::DropdownPick(id, oi);
+                list = list.child(row_);
+            }
+            if visible.is_empty() {
+                list = list.child(text("No matches").color(c.text_faint).px(8.0).py(6.0));
+            }
+            let mut panel = col()
+                .absolute()
+                .top(Length::Percent(100.0))
+                .left(0.0)
+                .min_w(Length::Percent(100.0))
+                .mt(4.0)
+                .z_index(160)
+                .bg(c.elevated)
+                .border(1.0, c.border_strong)
+                .rounded(th.radius + 2.0)
+                .shadows(th.shadow_popover.clone())
+                .clip();
+            if d.searchable {
+                panel = panel.child(
+                    row()
+                        .items_center()
+                        .gap(6.0)
+                        .h(th.control_height)
+                        .px(10.0)
+                        .border_b(1.0, c.border)
+                        .child(icon(Icon::Search).font_size(13.0).color(c.text_faint))
+                        .child(if filter_text.is_empty() {
+                            text("Type to filter…").color(c.text_faint)
+                        } else {
+                            text(format!("{filter_text}\u{2502}")).color(c.text)
+                        }),
+                );
+            }
+            kids.push(panel.child(list));
+        }
+        for (i, k) in kids.into_iter().enumerate() {
+            self.flatten(k, Some(idx), id, i, text_st, color, pointer, frame);
+        }
+    }
+
+    /// Close any open dropdown other than `keep`.
+    fn close_dropdowns(&mut self, keep: Option<u64>) {
+        for (id, st) in self.dropdowns.iter_mut() {
+            if Some(*id) != keep && st.open {
+                st.open = false;
+                self.dirty = true;
+            }
+        }
+    }
+
+    fn open_dropdown(&self) -> Option<u64> {
+        self.dropdowns.iter().find(|(_, s)| s.open).map(|(id, _)| *id)
+    }
+
+    fn pick_dropdown(&mut self, id: u64, option: usize) {
+        if let Some(st) = self.dropdowns.get_mut(&id) {
+            st.open = false;
+            st.filter.clear();
+        }
+        if let Some(h) = self.node_by_id(id).and_then(|n| n.handlers.select.clone()) {
+            self.queue.push(h(option));
+        }
+        self.focused = Some(id);
+        self.dirty = true;
+    }
+
+    /// Keyboard handling for an open dropdown. Returns true if consumed.
+    fn dropdown_key(&mut self, id: u64, k: &KeyEvent) -> bool {
+        let Some(st) = self.dropdowns.get_mut(&id) else { return false };
+        match k.key {
+            Key::Down => st.highlight = (st.highlight + 1).min(st.visible.len().saturating_sub(1)),
+            Key::Up => st.highlight = st.highlight.saturating_sub(1),
+            Key::Escape => {
+                st.open = false;
+                st.filter.clear();
+            }
+            Key::Backspace => {
+                st.filter.pop();
+                st.highlight = 0;
+            }
+            Key::Enter => {
+                if let Some(&o) = st.visible.get(st.highlight) {
+                    self.pick_dropdown(id, o);
+                } else {
+                    st.open = false;
+                }
+            }
+            Key::Tab => {
+                st.open = false;
+                return false;
+            }
+            _ => return matches!(k.key, Key::Char(_) | Key::Space) && !k.mods.command(),
+        }
+        self.dirty = true;
+        true
     }
 
     // --------------------------------------------------------------- layout
@@ -1989,6 +2183,37 @@ impl<A: App> Runtime<A> {
                         if n.disabled {
                             break;
                         }
+                        match n.behavior {
+                            Behavior::DropdownToggle(d) => {
+                                self.close_dropdowns(Some(d));
+                                let st = self.dropdowns.entry(d).or_default();
+                                let selected = st.selected;
+                                st.open = !st.open;
+                                st.filter.clear();
+                                st.highlight =
+                                    selected.and_then(|s| st.visible.iter().position(|&v| v == s)).unwrap_or(0);
+                                self.focused = Some(d);
+                                break;
+                            }
+                            Behavior::DropdownClose(d) => {
+                                if let Some(st) = self.dropdowns.get_mut(&d) {
+                                    st.open = false;
+                                    st.filter.clear();
+                                }
+                                break;
+                            }
+                            Behavior::DropdownPick(d, o) => {
+                                self.pick_dropdown(d, o);
+                                break;
+                            }
+                            _ => {}
+                        }
+                        if let Behavior::Copy(t) = &n.behavior {
+                            let t = t.clone();
+                            self.clipboard = t.clone();
+                            self.requests.push(WindowRequest::SetClipboard(t));
+                            break;
+                        }
                         if let Behavior::WindowControl(c) = n.behavior {
                             self.requests.push(match c {
                                 WindowControl::Minimize => WindowRequest::Minimize,
@@ -2151,6 +2376,18 @@ impl<A: App> Runtime<A> {
 
     fn key(&mut self, k: KeyEvent) {
         self.dirty = true;
+        if let Some(d) = self.open_dropdown() {
+            if self.dropdown_key(d, &k) {
+                return;
+            }
+        } else if let Some(f) = self.focused {
+            if self.dropdowns.contains_key(&f) && matches!(k.key, Key::Enter | Key::Space | Key::Down) {
+                let st = self.dropdowns.entry(f).or_default();
+                st.open = true;
+                st.filter.clear();
+                return;
+            }
+        }
         // Focused text input
         if let Some(fid) = self.focused {
             if let Some(&i) = self.frame.by_id.get(&fid) {
@@ -2319,7 +2556,7 @@ impl<A: App> Runtime<A> {
             }
             Key::Home | Key::Up => mv(&mut sel, 0, k.mods.shift),
             Key::End | Key::Down => mv(&mut sel, value.len(), k.mods.shift),
-            Key::Enter if multiline && !(submit_on_enter && !k.mods.shift) => {
+            Key::Enter if multiline && (!submit_on_enter || k.mods.shift) => {
                 let (v, s) = edit::replace(&value, sel, "\n");
                 sel = s;
                 new_value = Some(v);
@@ -2396,6 +2633,27 @@ impl<A: App> Runtime<A> {
     fn text_input(&mut self, t: &str) {
         let t: String = t.chars().filter(|c| !c.is_control()).collect();
         if t.is_empty() {
+            return;
+        }
+        if let Some(d) = self.open_dropdown() {
+            if let Some(st) = self.dropdowns.get_mut(&d) {
+                let options = &st.options;
+                if st.searchable {
+                    st.filter.push_str(&t);
+                    st.highlight = 0;
+                } else {
+                    // Type-ahead: jump to the first option starting with the typed text.
+                    let q = t.to_lowercase();
+                    if let Some(pos) = st
+                        .visible
+                        .iter()
+                        .position(|&o| options.get(o).is_some_and(|l| l.to_lowercase().starts_with(&q)))
+                    {
+                        st.highlight = pos;
+                    }
+                }
+            }
+            self.dirty = true;
             return;
         }
         self.insert_text(&t);

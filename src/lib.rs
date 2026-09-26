@@ -59,6 +59,8 @@ pub mod geometry;
 pub mod gpu;
 pub mod headless;
 pub mod icons;
+#[cfg(feature = "markdown")]
+pub mod markdown;
 pub mod paint;
 #[cfg(feature = "window")]
 mod platform;
@@ -78,6 +80,8 @@ pub use effects::{Proxy, TaskHandle};
 pub use element::*;
 pub use geometry::{Axis, Point, Rect, Size};
 pub use icons::Icon;
+#[cfg(feature = "markdown")]
+pub use markdown::markdown;
 pub use paint::Canvas;
 pub use runtime::{window_info, App, ChromeHit, ChromeMap, Cx, Event, MouseButton, Runtime, WindowInfo, WindowRequest};
 pub use style::*;
@@ -101,6 +105,8 @@ pub mod prelude {
     pub use crate::geometry::{Axis, Point, Rect, Size};
     pub use crate::headless::Headless;
     pub use crate::icons::Icon;
+    #[cfg(feature = "markdown")]
+    pub use crate::markdown::markdown;
     pub use crate::paint::Canvas;
     pub use crate::runtime::{window_info, App, Cx};
     pub use crate::style::{

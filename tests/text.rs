@@ -1,7 +1,7 @@
 //! Rich text, read-only selection, copy and links.
 
 use rust_ui::prelude::*;
-use rust_ui::{Event, MouseButton};
+use rust_ui::Event;
 
 #[derive(Default)]
 struct T {

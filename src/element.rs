@@ -153,6 +153,7 @@ pub(crate) struct Handlers<M> {
     pub drop_target: Option<Cb<DropEvent, M>>,
     pub scroll: Option<Cb<ScrollInfo, M>>,
     pub link: Option<Cb<String, M>>,
+    pub select: Option<Cb<usize, M>>,
 }
 
 impl<M> Default for Handlers<M> {
@@ -172,6 +173,7 @@ impl<M> Default for Handlers<M> {
             drop_target: None,
             scroll: None,
             link: None,
+            select: None,
         }
     }
 }
@@ -202,6 +204,7 @@ impl<M: 'static> Handlers<M> {
             drop_target: wrap(self.drop_target, &f),
             scroll: wrap(self.scroll, &f),
             link: wrap(self.link, &f),
+            select: wrap(self.select, &f),
         }
     }
 }
@@ -298,6 +301,15 @@ impl<M> Pane<M> {
     }
 }
 
+/// A dropdown (pick list / combo box).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DropdownSpec {
+    pub options: Vec<String>,
+    pub selected: Option<usize>,
+    pub placeholder: String,
+    pub searchable: bool,
+}
+
 pub(crate) struct SplitSpec<M> {
     pub axis: Axis,
     pub panes: Vec<Pane<M>>,
@@ -310,17 +322,35 @@ pub(crate) enum Content<M> {
     Canvas(PaintFn),
     Input(InputSpec),
     Split(SplitSpec<M>),
+    Dropdown(DropdownSpec),
 }
 
 /// Special interactive behaviours implemented by the runtime.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Behavior {
     None,
-    Scroll { x: bool, y: bool },
-    Slider { value: f32, min: f32, max: f32, step: f32 },
+    Scroll {
+        x: bool,
+        y: bool,
+    },
+    Slider {
+        value: f32,
+        min: f32,
+        max: f32,
+        step: f32,
+    },
     WindowDrag,
     WindowControl(WindowControl),
-    Splitter { split: u64, index: usize, axis: Axis },
+    Splitter {
+        split: u64,
+        index: usize,
+        axis: Axis,
+    },
+    /// Copy text to the clipboard on click.
+    Copy(String),
+    DropdownToggle(u64),
+    DropdownClose(u64),
+    DropdownPick(u64, usize),
 }
 
 /// A node in the UI tree. Build them with [`div`], [`row`], [`col`],
@@ -553,6 +583,7 @@ impl<M: 'static> Element<M> {
             Content::Icon(i) => Content::Icon(i),
             Content::Canvas(c) => Content::Canvas(c),
             Content::Input(i) => Content::Input(i),
+            Content::Dropdown(d) => Content::Dropdown(d),
             Content::Split(s) => Content::Split(SplitSpec {
                 axis: s.axis,
                 panes: s

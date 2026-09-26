@@ -111,7 +111,21 @@ pub fn icon_button<M: 'static>(i: Icon) -> Element<M> {
         .child(icon(i).font_size(16.0))
 }
 
+/// An [`icon_button`] with a tooltip.
+pub fn tooltip_icon_button<M: 'static>(i: Icon, tip: &str) -> Element<M> {
+    icon_button(i).tooltip(tip)
+}
+
 impl<M: 'static> Element<M> {
+    /// Copy `text` to the clipboard when clicked (no message needed).
+    pub fn copy_on_click(mut self, text: impl Into<String>) -> Self {
+        self.behavior = Behavior::Copy(text.into());
+        if self.style.cursor.is_none() {
+            self.style.cursor = Some(Cursor::Pointer);
+        }
+        self
+    }
+
     /// Prepend an icon to a button-like row.
     pub fn with_icon(mut self, i: Icon) -> Self {
         let size = self.style.font_size.unwrap_or(theme().font_size) + 2.0;
@@ -207,6 +221,53 @@ impl<M: 'static> Element<M> {
             spec.submit_on_enter = true;
         }
         self.handlers.submit = Some(msg);
+        self
+    }
+}
+
+/// A dropdown list: shows the selected option and opens a popup to pick one.
+/// Keyboard: Up/Down, Enter, Escape; typing jumps to a matching option.
+pub fn pick_list<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    dropdown(options, selected, on_select, false)
+}
+
+/// A searchable dropdown: typing filters the options.
+pub fn combo_box<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    dropdown(options, selected, on_select, true)
+}
+
+fn dropdown<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+    searchable: bool,
+) -> Element<M> {
+    let th = theme();
+    let mut e = Element::new(Content::Dropdown(DropdownSpec {
+        options: options.into_iter().map(Into::into).collect(),
+        selected,
+        placeholder: "Select…".into(),
+        searchable,
+    }));
+    e.handlers.select = Some(Rc::new(on_select));
+    e.focusable = true;
+    e.min_w(120.0).h(th.control_height).shrink(0.0)
+}
+
+impl<M: 'static> Element<M> {
+    /// Placeholder shown by a dropdown with nothing selected.
+    pub fn dropdown_placeholder(mut self, p: impl Into<String>) -> Self {
+        if let Content::Dropdown(d) = &mut self.content {
+            d.placeholder = p.into();
+        }
         self
     }
 }

@@ -100,6 +100,24 @@ list.child(component(("folder", name), Folder { name, items }))
 For one-off cases, `stateful(key, view, update)` takes closures instead. Components nest, and
 their state lasts as long as they are rendered.
 
+**Multiple windows** are declared from state, like the rest of the UI. The app lists its extra
+windows in `windows()` and draws them in `window_view(key)`:
+- a window opens when its key appears and closes when it disappears;
+- closing one sends its `on_close` message;
+- every window shares the same app, so an update from any window re-renders them all;
+- each window keeps its own hover, focus and scroll state.
+
+```rust
+fn windows(&self) -> Vec<WindowSpec<Msg>> {
+    self.inspectors.iter().map(|&i| {
+        WindowSpec::new(format!("inspector-{i}"), format!("Inspector {i}"), Msg::Close(i)).size(320.0, 220.0)
+    }).collect()
+}
+fn window_view(&self, key: &str) -> Element<Msg> { … }
+```
+
+`HeadlessApp` drives multi-window apps in tests (see `examples/multiwindow.rs`).
+
 **Memoization:** `lazy(key, deps, || view)` skips rebuilding a part of the UI while `deps` are
 unchanged (see [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)).
 
@@ -356,7 +374,7 @@ This is an early but working foundation. Known gaps and planned work:
 
 - Damage-region repainting on the CPU backend
 - Virtualized trees (lists and tables are done)
-- Multiple windows, native menus, file dialogs
+- Native menus, file dialogs
 - Auto-hide (JetBrains "unpinned") panels and dragging tabs out into floating OS windows
   (needs multi-window support)
 - Hot-reloadable stylesheet layer

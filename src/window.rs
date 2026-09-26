@@ -1,6 +1,8 @@
 //! Native window shell built on winit + softbuffer.
 
+use std::cell::RefCell;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -13,7 +15,7 @@ use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 use crate::element::{Key, KeyEvent, Modifiers};
 use crate::geometry::{Point, Size};
-use crate::runtime::{App, Event, MouseButton, ResizeEdge, Runtime, WindowRequest};
+use crate::runtime::{App, Event, MouseButton, ResizeEdge, Runtime, Shared, WindowRequest};
 use crate::style::Cursor;
 
 /// Options for the native window.
@@ -108,16 +110,18 @@ struct Gfx {
     presenter: Presenter,
 }
 
-struct Shell<A: App> {
-    rt: Runtime<A>,
+/// One OS window: its runtime (UI state) and graphics.
+struct Win<A: App> {
+    /// `None` for the main window.
+    key: Option<String>,
+    rt: Runtime<Shared<A>>,
     opts: WindowOptions,
+    position: Option<(f32, f32)>,
+    /// Sent when the user closes an extra window.
+    on_close: Option<A::Msg>,
     gfx: Option<Gfx>,
-    start: Instant,
     mods: ModifiersState,
     last_frame: Instant,
-    #[cfg(feature = "clipboard")]
-    clipboard: Option<arboard::Clipboard>,
-    error: Option<String>,
     gpu_failed: bool,
     chrome: crate::platform::SharedChrome,
     native_chrome: bool,
@@ -127,44 +131,41 @@ struct Shell<A: App> {
     /// Screen reader bridge (created with the window).
     #[cfg(feature = "accessibility")]
     a11y: Option<accesskit_winit::Adapter>,
-    #[cfg(feature = "accessibility")]
-    a11y_proxy: winit::event_loop::EventLoopProxy<UserEvent>,
 }
 
-/// Open a window and run the app until it is closed.
+struct Shell<A: App> {
+    app: Rc<RefCell<A>>,
+    /// Open windows; the main window is first.
+    wins: Vec<Win<A>>,
+    fonts: Vec<Vec<u8>>,
+    start: Instant,
+    #[cfg(feature = "clipboard")]
+    clipboard: Option<arboard::Clipboard>,
+    error: Option<String>,
+    proxy: winit::event_loop::EventLoopProxy<UserEvent>,
+    /// The main window closed; the event loop is exiting.
+    exiting: bool,
+}
+
+/// Open a window and run the app until it is closed. Extra windows declared
+/// by [`App::windows`] open and close as the app's state changes.
 pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
-    let loop_proxy = event_loop.create_proxy();
-    #[cfg(feature = "accessibility")]
-    let a11y_proxy = event_loop.create_proxy();
-    let mut rt = Runtime::new(app);
-    for f in std::mem::take(&mut opts.fonts) {
-        rt.load_font(f);
-    }
-    rt.frameless = opts.frameless;
+    let proxy = event_loop.create_proxy();
+    let fonts = std::mem::take(&mut opts.fonts);
     let mut shell = Shell {
-        rt,
-        opts,
-        gfx: None,
+        app: Rc::new(RefCell::new(app)),
+        wins: Vec::new(),
+        fonts,
         start: Instant::now(),
-        mods: ModifiersState::empty(),
-        last_frame: Instant::now(),
         #[cfg(feature = "clipboard")]
         clipboard: arboard::Clipboard::new().ok(),
         error: None,
-        gpu_failed: false,
-        chrome: Default::default(),
-        native_chrome: false,
-        dark: None,
-        ime: (false, None),
-        #[cfg(feature = "accessibility")]
-        a11y: None,
-        #[cfg(feature = "accessibility")]
-        a11y_proxy,
+        proxy,
+        exiting: false,
     };
-    shell.rt.set_waker(move || {
-        let _ = loop_proxy.send_event(UserEvent::Wake);
-    });
+    let main = shell.new_win(None, opts, None, None);
+    shell.wins.push(main);
     event_loop.run_app(&mut shell)?;
     match shell.error {
         Some(e) => Err(e.into()),
@@ -235,75 +236,253 @@ impl<A: App> Shell<A> {
         self.start.elapsed().as_secs_f64()
     }
 
-    fn apply_requests(&mut self, el: &ActiveEventLoop) {
-        let Some(g) = &self.gfx else { return };
-        for r in self.rt.take_requests() {
-            match r {
-                WindowRequest::DragMove => {
-                    let _ = g.window.drag_window();
+    fn new_win(
+        &self,
+        key: Option<String>,
+        opts: WindowOptions,
+        position: Option<(f32, f32)>,
+        on_close: Option<A::Msg>,
+    ) -> Win<A> {
+        let mut rt = Runtime::new(Shared::new(self.app.clone(), key.clone()));
+        for f in &self.fonts {
+            rt.load_font(f.clone());
+        }
+        rt.frameless = opts.frameless;
+        let proxy = self.proxy.clone();
+        rt.set_waker(move || {
+            let _ = proxy.send_event(UserEvent::Wake);
+        });
+        rt.set_time(self.now());
+        Win {
+            key,
+            rt,
+            opts,
+            position,
+            on_close,
+            gfx: None,
+            mods: ModifiersState::empty(),
+            last_frame: Instant::now(),
+            gpu_failed: false,
+            chrome: Default::default(),
+            native_chrome: false,
+            dark: None,
+            ime: (false, None),
+            #[cfg(feature = "accessibility")]
+            a11y: None,
+        }
+    }
+
+    fn index_of(&self, id: WindowId) -> Option<usize> {
+        self.wins.iter().position(|w| w.gfx.as_ref().is_some_and(|g| g.window.id() == id))
+    }
+
+    /// Create the OS window for `wins[i]`.
+    fn open(&mut self, el: &ActiveEventLoop, i: usize) {
+        let w = &mut self.wins[i];
+        if w.gfx.is_some() {
+            return;
+        }
+        let o = &w.opts;
+        let mut attrs = Window::default_attributes()
+            .with_title(o.title.clone())
+            .with_inner_size(LogicalSize::new(o.width as f64, o.height as f64))
+            .with_min_inner_size(LogicalSize::new(o.min_width as f64, o.min_height as f64))
+            // On Windows, frameless windows keep their native styles (for snap,
+            // shadow and resizing); the platform layer hides the frame.
+            .with_decorations(!o.frameless || cfg!(windows))
+            .with_resizable(o.resizable)
+            .with_window_icon(
+                o.icon.as_ref().and_then(|(w, h, d)| winit::window::Icon::from_rgba(d.clone(), *w, *h).ok()),
+            );
+        if let Some((x, y)) = w.position {
+            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
+        }
+        // The accessibility adapter must be attached before the window is first shown.
+        #[cfg(feature = "accessibility")]
+        let attrs = attrs.with_visible(false);
+        let window = match el.create_window(attrs) {
+            Ok(win) => Arc::new(win),
+            Err(e) => {
+                if w.key.is_none() {
+                    self.error = Some(e.to_string());
+                    el.exit();
                 }
-                WindowRequest::DragResize(e) => {
-                    let d = match e {
-                        ResizeEdge::N => ResizeDirection::North,
-                        ResizeEdge::S => ResizeDirection::South,
-                        ResizeEdge::E => ResizeDirection::East,
-                        ResizeEdge::W => ResizeDirection::West,
-                        ResizeEdge::NE => ResizeDirection::NorthEast,
-                        ResizeEdge::NW => ResizeDirection::NorthWest,
-                        ResizeEdge::SE => ResizeDirection::SouthEast,
-                        ResizeEdge::SW => ResizeDirection::SouthWest,
-                    };
-                    let _ = g.window.drag_resize_window(d);
+                return;
+            }
+        };
+        #[cfg(feature = "accessibility")]
+        {
+            w.a11y = Some(accesskit_winit::Adapter::with_event_loop_proxy(el, &window, self.proxy.clone()));
+            window.set_visible(true);
+        }
+        // Enabled on demand when a text input gets focus (see `redraw`).
+        window.set_ime_allowed(false);
+        if w.opts.frameless && crate::platform::install_frameless(&window, w.chrome.clone()) {
+            w.native_chrome = true;
+            // The OS now handles edge resizing and dragging.
+            w.rt.frameless = false;
+        }
+        let presenter = match create_presenter(&window, true) {
+            Ok(p) => p,
+            Err(e) => {
+                if w.key.is_none() {
+                    self.error = Some(e);
+                    el.exit();
                 }
-                WindowRequest::Minimize => g.window.set_minimized(true),
-                WindowRequest::ToggleMaximize => g.window.set_maximized(!g.window.is_maximized()),
-                WindowRequest::Close => el.exit(),
-                WindowRequest::SetTitle(t) => g.window.set_title(&t),
-                WindowRequest::SetClipboard(_s) =>
-                {
-                    #[cfg(feature = "clipboard")]
-                    if let Some(cb) = &mut self.clipboard {
-                        let _ = cb.set_text(_s);
+                return;
+            }
+        };
+        window.request_redraw();
+        w.gfx = Some(Gfx { window, presenter });
+    }
+
+    /// After app updates: re-render every window, and open or close extra
+    /// windows to match [`App::windows`].
+    fn sync(&mut self, el: &ActiveEventLoop) {
+        self.sync_with(el, false);
+    }
+
+    fn sync_with(&mut self, el: &ActiveEventLoop, force: bool) {
+        let mut updated = force;
+        for w in &mut self.wins {
+            updated |= w.rt.take_updated();
+        }
+        if !updated {
+            return;
+        }
+        for w in &mut self.wins {
+            w.rt.invalidate();
+            if let Some(g) = &w.gfx {
+                g.window.request_redraw();
+            }
+        }
+        let specs = self.app.borrow().windows();
+        // Close windows the app no longer declares (dropping one closes it).
+        self.wins.retain(|w| w.key.is_none() || specs.iter().any(|s| Some(&s.key) == w.key.as_ref()));
+        for spec in specs {
+            match self.wins.iter_mut().find(|w| w.key.as_ref() == Some(&spec.key)) {
+                Some(w) => {
+                    if w.opts.title != spec.title {
+                        w.opts.title = spec.title.clone();
+                        if let Some(g) = &w.gfx {
+                            g.window.set_title(&spec.title);
+                        }
                     }
+                    w.on_close = Some(spec.on_close);
+                }
+                None => {
+                    let opts = WindowOptions {
+                        title: spec.title.clone(),
+                        width: spec.width,
+                        height: spec.height,
+                        min_width: spec.min_width,
+                        min_height: spec.min_height,
+                        frameless: spec.frameless,
+                        ..WindowOptions::default()
+                    };
+                    let win = self.new_win(Some(spec.key.clone()), opts, spec.position, Some(spec.on_close));
+                    self.wins.push(win);
+                    let i = self.wins.len() - 1;
+                    self.open(el, i);
                 }
             }
         }
     }
 
-    fn redraw(&mut self) {
+    /// The user (or the app, through `Cx::close_window`) closes window `i`.
+    fn close(&mut self, el: &ActiveEventLoop, i: usize) {
+        if i == 0 {
+            if self.wins[0].rt.request_close() {
+                self.exiting = true;
+                el.exit();
+            }
+        } else if let Some(m) = self.wins[i].on_close.clone() {
+            self.wins[i].rt.send(m);
+            self.wins[i].rt.poll();
+        }
+    }
+
+    fn apply_requests(&mut self, el: &ActiveEventLoop) {
+        for i in 0..self.wins.len() {
+            let requests = self.wins[i].rt.take_requests();
+            for r in requests {
+                let Some(g) = &self.wins[i].gfx else { continue };
+                match r {
+                    WindowRequest::DragMove => {
+                        let _ = g.window.drag_window();
+                    }
+                    WindowRequest::DragResize(e) => {
+                        let d = match e {
+                            ResizeEdge::N => ResizeDirection::North,
+                            ResizeEdge::S => ResizeDirection::South,
+                            ResizeEdge::E => ResizeDirection::East,
+                            ResizeEdge::W => ResizeDirection::West,
+                            ResizeEdge::NE => ResizeDirection::NorthEast,
+                            ResizeEdge::NW => ResizeDirection::NorthWest,
+                            ResizeEdge::SE => ResizeDirection::SouthEast,
+                            ResizeEdge::SW => ResizeDirection::SouthWest,
+                        };
+                        let _ = g.window.drag_resize_window(d);
+                    }
+                    WindowRequest::Minimize => g.window.set_minimized(true),
+                    WindowRequest::ToggleMaximize => g.window.set_maximized(!g.window.is_maximized()),
+                    WindowRequest::Close => {
+                        if i == 0 {
+                            self.exiting = true;
+                            el.exit();
+                        } else {
+                            self.close(el, i);
+                        }
+                    }
+                    WindowRequest::SetTitle(t) => g.window.set_title(&t),
+                    WindowRequest::SetClipboard(_s) =>
+                    {
+                        #[cfg(feature = "clipboard")]
+                        if let Some(cb) = &mut self.clipboard {
+                            let _ = cb.set_text(_s);
+                        }
+                    }
+                }
+            }
+        }
+        self.sync(el);
+    }
+
+    fn redraw(&mut self, i: usize) {
         let now = self.now();
-        self.rt.set_time(now);
-        let Some(g) = &mut self.gfx else { return };
+        let w = &mut self.wins[i];
+        w.rt.set_time(now);
+        let Some(g) = &mut w.gfx else { return };
         let size = g.window.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else { return };
+        let (Some(pw), Some(ph)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else { return };
         let scale = g.window.scale_factor() as f32;
-        self.rt.maximized = g.window.is_maximized();
-        crate::runtime::set_window_info(crate::runtime::WindowInfo { maximized: self.rt.maximized, focused: true });
-        self.rt.resize(Size::new(size.width as f32 / scale, size.height as f32 / scale), scale);
+        w.rt.maximized = g.window.is_maximized();
+        crate::runtime::set_window_info(crate::runtime::WindowInfo { maximized: w.rt.maximized, focused: true });
+        w.rt.resize(Size::new(size.width as f32 / scale, size.height as f32 / scale), scale);
         match &mut g.presenter {
             #[cfg(feature = "gpu")]
             Presenter::Gpu(gs) => {
-                self.rt.render_scene();
-                self.rt.with_scene(|scene, text| gs.present(scene, text));
+                w.rt.render_scene();
+                w.rt.with_scene(|scene, text| gs.present(scene, text));
                 if !gs.renderer.is_healthy() {
                     // Device lost or GPU error: continue on the CPU renderer.
-                    self.gpu_failed = true;
-                    self.rt.invalidate();
+                    w.gpu_failed = true;
+                    w.rt.invalidate();
                 }
             }
             Presenter::Cpu { surface, .. } => {
-                let pm = self.rt.render();
-                if surface.resize(w, h).is_err() {
+                let pm = w.rt.render();
+                if surface.resize(pw, ph).is_err() {
                     return;
                 }
                 let Ok(mut buf) = surface.buffer_mut() else { return };
                 let data = pm.data();
-                let pw = pm.width() as usize;
-                let ph = pm.height() as usize;
-                let (bw, bh) = (w.get() as usize, h.get() as usize);
-                for y in 0..bh.min(ph) {
-                    let row = &data[y * pw * 4..(y * pw + pw.min(bw)) * 4];
-                    let out = &mut buf[y * bw..y * bw + pw.min(bw)];
+                let pmw = pm.width() as usize;
+                let pmh = pm.height() as usize;
+                let (bw, bh) = (pw.get() as usize, ph.get() as usize);
+                for y in 0..bh.min(pmh) {
+                    let row = &data[y * pmw * 4..(y * pmw + pmw.min(bw)) * 4];
+                    let out = &mut buf[y * bw..y * bw + pmw.min(bw)];
                     for (o, px) in out.iter_mut().zip(row.chunks_exact(4)) {
                         *o = (px[0] as u32) << 16 | (px[1] as u32) << 8 | px[2] as u32;
                     }
@@ -311,88 +490,83 @@ impl<A: App> Shell<A> {
                 let _ = buf.present();
             }
         }
-        g.window.set_cursor(map_cursor(self.rt.cursor()));
+        g.window.set_cursor(map_cursor(w.rt.cursor()));
         // IME only while a text input is focused; keep the candidate window at the caret.
-        let allowed = self.rt.text_input_focused();
-        if allowed != self.ime.0 {
+        let allowed = w.rt.text_input_focused();
+        if allowed != w.ime.0 {
             g.window.set_ime_allowed(allowed);
-            self.ime = (allowed, None);
+            w.ime = (allowed, None);
         }
         if allowed {
-            let area = self.rt.ime_cursor_area();
-            if area != self.ime.1 {
+            let area = w.rt.ime_cursor_area();
+            if area != w.ime.1 {
                 if let Some(r) = area {
                     g.window.set_ime_cursor_area(
                         winit::dpi::LogicalPosition::new(r.x as f64, r.y as f64),
                         winit::dpi::LogicalSize::new(r.w.max(1.0) as f64, r.h as f64),
                     );
                 }
-                self.ime.1 = area;
+                w.ime.1 = area;
             }
         }
-        self.last_frame = Instant::now();
-        if self.native_chrome {
-            if let Ok(mut m) = self.chrome.lock() {
-                *m = self.rt.chrome_map();
+        w.last_frame = Instant::now();
+        if w.native_chrome {
+            if let Ok(mut m) = w.chrome.lock() {
+                *m = w.rt.chrome_map();
             }
         }
-        let dark = self.rt.current_theme().dark;
-        if self.dark != Some(dark) {
-            self.dark = Some(dark);
+        let dark = w.rt.current_theme().dark;
+        if w.dark != Some(dark) {
+            w.dark = Some(dark);
             crate::platform::set_dark_mode(&g.window, dark);
         }
         #[cfg(feature = "accessibility")]
-        self.push_a11y_tree();
-        if self.gpu_failed {
-            self.gpu_failed = false;
-            if let Some(g) = &mut self.gfx {
-                if let Ok(p) = Self::create_presenter(&g.window, false) {
+        push_a11y_tree(w);
+        if w.gpu_failed {
+            w.gpu_failed = false;
+            if let Some(g) = &mut w.gfx {
+                if let Ok(p) = create_presenter(&g.window, false) {
                     g.presenter = p;
                     g.window.request_redraw();
                 }
             }
         }
     }
+}
 
-    /// GPU by default; falls back to the CPU renderer when no adapter is
-    /// available or `RUI_RENDERER=cpu` is set.
-    #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
-    fn create_presenter(window: &Arc<Window>, allow_gpu: bool) -> Result<Presenter, String> {
-        #[cfg(feature = "gpu")]
-        if allow_gpu && std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
-            let size = window.inner_size();
-            if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height) {
-                if std::env::var("RUI_PROFILE").is_ok() {
-                    eprintln!("rust-ui: GPU renderer on {}", gs.renderer.adapter_name);
-                }
-                return Ok(Presenter::Gpu(Box::new(gs)));
+/// GPU by default; falls back to the CPU renderer when no adapter is
+/// available or `RUI_RENDERER=cpu` is set.
+#[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
+fn create_presenter(window: &Arc<Window>, allow_gpu: bool) -> Result<Presenter, String> {
+    #[cfg(feature = "gpu")]
+    if allow_gpu && std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
+        let size = window.inner_size();
+        if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height) {
+            if std::env::var("RUI_PROFILE").is_ok() {
+                eprintln!("rust-ui: GPU renderer on {}", gs.renderer.adapter_name);
             }
+            return Ok(Presenter::Gpu(Box::new(gs)));
         }
-        let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
-        let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
-        if std::env::var("RUI_PROFILE").is_ok() {
-            eprintln!("rust-ui: CPU renderer");
-        }
-        Ok(Presenter::Cpu { surface, _context: context })
     }
+    let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
+    let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
+    if std::env::var("RUI_PROFILE").is_ok() {
+        eprintln!("rust-ui: CPU renderer");
+    }
+    Ok(Presenter::Cpu { surface, _context: context })
+}
 
-    /// Send the current accessibility tree (a no-op unless a screen reader is active).
-    #[cfg(feature = "accessibility")]
-    fn push_a11y_tree(&mut self) {
-        if let Some(ad) = &mut self.a11y {
-            let rt = &mut self.rt;
-            ad.update_if_active(|| rt.accessibility_tree());
-        }
+/// Send the current accessibility tree (a no-op unless a screen reader is active).
+#[cfg(feature = "accessibility")]
+fn push_a11y_tree<A: App>(w: &mut Win<A>) {
+    if let Some(ad) = &mut w.a11y {
+        let rt = &mut w.rt;
+        ad.update_if_active(|| rt.accessibility_tree());
     }
+}
 
-    fn modifiers(&self) -> Modifiers {
-        Modifiers {
-            shift: self.mods.shift_key(),
-            ctrl: self.mods.control_key(),
-            alt: self.mods.alt_key(),
-            meta: self.mods.super_key(),
-        }
-    }
+fn modifiers(m: ModifiersState) -> Modifiers {
+    Modifiers { shift: m.shift_key(), ctrl: m.control_key(), alt: m.alt_key(), meta: m.super_key() }
 }
 
 /// Events sent to the event loop from other threads.
@@ -414,21 +588,30 @@ impl From<accesskit_winit::Event> for UserEvent {
 
 impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
     fn user_event(&mut self, el: &ActiveEventLoop, ev: UserEvent) {
-        self.rt.set_time(self.now());
+        let now = self.now();
         match ev {
-            UserEvent::Wake => self.rt.poll(),
+            UserEvent::Wake => {
+                for w in &mut self.wins {
+                    w.rt.set_time(now);
+                    w.rt.poll();
+                }
+            }
             #[cfg(feature = "accessibility")]
             UserEvent::A11y(e) => {
                 use accesskit_winit::WindowEvent as A;
-                match e.window_event {
-                    A::InitialTreeRequested => self.push_a11y_tree(),
-                    A::ActionRequested(req) => {
-                        self.rt.accessibility_action(req);
-                        if let Some(g) = &self.gfx {
-                            g.window.request_redraw();
+                if let Some(i) = self.index_of(e.window_id) {
+                    let w = &mut self.wins[i];
+                    w.rt.set_time(now);
+                    match e.window_event {
+                        A::InitialTreeRequested => push_a11y_tree(w),
+                        A::ActionRequested(req) => {
+                            w.rt.accessibility_action(req);
+                            if let Some(g) = &w.gfx {
+                                g.window.request_redraw();
+                            }
                         }
+                        A::AccessibilityDeactivated => {}
                     }
-                    A::AccessibilityDeactivated => {}
                 }
             }
         }
@@ -436,80 +619,40 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
     }
 
     fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.gfx.is_some() {
-            return;
+        for i in 0..self.wins.len() {
+            self.open(el, i);
         }
-        let attrs = Window::default_attributes()
-            .with_title(self.opts.title.clone())
-            .with_inner_size(LogicalSize::new(self.opts.width as f64, self.opts.height as f64))
-            .with_min_inner_size(LogicalSize::new(self.opts.min_width as f64, self.opts.min_height as f64))
-            // On Windows, frameless windows keep their native styles (for snap,
-            // shadow and resizing); the platform layer hides the frame.
-            .with_decorations(!self.opts.frameless || cfg!(windows))
-            .with_resizable(self.opts.resizable)
-            .with_window_icon(
-                self.opts.icon.as_ref().and_then(|(w, h, d)| winit::window::Icon::from_rgba(d.clone(), *w, *h).ok()),
-            );
-        // The accessibility adapter must be attached before the window is first shown.
-        #[cfg(feature = "accessibility")]
-        let attrs = attrs.with_visible(false);
-        let window = match el.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                self.error = Some(e.to_string());
-                el.exit();
-                return;
-            }
-        };
-        #[cfg(feature = "accessibility")]
-        {
-            self.a11y = Some(accesskit_winit::Adapter::with_event_loop_proxy(el, &window, self.a11y_proxy.clone()));
-            window.set_visible(true);
-        }
-        // Enabled on demand when a text input gets focus (see `redraw`).
-        window.set_ime_allowed(false);
-        if self.opts.frameless && crate::platform::install_frameless(&window, self.chrome.clone()) {
-            self.native_chrome = true;
-            // The OS now handles edge resizing and dragging.
-            self.rt.frameless = false;
-        }
-        let presenter = match Self::create_presenter(&window, true) {
-            Ok(p) => p,
-            Err(e) => {
-                self.error = Some(e);
-                el.exit();
-                return;
-            }
-        };
-        window.request_redraw();
-        self.gfx = Some(Gfx { window, presenter });
+        // Windows the app declares from the start (e.g. a restored layout).
+        self.sync_with(el, true);
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Some(i) = self.index_of(id) else { return };
         let now = self.now();
-        self.rt.set_time(now);
-        let scale = self.gfx.as_ref().map(|g| g.window.scale_factor() as f32).unwrap_or(1.0);
-        #[cfg(feature = "accessibility")]
-        if let (Some(ad), Some(g)) = (&mut self.a11y, &self.gfx) {
-            ad.process_event(&g.window, &event);
+        {
+            let w = &mut self.wins[i];
+            w.rt.set_time(now);
+            #[cfg(feature = "accessibility")]
+            if let (Some(ad), Some(g)) = (&mut w.a11y, &w.gfx) {
+                ad.process_event(&g.window, &event);
+            }
         }
+        let scale = self.wins[i].gfx.as_ref().map(|g| g.window.scale_factor() as f32).unwrap_or(1.0);
         match event {
-            WindowEvent::CloseRequested => {
-                if self.rt.request_close() {
-                    el.exit();
-                }
-            }
-            WindowEvent::RedrawRequested => self.redraw(),
+            WindowEvent::CloseRequested => self.close(el, i),
+            WindowEvent::RedrawRequested => self.redraw(i),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                self.rt.invalidate();
+                self.wins[i].rt.invalidate();
                 // Redraw synchronously for smooth live resizing.
-                self.redraw();
+                self.redraw(i);
             }
-            WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
+            WindowEvent::ModifiersChanged(m) => self.wins[i].mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
-                self.rt.handle(Event::PointerMove(Point::new(position.x as f32 / scale, position.y as f32 / scale)));
+                self.wins[i]
+                    .rt
+                    .handle(Event::PointerMove(Point::new(position.x as f32 / scale, position.y as f32 / scale)));
             }
-            WindowEvent::CursorLeft { .. } => self.rt.handle(Event::PointerLeave),
+            WindowEvent::CursorLeft { .. } => self.wins[i].rt.handle(Event::PointerLeave),
             WindowEvent::MouseInput { state, button, .. } => {
                 let b = match button {
                     winit::event::MouseButton::Left => MouseButton::Left,
@@ -517,21 +660,23 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                     winit::event::MouseButton::Middle => MouseButton::Middle,
                     _ => return,
                 };
+                let rt = &mut self.wins[i].rt;
                 // Position comes from the last move event.
-                let p = self.rt.pointer_pos().unwrap_or_default();
-                self.rt.handle(match state {
+                let p = rt.pointer_pos().unwrap_or_default();
+                rt.handle(match state {
                     ElementState::Pressed => Event::PointerDown(p, b),
                     ElementState::Released => Event::PointerUp(p, b),
                 });
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                let w = &mut self.wins[i];
                 let d = match delta {
                     MouseScrollDelta::LineDelta(x, y) => Point::new(-x * 48.0, -y * 48.0),
                     MouseScrollDelta::PixelDelta(p) => Point::new(-p.x as f32 / scale, -p.y as f32 / scale),
                 };
-                let d = if self.mods.shift_key() && d.x == 0.0 { Point::new(d.y, 0.0) } else { d };
-                let p = self.rt.pointer_pos().unwrap_or_default();
-                self.rt.handle(Event::Wheel(p, d));
+                let d = if w.mods.shift_key() && d.x == 0.0 { Point::new(d.y, 0.0) } else { d };
+                let p = w.rt.pointer_pos().unwrap_or_default();
+                w.rt.handle(Event::Wheel(p, d));
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
@@ -540,20 +685,21 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 if event.state != ElementState::Pressed {
                     return;
                 }
-                let mods = self.modifiers();
+                let mods = modifiers(self.wins[i].mods);
                 let key = map_key(&event.logical_key);
                 #[cfg(feature = "clipboard")]
                 if mods.command() && key == Key::Char('v') {
                     if let Some(t) = self.clipboard.as_mut().and_then(|c| c.get_text().ok()) {
-                        self.rt.handle(Event::Paste(t));
+                        self.wins[i].rt.handle(Event::Paste(t));
                         self.apply_requests(el);
                         return;
                     }
                 }
-                self.rt.handle(Event::Key(KeyEvent { key, mods, repeat: event.repeat }));
+                let rt = &mut self.wins[i].rt;
+                rt.handle(Event::Key(KeyEvent { key, mods, repeat: event.repeat }));
                 if !mods.ctrl && !mods.meta {
                     if let Some(t) = &event.text {
-                        self.rt.handle(Event::Text(t.to_string()));
+                        rt.handle(Event::Text(t.to_string()));
                     }
                 }
             }
@@ -561,10 +707,11 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
                     eprintln!("ime {ime:?}");
                 }
+                let rt = &mut self.wins[i].rt;
                 match ime {
-                    Ime::Commit(t) => self.rt.handle(Event::Text(t)),
-                    Ime::Preedit(text, cursor) => self.rt.handle(Event::Preedit { text, cursor }),
-                    Ime::Disabled => self.rt.handle(Event::Preedit { text: String::new(), cursor: None }),
+                    Ime::Commit(t) => rt.handle(Event::Text(t)),
+                    Ime::Preedit(text, cursor) => rt.handle(Event::Preedit { text, cursor }),
+                    Ime::Disabled => rt.handle(Event::Preedit { text: String::new(), cursor: None }),
                     Ime::Enabled => {}
                 }
             }
@@ -572,10 +719,15 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 if f {
                     // OS accessibility settings may have changed while away.
                     if crate::system::system_prefs() != crate::system::refresh_system_prefs() {
-                        self.rt.invalidate();
+                        for w in &mut self.wins {
+                            w.rt.invalidate();
+                            if let Some(g) = &w.gfx {
+                                g.window.request_redraw();
+                            }
+                        }
                     }
                 }
-                self.rt.handle(Event::WindowFocus(f))
+                self.wins[i].rt.handle(Event::WindowFocus(f))
             }
             _ => {}
         }
@@ -583,27 +735,37 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
-        let now = self.now();
-        self.rt.set_time(now);
-        // Deliver background messages and due timers.
-        self.rt.poll();
-        self.apply_requests(el);
-        let Some(g) = &self.gfx else { return };
-        match self.rt.next_frame() {
-            Some(t) if t <= now => {
-                // Cap continuous animation at ~120 fps.
-                let next = self.last_frame + Duration::from_millis(8);
-                if Instant::now() >= next {
-                    g.window.request_redraw();
-                    el.set_control_flow(ControlFlow::Wait);
-                } else {
-                    el.set_control_flow(ControlFlow::WaitUntil(next));
-                }
-            }
-            Some(t) => {
-                el.set_control_flow(ControlFlow::WaitUntil(self.start + Duration::from_secs_f64(t)));
-            }
-            None => el.set_control_flow(ControlFlow::Wait),
+        if self.exiting {
+            return;
         }
+        let now = self.now();
+        // Deliver background messages and due timers.
+        for w in &mut self.wins {
+            w.rt.set_time(now);
+            w.rt.poll();
+        }
+        self.apply_requests(el);
+        let mut wait: Option<Instant> = None;
+        let mut soonest = |t: Instant| wait = Some(wait.map_or(t, |w: Instant| w.min(t)));
+        for w in &self.wins {
+            let Some(g) = &w.gfx else { continue };
+            match w.rt.next_frame() {
+                Some(t) if t <= now => {
+                    // Cap continuous animation at ~120 fps.
+                    let next = w.last_frame + Duration::from_millis(8);
+                    if Instant::now() >= next {
+                        g.window.request_redraw();
+                    } else {
+                        soonest(next);
+                    }
+                }
+                Some(t) => soonest(self.start + Duration::from_secs_f64(t)),
+                None => {}
+            }
+        }
+        el.set_control_flow(match wait {
+            Some(t) => ControlFlow::WaitUntil(t),
+            None => ControlFlow::Wait,
+        });
     }
 }

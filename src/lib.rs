@@ -118,7 +118,7 @@ pub mod prelude {
     #[cfg(feature = "markdown")]
     pub use crate::markdown::markdown;
     pub use crate::paint::Canvas;
-    pub use crate::runtime::{window_info, App, Cx};
+    pub use crate::runtime::{window_info, App, Cx, WindowSpec};
     pub use crate::semantics::Role;
     pub use crate::style::{
         pct, Align, Corners, Cursor, Direction, Edges, FontFamily, Justify, Length, Overflow, Shadow, StylePatch,

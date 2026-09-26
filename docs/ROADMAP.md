@@ -31,7 +31,6 @@ frameworks don't provide.
 - Platforms other than Linux have never been tested.
 - Accessibility has not been tried with a real screen reader yet.
 - IME composition has only been tested by simulating the events (no real IME on Linux CI).
-- Only one window per app.
 - Layout is fully rebuilt every frame.
 - 34 `unwrap`/`expect` calls in library code.
 - The crate name is taken.
@@ -158,7 +157,9 @@ systems; a 100k-line file scrolls at 120fps.
 
 ### M5: Windowing and panels beyond other frameworks
 
-- [ ] Multiple windows.
+- [x] Multiple windows: declared by `App::windows()` / `window_view`, one runtime per window
+  around a shared app, `HeadlessApp` for tests. Follow-up: share one font database between
+  windows (each window currently loads its own).
 - [ ] Drag a dock tab out into a floating OS window, and dock it back.
 - [ ] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
       style).

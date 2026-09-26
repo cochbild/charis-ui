@@ -2,7 +2,10 @@
 //! screenshots and CI.
 
 use crate::geometry::{Point, Size};
-use crate::runtime::{App, Event, MouseButton, Runtime};
+use std::cell::{Ref, RefCell, RefMut};
+use std::rc::Rc;
+
+use crate::runtime::{App, Event, MouseButton, Runtime, Shared, WindowSpec};
 
 /// A windowless harness around a [`Runtime`] with a manual clock.
 pub struct Headless<A: App> {
@@ -123,5 +126,144 @@ impl<A: App> Headless<A> {
         // Logical size = physical / scale; derived from the runtime's state.
         let _ = pm;
         self.rt.logical_size()
+    }
+}
+
+/// A windowless harness for apps with several windows ([`App::windows`]):
+/// one [`Headless`] per open window around a shared app, kept in sync the
+/// way the windowing shell does it.
+///
+/// ```
+/// # use rust_ui::prelude::*;
+/// # use rust_ui::headless::HeadlessApp;
+/// # #[derive(Default)] struct A { open: bool }
+/// # #[derive(Clone, Debug)] enum Msg { Open, Close }
+/// # impl App for A {
+/// #     type Msg = Msg;
+/// #     fn update(&mut self, m: Msg, _: &mut Cx<Msg>) { self.open = matches!(m, Msg::Open) }
+/// #     fn view(&self) -> Element<Msg> { button("Open").id("open").on_click(Msg::Open) }
+/// #     fn windows(&self) -> Vec<WindowSpec<Msg>> {
+/// #         if self.open { vec![WindowSpec::new("tool", "Tool", Msg::Close)] } else { vec![] }
+/// #     }
+/// # }
+/// let mut h = HeadlessApp::new(A::default(), 400.0, 300.0);
+/// let r = h.main().rt.rect_of("open").unwrap();
+/// h.click(None, r.center().x, r.center().y);
+/// assert!(h.window("tool").is_some());
+/// h.close("tool");
+/// assert!(h.window("tool").is_none());
+/// ```
+pub struct HeadlessApp<A: App> {
+    app: Rc<RefCell<A>>,
+    main: Headless<Shared<A>>,
+    windows: Vec<OpenWindow<A>>,
+}
+
+/// An extra window of a [`HeadlessApp`]: its spec and harness.
+type OpenWindow<A> = (WindowSpec<<A as App>::Msg>, Headless<Shared<A>>);
+
+impl<A: App> HeadlessApp<A> {
+    pub fn new(app: A, width: f32, height: f32) -> Self {
+        let app = Rc::new(RefCell::new(app));
+        let main = Headless::new(Shared::new(app.clone(), None), width, height, 1.0);
+        let mut h = Self { app, main, windows: Vec::new() };
+        h.sync();
+        h
+    }
+
+    /// The shared app state.
+    pub fn app(&self) -> Ref<'_, A> {
+        self.app.borrow()
+    }
+
+    pub fn app_mut(&mut self) -> RefMut<'_, A> {
+        self.app.borrow_mut()
+    }
+
+    pub fn main(&mut self) -> &mut Headless<Shared<A>> {
+        &mut self.main
+    }
+
+    /// An open extra window.
+    pub fn window(&mut self, key: &str) -> Option<&mut Headless<Shared<A>>> {
+        self.windows.iter_mut().find(|(s, _)| s.key == key).map(|(_, h)| h)
+    }
+
+    /// Keys of the open extra windows, in declaration order.
+    pub fn window_keys(&self) -> Vec<String> {
+        self.windows.iter().map(|(s, _)| s.key.clone()).collect()
+    }
+
+    fn get(&mut self, key: Option<&str>) -> &mut Headless<Shared<A>> {
+        match key {
+            None => &mut self.main,
+            Some(k) => self.window(k).unwrap_or_else(|| panic!("no window {k:?}")),
+        }
+    }
+
+    /// Click in a window (`None` = main).
+    pub fn click(&mut self, window: Option<&str>, x: f32, y: f32) {
+        self.get(window).click(x, y);
+        self.sync();
+    }
+
+    /// Deliver an event to a window (`None` = main).
+    pub fn event(&mut self, window: Option<&str>, e: Event) {
+        self.get(window).event(e);
+        self.sync();
+    }
+
+    /// Type text into a window's focused input.
+    pub fn type_text(&mut self, window: Option<&str>, s: &str) {
+        self.get(window).type_text(s);
+        self.sync();
+    }
+
+    /// The user closes an extra window (its `on_close` message is sent).
+    pub fn close(&mut self, key: &str) {
+        if let Some((spec, _)) = self.windows.iter().find(|(s, _)| s.key == key) {
+            let m = spec.on_close.clone();
+            self.main.rt.send(m);
+            self.main.rt.poll();
+        }
+        self.sync();
+    }
+
+    /// Advance every window's clock.
+    pub fn advance(&mut self, secs: f64) {
+        self.main.advance(secs);
+        for (_, w) in &mut self.windows {
+            w.advance(secs);
+        }
+        self.sync();
+    }
+
+    /// Propagate app updates to every window and open/close windows to
+    /// match [`App::windows`].
+    pub fn sync(&mut self) {
+        let mut updated = self.main.rt.take_updated();
+        for (_, w) in &mut self.windows {
+            updated |= w.rt.take_updated();
+        }
+        let specs = self.app.borrow().windows();
+        let mut next = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let h = match self.windows.iter().position(|(s, _)| s.key == spec.key) {
+                Some(i) => self.windows.remove(i).1,
+                None => {
+                    Headless::new(Shared::new(self.app.clone(), Some(spec.key.clone())), spec.width, spec.height, 1.0)
+                }
+            };
+            next.push((spec, h));
+        }
+        self.windows = next;
+        if updated {
+            self.main.rt.invalidate();
+            self.main.rt.render();
+            for (_, w) in &mut self.windows {
+                w.rt.invalidate();
+                w.rt.render();
+            }
+        }
     }
 }

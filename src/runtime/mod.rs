@@ -12,6 +12,8 @@ use taffy as tf;
 #[cfg(feature = "accessibility")]
 mod a11y;
 pub(crate) mod memo;
+mod shared;
+pub use shared::{Shared, WindowSpec};
 use tiny_skia::Pixmap;
 
 use crate::anim::Anim;
@@ -56,6 +58,19 @@ pub trait App: 'static {
     /// Global keyboard shortcuts, called for keys not handled by the focused element.
     fn on_key(&self, _event: &KeyEvent) -> Option<Self::Msg> {
         None
+    }
+
+    /// Extra windows to show besides the main one, declared from state like
+    /// the rest of the UI: a window opens when its key appears here and
+    /// closes when it disappears. Closing one sends its `on_close` message;
+    /// the app then removes it from this list. See [`WindowSpec`].
+    fn windows(&self) -> Vec<WindowSpec<Self::Msg>> {
+        Vec::new()
+    }
+
+    /// The UI of the extra window `key` (see [`App::windows`]).
+    fn window_view(&self, _key: &str) -> Element<Self::Msg> {
+        div()
     }
 }
 
@@ -739,6 +754,7 @@ pub struct Runtime<A: App> {
     text_sel: Option<(u64, usize, usize)>,
     drop_target: Option<u64>,
     queue: Vec<Out<A::Msg>>,
+    updated: bool,
     mailbox: crate::effects::Mailbox<A::Msg>,
     subs: Subscriptions<A::Msg>,
     timers: HashMap<(u128, usize), f64>,
@@ -808,6 +824,7 @@ impl<A: App> Runtime<A> {
             text_sel: None,
             drop_target: None,
             queue: Vec::new(),
+            updated: false,
             mailbox: crate::effects::Mailbox::new(),
             subs,
             timers: HashMap::default(),
@@ -2279,10 +2296,17 @@ impl<A: App> Runtime<A> {
         self.components.borrow().len()
     }
 
+    /// True if the app was updated since the last call (other windows of
+    /// the same app need to re-render).
+    pub fn take_updated(&mut self) -> bool {
+        std::mem::take(&mut self.updated)
+    }
+
     fn flush(&mut self) {
         if self.queue.is_empty() {
             return;
         }
+        self.updated = true;
         let mut cx = Cx { requests: Vec::new(), focus: None, scrolls: Vec::new(), proxy: self.mailbox.proxy() };
         while !self.queue.is_empty() {
             for out in std::mem::take(&mut self.queue) {

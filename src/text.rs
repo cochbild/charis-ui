@@ -187,6 +187,19 @@ const BUNDLED: &[&[u8]] = &[
 
 impl TextSystem {
     pub fn new() -> Self {
+        // Scanning system fonts is the slow part (hundreds of fonts on a
+        // typical desktop): do it once per thread and give later windows a
+        // copy (font data is shared, not copied).
+        thread_local! {
+            static BASE: std::cell::RefCell<Option<(fontdb::Database, Option<String>)>> =
+                const { std::cell::RefCell::new(None) };
+        }
+        let (db, ui_family) = BASE.with(|b| b.borrow_mut().get_or_insert_with(Self::scan_fonts).clone());
+        let fs = FontSystem::new_with_locale_and_db("en-US".into(), db);
+        Self { fs, swash: SwashCache::new(), cache: IdMap::default(), frame: 0, ui_family, text_correction: true }
+    }
+
+    fn scan_fonts() -> (fontdb::Database, Option<String>) {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
         #[cfg(feature = "bundled-fonts")]
@@ -225,8 +238,7 @@ impl TextSystem {
                 }
             }
         }
-        let fs = FontSystem::new_with_locale_and_db("en-US".into(), db);
-        Self { fs, swash: SwashCache::new(), cache: IdMap::default(), frame: 0, ui_family, text_correction: true }
+        (db, ui_family)
     }
 
     /// Register an additional font (TTF/OTF bytes). Use its family name with

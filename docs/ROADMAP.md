@@ -158,8 +158,8 @@ systems; a 100k-line file scrolls at 120fps.
 ### M5: Windowing and panels beyond other frameworks
 
 - [x] Multiple windows: declared by `App::windows()` / `window_view`, one runtime per window
-  around a shared app, `HeadlessApp` for tests. Follow-up: share one font database between
-  windows (each window currently loads its own).
+  around a shared app, `HeadlessApp` for tests. The system font scan happens once; later
+  windows copy the database (about 1ms to create a window's runtime).
 - [x] Drag a dock tab out into a floating OS window, and dock it back (`DockSpace`): tear-out at
   the drop point, cross-window drop targets with previews, pop-out / dock-back buttons, closing
   a floating window re-docks its tabs. Verified end to end under Xvfb with real OS windows.

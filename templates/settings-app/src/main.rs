@@ -1,4 +1,4 @@
-//! A settings app built on rust-ui: a sidebar of sections, forms that apply
+//! A settings app built on Charis: a sidebar of sections, forms that apply
 //! as you change them (the theme updates live), a search box, a reset with
 //! confirmation, and settings saved to a small text file in the user's
 //! config directory.
@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 /// The settings the app stores.
 #[derive(Clone, Debug, PartialEq)]
@@ -588,7 +588,7 @@ impl Prefs {
 fn main() {
     let app = Prefs::new(config_path(env!("CARGO_PKG_NAME")));
     let opts = WindowOptions::new("Settings").size(960.0, 680.0).min_size(640.0, 420.0);
-    if let Err(e) = rust_ui::run(app, opts) {
+    if let Err(e) = charis_ui::run(app, opts) {
         eprintln!("error: {e}");
     }
 }

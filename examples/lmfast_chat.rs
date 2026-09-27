@@ -12,10 +12,10 @@
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use charis_ui::dialog::DialogKind;
+use charis_ui::prelude::*;
+use charis_ui::TaskHandle;
 use futures::StreamExt;
-use rust_ui::dialog::DialogKind;
-use rust_ui::prelude::*;
-use rust_ui::TaskHandle;
 
 const LOG_CAP: usize = 20_000;
 
@@ -1313,7 +1313,7 @@ fn main() {
         if args.iter().any(|a| a == "--scrolled") {
             // Scroll the log up while it keeps streaming: the view must stay put.
             for _ in 0..12 {
-                h.event(rust_ui::runtime::Event::Wheel(Point::new(700.0, 500.0), Point::new(0.0, -120.0)));
+                h.event(charis_ui::runtime::Event::Wheel(Point::new(700.0, 500.0), Point::new(0.0, -120.0)));
                 h.advance(0.05);
             }
             h.advance(1.0);
@@ -1324,5 +1324,5 @@ fn main() {
         return;
     }
     let opts = WindowOptions::new("LM Fast").size(1360.0, 860.0).min_size(940.0, 600.0);
-    rust_ui::run(initial(), opts).expect("run");
+    charis_ui::run(initial(), opts).expect("run");
 }

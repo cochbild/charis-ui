@@ -1,9 +1,9 @@
 //! Clipboard: copying text and images, reading the clipboard back, and
 //! pasting an image into a focused element.
 
-use rust_ui::image::Image;
-use rust_ui::prelude::*;
-use rust_ui::{ClipboardContent, Event, WindowRequest};
+use charis_ui::image::Image;
+use charis_ui::prelude::*;
+use charis_ui::{ClipboardContent, Event, WindowRequest};
 
 struct Clip {
     got: Vec<ClipboardContent>,

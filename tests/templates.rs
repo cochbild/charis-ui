@@ -5,7 +5,7 @@
 #[allow(dead_code)]
 mod ide_shell;
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn click_text<A: App>(h: &mut Headless<A>, s: &str) {
     let r = h.rt.rect_of_text(s).unwrap_or_else(|| panic!("no text {s:?}"));
@@ -34,11 +34,11 @@ fn ide_shell_opens_files_from_the_project_tree() {
 fn ide_shell_palette_runs_commands() {
     let mut h = Headless::new(ide_shell::Shell::default(), 1280.0, 800.0, 1.0);
     h.settle();
-    h.rt.send(ide_shell::Msg::Palette(rust_ui::commands::PaletteMsg::Open));
+    h.rt.send(ide_shell::Msg::Palette(charis_ui::commands::PaletteMsg::Open));
     h.settle();
     h.type_text("dark theme");
     h.settle();
-    h.event(rust_ui::Event::Key(KeyEvent { key: Key::Enter, mods: Modifiers::default(), repeat: false }));
+    h.event(charis_ui::Event::Key(KeyEvent { key: Key::Enter, mods: Modifiers::default(), repeat: false }));
     h.settle();
     assert!(!h.rt.app.dark, "the palette ran Dark Theme");
     click_text(&mut h, "View");
@@ -114,7 +114,7 @@ fn settings_text_round_trips_and_tolerates_junk() {
 
 /// Cargo reads every `Cargo.toml` in a git dependency, so a template manifest
 /// with a `{{project-name}}` placeholder would print errors in every project
-/// that depends on rust-ui from git. Template manifests are `Cargo.toml.liquid`.
+/// that depends on Charis from git. Template manifests are `Cargo.toml.liquid`.
 #[test]
 fn templates_have_no_cargo_toml_with_placeholders() {
     for t in ["ide-shell", "settings-app"] {

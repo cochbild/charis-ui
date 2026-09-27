@@ -3,7 +3,7 @@
 //! From [`App::update`](crate::App::update):
 //!
 //! ```no_run
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Loaded(String), Token(String), Done }
 //! # struct S; impl S { fn upd(&mut self, cx: &mut Cx<Msg>) {
 //! // One result:
@@ -102,7 +102,7 @@ fn execute(fut: impl Future<Output = ()> + Send + 'static) {
     #[cfg(not(feature = "tokio"))]
     {
         std::thread::Builder::new()
-            .name("rust-ui-task".into())
+            .name("charis-task".into())
             .spawn(move || futures::executor::block_on(fut))
             .expect("failed to spawn a task thread");
     }
@@ -118,7 +118,7 @@ fn tokio_handle() -> tokio::runtime::Handle {
     RT.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .thread_name("rust-ui-tokio")
+            .thread_name("charis-tokio")
             .build()
             .expect("tokio runtime")
     })
@@ -164,7 +164,7 @@ pub(crate) fn spawn_blocking<M: Send + 'static>(proxy: Proxy<M>, f: impl FnOnce(
     let (abort, reg) = AbortHandle::new_pair();
     let a = abort.clone();
     std::thread::Builder::new()
-        .name("rust-ui-blocking".into())
+        .name("charis-blocking".into())
         .spawn(move || {
             let m = f();
             if !a.is_aborted() {

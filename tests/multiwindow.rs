@@ -3,8 +3,8 @@
 
 use std::time::Duration;
 
-use rust_ui::headless::HeadlessApp;
-use rust_ui::prelude::*;
+use charis_ui::headless::HeadlessApp;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Studio {

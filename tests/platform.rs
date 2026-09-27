@@ -4,8 +4,8 @@
 //! background, frameless edge resizing, macOS editing keys, the system
 //! UI font.
 
-use rust_ui::prelude::*;
-use rust_ui::{Event, MouseButton, WindowInfo, WindowRequest};
+use charis_ui::prelude::*;
+use charis_ui::{Event, MouseButton, WindowInfo, WindowRequest};
 
 struct Chrome {
     text: String,
@@ -143,7 +143,10 @@ fn frameless_edges_resize_except_in_full_screen() {
     h.event(Event::PointerDown(Point::new(399.0, 299.0), MouseButton::Left));
     h.event(Event::PointerUp(Point::new(399.0, 299.0), MouseButton::Left));
     let reqs = h.rt.take_requests();
-    assert!(reqs.iter().any(|r| matches!(r, WindowRequest::DragResize(rust_ui::runtime::ResizeEdge::SE))), "{reqs:?}");
+    assert!(
+        reqs.iter().any(|r| matches!(r, WindowRequest::DragResize(charis_ui::runtime::ResizeEdge::SE))),
+        "{reqs:?}"
+    );
     h.rt.set_window_state(WindowInfo { fullscreen: true, ..Default::default() });
     h.settle();
     h.event(Event::PointerDown(Point::new(399.0, 299.0), MouseButton::Left));
@@ -198,7 +201,7 @@ fn macos_editing_keys() {
 fn system_ui_font() {
     let mut h = Headless::new(app(), 400.0, 300.0, 1.0);
     h.settle();
-    let st = rust_ui::text::TextStyle::default();
+    let st = charis_ui::text::TextStyle::default();
     let inter = h.rt.text.measure("Crisp system font", &st, None, 1.0).w;
     match h.rt.use_system_font() {
         // This machine has a platform font (on Linux: the desktop's, else a

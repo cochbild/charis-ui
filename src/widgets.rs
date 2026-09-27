@@ -4,7 +4,7 @@
 //! after construction with the usual builder methods:
 //!
 //! ```no_run
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Go }
 //! let b: Element<Msg> = primary_button("Deploy").pill().px(20.0).on_click(Msg::Go);
 //! ```
@@ -89,7 +89,7 @@ pub fn button_kind<M: 'static>(kind: ButtonKind, label: impl Into<String>) -> El
 /// A neutral (secondary) button.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -165,7 +165,7 @@ impl<M: 'static> Element<M> {
 /// `on_input` and store the new value.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -268,7 +268,7 @@ impl<M: 'static> Element<M> {
 /// Keyboard: Up/Down, Enter, Escape; typing jumps to a matching option.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -338,7 +338,7 @@ pub fn search_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(Stri
 /// A checkbox with a label. Attach `.on_click(...)` to toggle.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -688,7 +688,7 @@ pub fn switch_row<M: 'static>(label: impl Into<String>, on: bool) -> Element<M> 
 /// A horizontal slider. Handle `.on_change(|v| ...)`.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -978,7 +978,7 @@ impl<M> Tab<M> {
 /// Editor-style tabs (VS Code / browser look).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {
@@ -1550,7 +1550,7 @@ enum BarEv<M> {
 /// `menubar(self.menu())` (see [`App::menu`](crate::App::menu)).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {

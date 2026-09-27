@@ -1,8 +1,8 @@
 //! The chrome map drives native title-bar behaviour (Windows snap, Snap
 //! Layouts, system menu). Verify it classifies regions correctly.
 
-use rust_ui::prelude::*;
-use rust_ui::ChromeHit;
+use charis_ui::prelude::*;
+use charis_ui::ChromeHit;
 
 struct App1 {
     menu: Option<usize>,

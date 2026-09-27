@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use rust_ui::dialog::{DialogKind, DialogRequest};
-use rust_ui::prelude::*;
+use charis_ui::dialog::{DialogKind, DialogRequest};
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Ed {

@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Counter {
     limit: u32,

@@ -3,7 +3,7 @@
 //!
 //! cargo run --release --example stress [-- rows...]
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Stress {
     rows: usize,
@@ -48,7 +48,7 @@ impl App for Stress {
 
 fn main() {
     if std::env::var_os("SIZES").is_some() {
-        for (n, s) in rust_ui::Runtime::<Stress>::struct_sizes() {
+        for (n, s) in charis_ui::Runtime::<Stress>::struct_sizes() {
             println!("{n}: {s} bytes");
         }
     }

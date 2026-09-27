@@ -1,6 +1,6 @@
 # Rust UI landscape and design research (September 2026)
 
-Research done before settling rust-ui's visual style and architecture.
+Research done before settling Charis's visual style and architecture.
 
 **How this was checked.** Versions come from crates.io. Activity comes from git history. Behaviours were checked against source code (VS Code, Zed, Slint, Tailwind, shadcn, Radix, Fluent) wherever the documentation sites were unreachable. A few items could not be verified; they are marked *(unverified)*.
 
@@ -136,7 +136,7 @@ The closest options each miss something:
 - vello_cpu uses SIMD and multiple threads, and is much faster.
 - A full CPU redraw of a 4K frame at 120Hz is not viable.
 
-## 5. What this means for rust-ui
+## 5. What this means for Charis
 
 What we already match:
 - Taffy flexbox/grid layout.

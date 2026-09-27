@@ -27,7 +27,7 @@ budgets; the current numbers are in `docs/PERFORMANCE.md` in the repository.
    rendered markdown, settings pages, sidebars.
 
    ```rust
-   # use rust_ui::prelude::*;
+   # use charis_ui::prelude::*;
    # struct Message { text: String, expanded: bool }
    # fn message_view(m: &Message) -> Element<()> { text(m.text.clone()) }
    # let messages = vec![Message { text: "hi".into(), expanded: false }];
@@ -43,7 +43,7 @@ budgets; the current numbers are in `docs/PERFORMANCE.md` in the repository.
 
 ## Measuring
 
-- `RUI_PROFILE=1` prints the GPU adapter and per-frame timings for view, flatten, layout and
+- `CHARIS_PROFILE=1` prints the GPU adapter and per-frame timings for view, flatten, layout and
   paint.
 - `cargo run --release --example stress -- 5000` shows how a large, non-virtualized UI behaves.
 - `cargo bench --bench frames -- --json out.json` writes the frame-budget numbers for tracking.

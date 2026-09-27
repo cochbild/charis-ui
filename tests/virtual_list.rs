@@ -1,8 +1,8 @@
 //! Virtualized lists: only visible rows are built, variable heights are
 //! measured and cached, and scrolling stays anchored.
 
-use rust_ui::prelude::*;
-use rust_ui::runtime::Event;
+use charis_ui::prelude::*;
+use charis_ui::runtime::Event;
 
 struct List {
     count: usize,

@@ -1,8 +1,8 @@
 //! Dock panel commands (tab context menu, keyboard), the drop compass, the
 //! dock-edge guides, and keyboard resizing of splitters.
 
-use rust_ui::prelude::*;
-use rust_ui::{Event, MouseButton};
+use charis_ui::prelude::*;
+use charis_ui::{Event, MouseButton};
 
 struct D {
     dock: Dock<&'static str>,

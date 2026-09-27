@@ -1,8 +1,8 @@
 //! WCAG contrast guarantees of generated themes, for every accent, gray
 //! tint and mode.
 
-use rust_ui::prelude::*;
-use rust_ui::Contrast;
+use charis_ui::prelude::*;
+use charis_ui::Contrast;
 
 fn themes(contrast: Contrast) -> Vec<(String, Theme)> {
     let mut out = Vec::new();

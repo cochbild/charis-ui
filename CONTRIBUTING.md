@@ -1,4 +1,4 @@
-# Contributing to rust-ui
+# Contributing to Charis
 
 Thanks for helping. Bug reports, fixes, docs, widgets and platform QA are all welcome. This page
 covers how to build, test and submit a change.
@@ -27,11 +27,11 @@ Useful environment variables while working:
 
 | Variable | Effect |
 |---|---|
-| `RUI_RENDERER=cpu` | Use the CPU renderer instead of wgpu. |
-| `RUI_PROFILE=1` | Print per-frame timings. |
-| `RUI_NO_DAMAGE=1` | Turn off CPU damage tracking (full redraw every frame). |
-| `RUI_DARK=1`, `RUI_HIGH_CONTRAST=1`, `RUI_REDUCED_MOTION=1` | Override the OS preferences. |
-| `RUI_DEBUG_EVENTS=1` | Log window events. |
+| `CHARIS_RENDERER=cpu` | Use the CPU renderer instead of wgpu. |
+| `CHARIS_PROFILE=1` | Print per-frame timings. |
+| `CHARIS_NO_DAMAGE=1` | Turn off CPU damage tracking (full redraw every frame). |
+| `CHARIS_DARK=1`, `CHARIS_HIGH_CONTRAST=1`, `CHARIS_REDUCED_MOTION=1` | Override the OS preferences. |
+| `CHARIS_DEBUG_EVENTS=1` | Log window events. |
 | `WGPU_ADAPTER_NAME=…` | Render with the GPU whose name contains this (e.g. `Microsoft Basic Render Driver` for WARP). |
 
 In debug builds, F12 (or Ctrl+Shift+I, or Cmd+Alt+I on macOS) opens the element inspector.
@@ -95,11 +95,11 @@ cargo clippy --all-features --target aarch64-apple-darwin -- -D warnings
 
 ## Reporting bugs
 
-Please include your OS and version, the renderer (GPU adapter name, or `RUI_RENDERER=cpu`), the
+Please include your OS and version, the renderer (GPU adapter name, or `CHARIS_RENDERER=cpu`), the
 display scale, and the smallest app that shows the problem. A failing headless test is the best
 possible bug report.
 
 ## License
 
-rust-ui is dual-licensed under MIT or Apache-2.0. Unless you say otherwise, any contribution you
+Charis is dual-licensed under MIT or Apache-2.0. Unless you say otherwise, any contribution you
 submit for inclusion is licensed the same way, without any additional terms or conditions.

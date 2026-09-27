@@ -15,9 +15,9 @@ mod showcase;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use rust_ui::prelude::*;
-use rust_ui::tree::{TreeModel, TreeMsg, TreeState};
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::tree::{TreeModel, TreeMsg, TreeState};
+use charis_ui::Event;
 
 struct Result {
     name: &'static str,

@@ -2,7 +2,7 @@
 //! indicators, user-resizable columns, and a virtualized body.
 //!
 //! ```no_run
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Sort(usize, SortDir), Select(usize) }
 //! # let models: Vec<(String, u64)> = vec![];
 //! let rows = std::rc::Rc::new(models);
@@ -150,7 +150,7 @@ pub struct Table<M> {
 /// Widths are kept by the runtime, so the app needs no state for it.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// #[derive(Clone)]
 /// enum Msg {

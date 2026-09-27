@@ -6,7 +6,7 @@ restyle every instance of a widget, use [style classes](theming.md#style-classes
 ## Visuals
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn tile() -> Element<()> {
     row()
@@ -48,7 +48,7 @@ every text inside picks it up.
 For mixed styles in one paragraph, use `rich_text` with spans:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let line: Element<()> = rich_text(vec![span("Build "), span("failed").bold().color(hex("#f87171")), span(" in 2.1s")]);
 ```
 
@@ -60,7 +60,7 @@ let line: Element<()> = rich_text(vec![span("Build "), span("failed").bold().col
 style in that state. `transition(secs)` animates the change:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let card: Element<()> = col()
     .p(16.0)
     .rounded(10.0)
@@ -82,7 +82,7 @@ asks for reduced motion, movement becomes instant and fades stay.
 Styles are plain functions, so a mixin is a function from `Element` to `Element`:
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn chip<M: 'static>(e: Element<M>) -> Element<M> {
     e.px(8.0).py(2.0).pill().bg(theme().colors.hover).font_size(11.0)
@@ -105,7 +105,7 @@ A widget is a function that returns an `Element`. Read sizes and colors from `th
 follows the app's theme, and tag it with a class so themes can restyle it:
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn stat<M: 'static>(label: &str, value: String) -> Element<M> {
     let th = theme();
@@ -121,7 +121,7 @@ fn stat<M: 'static>(label: &str, value: String) -> Element<M> {
 For accessibility, give custom controls a role, a name and their state, and make them focusable:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # #[derive(Clone)] enum Msg { ToggleWifi }
 # let on = true;
 let wifi: Element<Msg> =

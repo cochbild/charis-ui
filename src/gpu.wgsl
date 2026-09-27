@@ -1,4 +1,4 @@
-// rust-ui GPU renderer: every primitive is an instanced quad shaded with
+// Charis GPU renderer: every primitive is an instanced quad shaded with
 // signed distance functions (rounded rects, borders, analytic shadows) or
 // sampled from an atlas (glyphs, rasterized paths, color emoji).
 

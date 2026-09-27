@@ -11,7 +11,7 @@ cargo run --release --example showcase
 cargo run --release --example dock
 ```
 
-Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
+Set `$env:CHARIS_PROFILE=1` to print the renderer and adapter in use.
 
 **Frameless window chrome**
 - [ ] The window has a drop shadow and (on Windows 11) rounded corners, with no white border or
@@ -32,8 +32,8 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 - [ ] Moving the window between monitors with different scaling keeps it crisp and correctly sized.
 
 **Rendering**
-- [ ] `RUI_PROFILE=1` reports the GPU renderer on your GPU (not a fallback).
-- [ ] `$env:RUI_RENDERER="cpu"` also works and looks the same.
+- [ ] `CHARIS_PROFILE=1` reports the GPU renderer on your GPU (not a fallback).
+- [ ] `$env:CHARIS_RENDERER="cpu"` also works and looks the same.
 - [ ] Text is crisp at 100%, 125%, 150% and 200% display scaling.
 
 **Input**
@@ -115,7 +115,7 @@ Set `$env:RUI_PROFILE=1` to print the renderer and adapter in use.
 **Backdrop, full screen, fonts, tree** (dock example)
 - [ ] `cargo run --release --example dock -- --mica` on Windows 11: the title bar and the tool
       window stripes show Mica (the wallpaper's tint shows through); panels stay opaque.
-      Without a GPU (`$env:RUI_RENDERER="cpu"`), the window opens normally, without Mica.
+      Without a GPU (`$env:CHARIS_RENDERER="cpu"`), the window opens normally, without Mica.
 - [ ] F11 toggles full screen; the frame edges don't resize while in full screen.
 - [ ] `-- --system-font`: text uses Segoe UI Variable.
 - [ ] Move the window between monitors with different scaling (100 % and 150 %): text and 1 px

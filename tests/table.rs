@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Models {
     rows: Rc<Vec<(String, u32)>>,

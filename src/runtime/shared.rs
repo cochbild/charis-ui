@@ -13,7 +13,7 @@ use crate::theme::Theme;
 /// An extra window declared by [`App::windows`].
 ///
 /// ```
-/// # use rust_ui::prelude::*;
+/// # use charis_ui::prelude::*;
 /// # #[derive(Clone)] enum Msg { CloseInspector }
 /// # struct MyApp { inspector_open: bool }
 /// # impl MyApp {

@@ -1,7 +1,7 @@
 //! pick_list / combo_box.
 
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 #[derive(Default)]
 struct D {

@@ -16,12 +16,12 @@
 //! Run:        cargo run --release --example dock
 //! Screenshot: cargo run --release --example dock -- --screenshot dock.png
 
-use rust_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
-use rust_ui::dock::{DockSpace, DockSpaceMsg};
-use rust_ui::layouts::{LayoutMsg, Layouts};
-use rust_ui::prelude::*;
-use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
-use rust_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
+use charis_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
+use charis_ui::dock::{DockSpace, DockSpaceMsg};
+use charis_ui::layouts::{LayoutMsg, Layouts};
+use charis_ui::prelude::*;
+use charis_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+use charis_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Panel {
@@ -107,7 +107,7 @@ fn tool_content(t: &Tool) -> Element<Msg> {
             .mono()
             .font_size(12.0)
             .gap(2.0)
-            .child(text("   Compiling rust-ui v0.1.0").color(c.success))
+            .child(text("   Compiling charis-ui v0.1.0").color(c.success))
             .child(text("    Finished `release` profile in 12.4s").color(c.text_muted)),
         Tool::Todo => col().p(12.0).gap(6.0).children(
             ["Keyboard resizing of splitters", "Workspaces", "Compass drop targets"]
@@ -139,17 +139,21 @@ impl TreeModel for Repo {
     type Id = String;
     fn children(&self, parent: Option<&String>) -> Vec<String> {
         let names: &[&str] = match parent.map(String::as_str) {
-            None => &["rust-ui"],
-            Some("rust-ui") => {
-                &["rust-ui/src", "rust-ui/examples", "rust-ui/generated", "rust-ui/Cargo.toml", "rust-ui/README.md"]
+            None => &["charis-ui"],
+            Some("charis-ui") => &[
+                "charis-ui/src",
+                "charis-ui/examples",
+                "charis-ui/generated",
+                "charis-ui/Cargo.toml",
+                "charis-ui/README.md",
+            ],
+            Some("charis-ui/src") => {
+                &["charis-ui/src/dock.rs", "charis-ui/src/tree.rs", "charis-ui/src/widgets.rs", "charis-ui/src/runtime"]
             }
-            Some("rust-ui/src") => {
-                &["rust-ui/src/dock.rs", "rust-ui/src/tree.rs", "rust-ui/src/widgets.rs", "rust-ui/src/runtime"]
-            }
-            Some("rust-ui/src/runtime") => &["rust-ui/src/runtime/mod.rs", "rust-ui/src/runtime/memo.rs"],
-            Some("rust-ui/examples") => &["rust-ui/examples/dock.rs", "rust-ui/examples/showcase.rs"],
-            Some("rust-ui/generated") => {
-                return (0..BIG).map(|i| format!("rust-ui/generated/file_{i:06}.rs")).collect()
+            Some("charis-ui/src/runtime") => &["charis-ui/src/runtime/mod.rs", "charis-ui/src/runtime/memo.rs"],
+            Some("charis-ui/examples") => &["charis-ui/examples/dock.rs", "charis-ui/examples/showcase.rs"],
+            Some("charis-ui/generated") => {
+                return (0..BIG).map(|i| format!("charis-ui/generated/file_{i:06}.rs")).collect()
             }
             _ => &[],
         };
@@ -202,8 +206,8 @@ impl DockDemo {
             files: std::rc::Rc::new(Repo),
             project: {
                 let mut t = TreeState::new("project-tree");
-                t.expand("rust-ui".into());
-                t.expand("rust-ui/src".into());
+                t.expand("charis".into());
+                t.expand("charis-ui/src".into());
                 t
             },
         }
@@ -652,7 +656,7 @@ fn main() {
             let from = Point::new(288.0, 54.0);
             let to = Rect::new(486.0, 40.0, 60.0, 28.0);
             h.move_to(from.x, from.y);
-            h.event(rust_ui::Event::PointerDown(from, rust_ui::MouseButton::Left));
+            h.event(charis_ui::Event::PointerDown(from, charis_ui::MouseButton::Left));
             for i in 1..=8 {
                 let t = i as f32 / 8.0;
                 h.move_to(from.x + (to.x + 6.0 - from.x) * t, from.y);
@@ -685,8 +689,8 @@ fn main() {
         if state.as_deref() == Some("tabmenu") {
             // Right-click the "app.rs" tab (the editor group's second), hover "Move to Edge".
             let t = Point::new(421.0, 56.0);
-            h.event(rust_ui::Event::PointerDown(t, rust_ui::MouseButton::Right));
-            h.event(rust_ui::Event::PointerUp(t, rust_ui::MouseButton::Right));
+            h.event(charis_ui::Event::PointerDown(t, charis_ui::MouseButton::Right));
+            h.event(charis_ui::Event::PointerUp(t, charis_ui::MouseButton::Right));
             h.settle();
             let sub = h.rt.rect_of_text("Move to Edge").unwrap().center();
             h.move_to(sub.x, sub.y);
@@ -732,7 +736,7 @@ fn main() {
             h.settle();
             for key in [Key::Char('k'), Key::Char('r')] {
                 let mods = Modifiers { ctrl: true, ..Default::default() };
-                h.event(rust_ui::Event::Key(KeyEvent { key, mods, repeat: false }));
+                h.event(charis_ui::Event::Key(KeyEvent { key, mods, repeat: false }));
             }
             h.settle();
             h.save_png(&out).expect("save");
@@ -742,11 +746,11 @@ fn main() {
         if state.as_deref() == Some("tree") {
             // The Project tree with the 100k-file folder open, near its end.
             h.rt.send(Msg::ToggleTool(Tool::Project));
-            h.rt.app.project.expand("rust-ui/generated".into());
-            h.rt.app.project.select(Some("rust-ui/generated/file_099990.rs".into()));
+            h.rt.app.project.expand("charis-ui/generated".into());
+            h.rt.app.project.select(Some("charis-ui/generated/file_099990.rs".into()));
             h.rt.invalidate();
             h.settle();
-            let i = h.rt.app.project.index_of(&*h.rt.app.files, &"rust-ui/generated/file_099990.rs".into()).unwrap();
+            let i = h.rt.app.project.index_of(&*h.rt.app.files, &"charis-ui/generated/file_099990.rs".into()).unwrap();
             h.rt.scroll_item_into_view("project-tree", i + 8);
             h.settle();
             h.save_png(&out).expect("save");
@@ -760,8 +764,8 @@ fn main() {
             // Pin a tab, then hover a tree row.
             let t = Point::new(421.0, 56.0);
             h.move_to(t.x, t.y);
-            h.event(rust_ui::Event::PointerDown(t, rust_ui::MouseButton::Left));
-            h.event(rust_ui::Event::PointerUp(t, rust_ui::MouseButton::Left));
+            h.event(charis_ui::Event::PointerDown(t, charis_ui::MouseButton::Left));
+            h.event(charis_ui::Event::PointerUp(t, charis_ui::MouseButton::Left));
             h.move_to(60.0, 145.0);
             h.settle();
             h.save_png(&out).expect("save");
@@ -782,14 +786,14 @@ fn main() {
         let from =
             (h.rt.rect_of_text("Terminal").unwrap().center().x, h.rt.rect_of_text("Terminal").unwrap().center().y);
         h.move_to(from.0, from.1);
-        h.event(rust_ui::Event::PointerDown(Point::new(from.0, from.1), rust_ui::MouseButton::Left));
+        h.event(charis_ui::Event::PointerDown(Point::new(from.0, from.1), charis_ui::MouseButton::Left));
         for i in 1..=10 {
             let t = i as f32 / 10.0;
             h.move_to(from.0 + (900.0 - from.0) * t, from.1 + (260.0 - from.1) * t);
         }
         h.settle();
         h.save_png(&out).expect("save");
-        h.event(rust_ui::Event::PointerUp(Point::new(900.0, 260.0), rust_ui::MouseButton::Left));
+        h.event(charis_ui::Event::PointerUp(Point::new(900.0, 260.0), charis_ui::MouseButton::Left));
         h.settle();
         let after = out.replace(".png", "-after.png");
         h.save_png(&after).expect("save");
@@ -810,5 +814,5 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--stylesheet") {
         opts = opts.stylesheet(args.get(i + 1).cloned().unwrap_or_else(|| "examples/dock.css".into()));
     }
-    rust_ui::run(DockDemo::new(), opts).expect("run");
+    charis_ui::run(DockDemo::new(), opts).expect("run");
 }

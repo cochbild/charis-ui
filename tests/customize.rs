@@ -1,7 +1,7 @@
 //! Theme style classes: restyle every built-in widget from the theme, with
 //! CSS-like precedence (widget defaults < theme class < the app's own styling).
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Demo {
     themed: bool,

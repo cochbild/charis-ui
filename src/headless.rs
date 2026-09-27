@@ -80,7 +80,7 @@ impl<A: App> Headless<A> {
     /// Move the pointer to (`x`, `y`) and click the left button there.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     ///
     /// #[derive(Default)]
     /// struct Toggle { on: bool }
@@ -123,7 +123,7 @@ impl<A: App> Headless<A> {
     /// Save the last frame as PNG.
     ///
     /// ```no_run
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     ///
     /// struct Hello;
     /// impl App for Hello {
@@ -176,8 +176,8 @@ impl<A: App> Headless<A> {
 /// way the windowing shell does it.
 ///
 /// ```
-/// # use rust_ui::prelude::*;
-/// # use rust_ui::headless::HeadlessApp;
+/// # use charis_ui::prelude::*;
+/// # use charis_ui::headless::HeadlessApp;
 /// # #[derive(Default)] struct A { open: bool }
 /// # #[derive(Clone, Debug)] enum Msg { Open, Close }
 /// # impl App for A {

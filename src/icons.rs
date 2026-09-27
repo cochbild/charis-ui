@@ -13,7 +13,7 @@ use tiny_skia::{Path, PathBuilder};
 /// An icon: either built-in or custom SVG path data in a 24×24 viewbox.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// // Built-in icons render at the current font size.
 /// let close: Element<()> = icon(Icon::Close).font_size(16.0);

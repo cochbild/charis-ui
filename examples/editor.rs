@@ -5,7 +5,7 @@
 //! cargo run --release --example editor -- --lines 100000
 //! ```
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Editor {
     title: String,
@@ -74,5 +74,5 @@ fn main() {
         },
     };
     let app = Editor { title: title.clone(), text, edits: 0 };
-    rust_ui::run(app, WindowOptions::new(format!("Editor — {title}")).size(1000.0, 760.0)).expect("run");
+    charis_ui::run(app, WindowOptions::new(format!("Editor — {title}")).size(1000.0, 760.0)).expect("run");
 }

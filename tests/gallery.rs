@@ -4,9 +4,9 @@
 #[allow(dead_code)]
 mod gallery;
 
+use charis_ui::prelude::*;
+use charis_ui::MouseButton;
 use gallery::{Gallery, Msg, Page};
-use rust_ui::prelude::*;
-use rust_ui::MouseButton;
 
 fn open() -> Headless<Gallery> {
     let mut h = Headless::new(Gallery::default(), 1180.0, 820.0, 1.0);
@@ -81,8 +81,8 @@ fn overlays_open_and_close() {
     // Context menu.
     let r = h.rt.rect_of("context-area").unwrap();
     let at = r.center();
-    h.event(rust_ui::Event::PointerDown(at, MouseButton::Right));
-    h.event(rust_ui::Event::PointerUp(at, MouseButton::Right));
+    h.event(charis_ui::Event::PointerDown(at, MouseButton::Right));
+    h.event(charis_ui::Event::PointerUp(at, MouseButton::Right));
     h.settle();
     assert!(h.rt.app.context.is_some());
     click_text(&mut h, "Copy");
@@ -119,8 +119,8 @@ fn pasting_an_image_shows_it() {
     let mut h = open();
     click_id(&mut h, "page-media");
     click_id(&mut h, "paste-target");
-    let img = rust_ui::image::Image::from_rgba(4, 3, &[200u8; 48]).unwrap();
-    h.event(rust_ui::Event::PasteImage(img));
+    let img = charis_ui::image::Image::from_rgba(4, 3, &[200u8; 48]).unwrap();
+    h.event(charis_ui::Event::PasteImage(img));
     h.settle();
     assert!(h.rt.app.pasted.is_some());
     assert!(h.rt.rect_of_text("Pasted a 4×3 image").is_some());

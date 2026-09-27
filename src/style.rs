@@ -40,7 +40,7 @@ pub fn pct(v: f32) -> Length {
 /// Per-side values (padding, margin, border widths).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let p = Edges::xy(12.0, 8.0);
 /// assert_eq!(p, Edges::new(8.0, 12.0, 8.0, 12.0));
@@ -86,7 +86,7 @@ impl Edges {
 /// Per-corner radii (top-left, top-right, bottom-right, bottom-left).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let r = Corners::top(8.0);
 /// assert_eq!(r.max(), 8.0);
@@ -150,7 +150,7 @@ impl Corners {
 /// A CSS `box-shadow`.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// // CSS: box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.2)
 /// let s = Shadow::new(0.0, 4.0, 12.0, 0.0, Color::BLACK.with_alpha(0.2));
@@ -372,7 +372,7 @@ pub enum Track {
 /// The full style of an element. All fields have CSS-like defaults.
 ///
 /// ```
-/// use rust_ui::*;
+/// use charis_ui::*;
 ///
 /// let s = Style { direction: Direction::Column, gap: (0.0, 8.0), padding: Edges::all(16.0), ..Style::default() };
 /// assert_eq!(s.width, Length::Auto);
@@ -545,7 +545,7 @@ impl Default for Style {
 /// (hover, active/pressed, focus, selected, disabled).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let hover = StylePatch::default().bg(Color::WHITE).shadow(Shadow::new(0.0, 2.0, 8.0, 0.0, Color::BLACK.with_alpha(0.15)));
 /// assert_eq!(hover.shadows.map(|s| s.len()), Some(1));

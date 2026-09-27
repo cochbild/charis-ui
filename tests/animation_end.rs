@@ -1,7 +1,7 @@
 //! The last frame of an animation is always drawn: a transition that ends
 //! between two frames still gets a frame showing its end state.
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct A;
 #[derive(Clone)]

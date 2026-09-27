@@ -8,7 +8,7 @@
 //! the app needs to know about.
 //!
 //! ```
-//! use rust_ui::prelude::*;
+//! use charis_ui::prelude::*;
 //!
 //! /// A counter that tells the app when it reaches a limit.
 //! struct Counter {
@@ -125,7 +125,7 @@ pub fn component<C: Component>(key: impl Hash, c: C) -> Element<C::Output> {
 /// a message for the parent.
 ///
 /// ```
-/// # use rust_ui::prelude::*;
+/// # use charis_ui::prelude::*;
 /// # #[derive(Clone)] enum Msg { Picked(usize) }
 /// #[derive(Clone)]
 /// enum Ev { Toggle, Pick(usize) }

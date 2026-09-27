@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-rust-ui = { git = "https://github.com/cochbild/rust-ui" }
+charis-ui = { git = "https://github.com/cochbild/charis-ui" }
 ```
 
 On Linux, winit needs the usual X11 and Wayland libraries at build time:
@@ -21,7 +21,7 @@ An app is a struct that implements `App`. It has two required methods:
 - `update` changes the state when a message arrives.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Counter {
     n: i32,
@@ -60,7 +60,7 @@ impl App for Counter {
 
 fn main() {
 #   if false {
-    rust_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
+    charis_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
 #   }
 }
 ```
@@ -71,7 +71,7 @@ again, and redraws what changed.
 `WindowOptions` sets the title, size, minimum size, icon, fonts and chrome. For example:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let opts = WindowOptions::new("Editor").size(1280.0, 800.0).min_size(640.0, 400.0).frameless(true);
 ```
 
@@ -99,8 +99,8 @@ Two [cargo-generate](https://github.com/cargo-generate/cargo-generate) templates
 working app to change:
 
 ```sh
-cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
-cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
+cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell --name my-ide
+cargo generate --git https://github.com/cochbild/charis-ui templates/settings-app --name my-settings
 ```
 
 - **ide-shell:** a frameless window with menus, a dock of editor tabs, tool windows, a file
@@ -123,5 +123,5 @@ cargo run --release --example counter    # the app above
 
 - **Inspector.** In debug builds, press F12 (or Ctrl+Shift+I, or Cmd+Alt+I on macOS) to outline
   elements under the pointer. Click one to pin a panel with its id, classes, box and style.
-- **`RUI_PROFILE=1`** prints the GPU adapter and per-frame timings.
-- **`RUI_RENDERER=cpu`** forces the CPU renderer.
+- **`CHARIS_PROFILE=1`** prints the GPU adapter and per-frame timings.
+- **`CHARIS_RENDERER=cpu`** forces the CPU renderer.

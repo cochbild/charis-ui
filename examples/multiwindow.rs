@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Studio {
     count: i32,
@@ -107,5 +107,5 @@ impl App for Studio {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smoke = std::env::args().any(|a| a == "--smoke");
     let app = Studio { count: 0, inspectors: Vec::new(), next: 0, smoke: smoke.then_some(0) };
-    rust_ui::run(app, WindowOptions::new("Multi-window").size(520.0, 300.0))
+    charis_ui::run(app, WindowOptions::new("Multi-window").size(520.0, 300.0))
 }

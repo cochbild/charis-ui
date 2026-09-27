@@ -5,7 +5,7 @@
 //! interaction to application messages:
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
+//! use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Save }
 //! let e: Element<Msg> = row()
 //!     .gap(8.0)
@@ -581,7 +581,7 @@ pub(crate) enum Behavior {
 /// [`on_click`](Self::on_click).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// #[derive(Clone)]
 /// enum Msg { Inc }
 /// fn view(count: i32) -> Element<Msg> {
@@ -697,7 +697,7 @@ pub fn row<M: 'static>() -> Element<M> {
 /// A vertical flex container.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let sidebar: Element<()> = col()
 ///     .w(240.0)
 ///     .gap(4.0)
@@ -728,7 +728,7 @@ pub fn text<M: 'static>(s: impl Into<String>) -> Element<M> {
 /// colors, sizes, links). Wraps like [`text`].
 ///
 /// ```
-/// # use rust_ui::prelude::*;
+/// # use charis_ui::prelude::*;
 /// # #[derive(Clone)] enum Msg { Open(String) }
 /// let e: Element<Msg> = rich_text([
 ///     span("Read the "),
@@ -795,7 +795,7 @@ pub fn virtual_list<M: 'static>(count: usize, item: impl Fn(usize) -> Element<M>
 /// whole subtree.
 ///
 /// ```
-/// # use rust_ui::prelude::*;
+/// # use charis_ui::prelude::*;
 /// # #[derive(Clone)] enum Msg {}
 /// # struct Message { id: u64, version: u32, text: String }
 /// fn message_view(m: &Message) -> Element<Msg> {
@@ -1014,8 +1014,8 @@ impl<M: 'static> Element<M> {
     /// Replace the whole style.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
-    /// use rust_ui::Style;
+    /// use charis_ui::prelude::*;
+    /// use charis_ui::Style;
     /// let panel = Style { padding: Edges::all(12.0), opacity: 0.9, ..Default::default() };
     /// let e: Element<()> = div().style(panel).rounded(6.0);
     /// ```
@@ -1455,7 +1455,7 @@ impl<M: 'static> Element<M> {
     /// Style applied while hovered.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     /// let item: Element<()> = row()
     ///     .p(6.0)
     ///     .rounded(4.0)
@@ -1585,7 +1585,7 @@ impl<M: 'static> Element<M> {
     /// Sets a pointer cursor unless one is set.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     /// #[derive(Clone)]
     /// enum Msg { Select(usize) }
     /// let items: Vec<Element<Msg>> =
@@ -1616,7 +1616,7 @@ impl<M: 'static> Element<M> {
     /// Receive pointer drag events that start on this element.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     /// #[derive(Clone)]
     /// enum Msg { DragStart, DragBy(Point), DragEnd }
     /// let handle: Element<Msg> = div().square(12.0).on_drag(|e| match e.phase {
@@ -1633,7 +1633,7 @@ impl<M: 'static> Element<M> {
     /// Receives `Over` while hovered during a drag, `Leave`, and `Drop` on release.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     /// #[derive(Clone)]
     /// enum Msg { Highlight(bool), MoveTo(usize) }
     /// let slot: Element<Msg> = div().h(40.0).on_drop_target(|e| match e.phase {
@@ -1755,7 +1755,7 @@ impl<M: 'static> Element<M> {
     /// nothing, so widgets and apps can tag elements freely.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     /// // Register the class on the app's theme...
     /// let th = Theme::dark().style_class("toolbar", |e| e.px(8.0).gap(4.0).bg(hex("#252526")));
     /// // ...then tag elements with it.

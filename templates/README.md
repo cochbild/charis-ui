@@ -9,8 +9,8 @@ Starters for [cargo-generate](https://github.com/cargo-generate/cargo-generate):
 
 ```sh
 cargo install cargo-generate      # 0.23 or newer; on Rust older than 1.96 use --version 0.23.5
-cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
-cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
+cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell --name my-ide
+cargo generate --git https://github.com/cochbild/charis-ui templates/settings-app --name my-settings
 ```
 
 Both templates are compiled and tested with the crate (`tests/templates.rs`), so they stay

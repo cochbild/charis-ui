@@ -4,7 +4,7 @@
 //! message, so the UI never blocks:
 //!
 //! ```no_run
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # use std::path::PathBuf;
 //! # #[derive(Clone)] enum Msg { Open, Opened(Option<PathBuf>) }
 //! # struct Editor;

@@ -1,4 +1,4 @@
-//! # rust-ui
+//! # Charis
 //!
 //! A web-inspired, highly customizable UI framework for Rust desktop apps.
 //!
@@ -18,7 +18,7 @@
 //!   saves PNG screenshots.
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
+//! use charis_ui::prelude::*;
 //!
 //! struct Counter { n: i32 }
 //!
@@ -41,7 +41,7 @@
 //!
 //! # #[cfg(feature = "window")]
 //! fn main() {
-//!     rust_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
+//!     charis_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
 //! }
 //! # #[cfg(not(feature = "window"))]
 //! # fn main() {}

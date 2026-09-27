@@ -1,6 +1,6 @@
 # The app model
 
-rust-ui follows the Elm architecture:
+Charis follows the Elm architecture:
 
 1. Your app struct holds the state.
 2. `view(&self)` turns the state into a tree of elements.
@@ -16,7 +16,7 @@ and focus, running animations. Your model stays about your data.
 or a function that builds one from a value:
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Clone)]
 enum Msg {
@@ -58,7 +58,7 @@ on a thread pool. Both return a `TaskHandle` that cancels the task when you call
 `cx.run` does the same for a stream, sending one message per item.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Loader {
@@ -103,7 +103,7 @@ With the `tokio` feature, futures run on a tokio runtime, so tokio-based crates 
 update, so a timer runs only while its condition holds:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # use std::time::Duration;
 # struct Clock { running: bool }
 # #[derive(Clone)] enum Msg { Tick, CloseRequested }
@@ -135,7 +135,7 @@ a filter box, a picker's visible month. It handles its own events and sends the 
 only when the app needs to know.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Folder {
     name: String,
@@ -194,7 +194,7 @@ component's state lives as long as the component is rendered under the same key.
 tree building and layout for it. Put it around big parts of the UI that change rarely:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # #[derive(Clone)] enum Msg {}
 # let (files, revision) = (vec!["a.rs".to_string()], 7u64);
 let explorer: Element<Msg> = lazy("explorer", revision, || {
@@ -212,7 +212,7 @@ Extra windows are declared from state, like the rest of the UI. `windows()` list
 when it disappears; the user closing it sends its `on_close` message.
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # struct Ed { inspectors: Vec<u32> }
 # #[derive(Clone)] enum Msg { Close(u32) }
 # impl App for Ed {

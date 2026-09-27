@@ -1,9 +1,9 @@
 //! Dock tabs across windows: tear out, drop into another window, pop out /
 //! dock back buttons, closing a floating window.
 
-use rust_ui::dock::{Dock, DockNode, DockSpace, DockSpaceMsg};
-use rust_ui::headless::HeadlessApp;
-use rust_ui::prelude::*;
+use charis_ui::dock::{Dock, DockNode, DockSpace, DockSpaceMsg};
+use charis_ui::headless::HeadlessApp;
+use charis_ui::prelude::*;
 
 struct Ide {
     dock: DockSpace<&'static str>,

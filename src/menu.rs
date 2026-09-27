@@ -11,7 +11,7 @@
 //!   ([`WindowOptions::native_menu`](crate::WindowOptions::native_menu)).
 //!
 //! ```
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Open, Save, Undo, Wrap(bool) }
 //! # struct Editor { wrap: bool }
 //! # impl Editor {

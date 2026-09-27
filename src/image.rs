@@ -66,7 +66,7 @@ impl Image {
     /// Decode PNG bytes.
     ///
     /// ```
-    /// use rust_ui::image::Image;
+    /// use charis_ui::image::Image;
     ///
     /// // A 2×1 image: one red pixel, one transparent.
     /// let img = Image::from_rgba(2, 1, &[255, 0, 0, 255, 0, 0, 0, 0]).unwrap();

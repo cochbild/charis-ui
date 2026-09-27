@@ -1,9 +1,9 @@
 //! Named layouts end to end: switching from the menu bar, and saving the
 //! current arrangement through the "Save Layout As" dialog.
 
-use rust_ui::layouts::{LayoutMsg, Layouts};
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::layouts::{LayoutMsg, Layouts};
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 #[derive(Clone)]
 struct Arr {

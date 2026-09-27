@@ -8,7 +8,7 @@ build container, so expect some failures; those are what this plan is for.
   a GPU.
 
 Every item has an ID (`W-…` or `L-…`). To report a failure, give the ID, what happened, a
-screenshot if it's visual, and the lines `RUI_PROFILE=1` prints at startup (renderer and GPU).
+screenshot if it's visual, and the lines `CHARIS_PROFILE=1` prints at startup (renderer and GPU).
 Items marked **(new)** cover code that has never run on a real machine.
 
 ---
@@ -21,8 +21,8 @@ Items marked **(new)** cover code that has never run on a real machine.
    `x86_64-pc-windows-msvc`) and Visual Studio Build Tools with "Desktop development with C++".
 2. Get the branch:
    ```powershell
-   git clone https://github.com/cochbild/rust-ui
-   cd rust-ui
+   git clone https://github.com/cochbild/charis-ui
+   cd charis-ui
    git checkout claude/rust-ui-framework-u88b01
    ```
 3. Optional: `cargo install cargo-generate mdbook` (cargo-generate 0.23 or newer; its latest
@@ -50,7 +50,7 @@ Items marked **(new)** cover code that has never run on a real machine.
 
 ### W-B. Every example starts
 
-Run each with `$env:RUI_PROFILE=1` and check that it opens, draws and closes cleanly.
+Run each with `$env:CHARIS_PROFILE=1` and check that it opens, draws and closes cleanly.
 
 - [ ] **W-B1** `cargo run --release --example counter`: + and − work.
 - [ ] **W-B2** `cargo run --release --example gallery`: every page in the sidebar opens.
@@ -88,14 +88,14 @@ Run each with `$env:RUI_PROFILE=1` and check that it opens, draws and closes cle
       Display ▸ Scale). Change it while the app runs.
 - [ ] **W-D2** With two monitors at different scales, moving the window across keeps it sharp,
       at the same size.
-- [ ] **W-D3** `$env:RUI_RENDERER="cpu"`: the dock and gallery look the same as on the GPU.
+- [ ] **W-D3** `$env:CHARIS_RENDERER="cpu"`: the dock and gallery look the same as on the GPU.
 - [ ] **W-D4 (new)** With the CPU renderer, hover over lists, type, scroll, and open and close
       menus. No stale pixels, trails or smears are left behind (damage tracking with
       `present_with_damage`).
-- [ ] **W-D5** Same as W-D4 with `$env:RUI_NO_DAMAGE=1` (full redraws). Both look identical.
+- [ ] **W-D5** Same as W-D4 with `$env:CHARIS_NO_DAMAGE=1` (full redraws). Both look identical.
 - [ ] **W-D6** Resizing the window quickly doesn't flicker or show garbage, on both renderers.
 - [ ] **W-D7** Showcase at a high refresh rate (120 Hz or more, if you have it): smooth scrolling
-      and hover transitions look smooth. `RUI_PROFILE=1` frame times stay under 8 ms.
+      and hover transitions look smooth. `CHARIS_PROFILE=1` frame times stay under 8 ms.
 
 ### W-E. Keyboard, text and IME
 
@@ -248,7 +248,7 @@ Run each with `$env:RUI_PROFILE=1` and check that it opens, draws and closes cle
 ### W-M. Backdrop, full screen and the large tree (`dock` example)
 
 - [ ] **W-M1** `-- --mica`: the title bar and stripes show Mica (the wallpaper tint), and the
-      panels stay opaque. With `$env:RUI_RENDERER="cpu"` it opens normally, without Mica.
+      panels stay opaque. With `$env:CHARIS_RENDERER="cpu"` it opens normally, without Mica.
 - [ ] **W-M2** F11 toggles full screen; the edges don't resize in full screen.
 - [ ] **W-M3** Alt+1, then expand "generated (100000 files)": wheel, ↓, PageDown and End are
       smooth. Double-clicking a file opens it.
@@ -260,7 +260,7 @@ Run each with `$env:RUI_PROFILE=1` and check that it opens, draws and closes cle
 
 ### W-O. Templates (new)
 
-- [ ] **W-O1** `cargo generate --git https://github.com/cochbild/rust-ui --branch
+- [ ] **W-O1** `cargo generate --git https://github.com/cochbild/charis-ui --branch
       claude/rust-ui-framework-u88b01 templates/ide-shell --name my-ide`, then `cd my-ide`
       and `cargo run --release`. It builds and runs, with the name filled in, and no `{{` left in
       `Cargo.toml` or `README.md`.
@@ -293,7 +293,7 @@ display servers. GPU acceleration goes through Mesa's D3D12 driver on your Windo
        vulkan-tools zenity fonts-noto-core
    curl https://sh.rustup.rs -sSf | sh
    ```
-3. Clone and check out the branch inside the Linux file system (`~/rust-ui`, not `/mnt/c`:
+3. Clone and check out the branch inside the Linux file system (`~/charis-ui`, not `/mnt/c`:
    building there is much faster).
 4. Check the session: `echo $WAYLAND_DISPLAY $DISPLAY` should print `wayland-0 :0`.
    `vulkaninfo --summary` shows whether a GPU (Dozen/D3D12) is available.
@@ -306,7 +306,7 @@ To choose the display server for a run:
 
 - [ ] **L-A1** `cargo test --all-features` passes. The `gpu` parity test runs on the WSL GPU (or
       skips itself if there's no adapter; say which).
-- [ ] **L-A2** `RUI_PROFILE=1 cargo run --release --example counter`: note which renderer and
+- [ ] **L-A2** `CHARIS_PROFILE=1 cargo run --release --example counter`: note which renderer and
       adapter it picks (D3D12/Dozen, GL, llvmpipe or CPU).
 - [ ] **L-A3** `cargo bench --bench frames`: paste the table.
 
@@ -355,9 +355,9 @@ To choose the display server for a run:
 - [ ] **L-D3** File dialogs (the lmfast_chat "Document" button): a zenity file picker opens, and
       picking files works.
 - [ ] **L-D4** Preferences overrides:
-      - `RUI_DARK=0 cargo run --release --example gallery` starts light;
-      - `RUI_HIGH_CONTRAST=1` starts in high contrast;
-      - `RUI_REDUCED_MOTION=1` makes scrolling jump instead of glide.
+      - `CHARIS_DARK=0 cargo run --release --example gallery` starts light;
+      - `CHARIS_HIGH_CONTRAST=1` starts in high contrast;
+      - `CHARIS_REDUCED_MOTION=1` makes scrolling jump instead of glide.
 - [ ] **L-D5** Settings-app template under WSL: settings are saved to
       `~/.config/my-settings/settings.txt` and kept across restarts.
 
@@ -376,5 +376,5 @@ These need a real Linux desktop later (see `docs/MAC_LINUX_QA.md`).
 
 ## After testing
 
-For each failure, give the ID, what you saw, and the `RUI_PROFILE=1` startup lines. Include
+For each failure, give the ID, what you saw, and the `CHARIS_PROFILE=1` startup lines. Include
 the full output for W-A2 and L-A1 failures, and the bench tables from W-A7 and L-A3.

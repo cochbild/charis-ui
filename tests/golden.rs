@@ -3,7 +3,7 @@
 //! Uses only the bundled Inter font so results don't depend on system fonts.
 #![cfg(feature = "bundled-fonts")]
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Gallery {
     dark: bool,

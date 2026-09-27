@@ -2,7 +2,7 @@
 #![cfg(feature = "accessibility")]
 
 use accesskit::{Action, ActionData, ActionRequest, Node, NodeId, Role as Ak, Toggled, TreeId, TreeUpdate};
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Form {
@@ -164,7 +164,7 @@ fn modal_dialogs_are_marked_modal_and_named() {
 
 #[test]
 fn keyboard_reaches_and_activates_built_in_controls() {
-    use rust_ui::Event;
+    use charis_ui::Event;
     let mut h = Headless::new(Form::default(), 500.0, 500.0, 1.0);
     h.settle();
     let tab = |h: &mut Headless<Form>| {

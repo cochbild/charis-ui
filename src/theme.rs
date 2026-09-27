@@ -9,7 +9,7 @@
 //!    radius, scaling and density.
 //!
 //! ```
-//! use rust_ui::{Theme, ThemeConfig, GrayTint, Density, hex};
+//! use charis_ui::{Theme, ThemeConfig, GrayTint, Density, hex};
 //! let t = Theme::from_config(ThemeConfig {
 //!     accent: hex("#a371f7"),
 //!     gray: GrayTint::Mauve,
@@ -264,7 +264,7 @@ pub enum Contrast {
 /// The global knobs a theme is generated from.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let t = ThemeConfig { accent: Accent::Teal.color(false), radius: 10.0, ..ThemeConfig::light() }.build();
 /// assert!(!t.dark);
 /// assert_eq!(t.radius_lg, 16.0);
@@ -447,7 +447,7 @@ fn high_contrast(base: &Palette, dark: bool, gray: &Scale, accent: &Scale) -> Pa
 /// A complete theme: palette plus shape, typography and motion tokens.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let t = Theme::light().with_accent_preset(Accent::Violet).with_density(Density::Compact);
 /// assert_eq!(t.config.density, Density::Compact);
 /// assert!(t.colors.text.contrast(t.colors.background) >= 7.0);
@@ -709,7 +709,7 @@ impl Theme {
     /// `modal`, `table-row`, … Registering the same name again adds to it.
     ///
     /// ```
-    /// # use rust_ui::prelude::*;
+    /// # use charis_ui::prelude::*;
     /// let t = Theme::dark()
     ///     .style_class("button", |e| e.pill().px(18.0))
     ///     .style_class("card", |e| e.rounded(16.0).no_shadow());
@@ -779,7 +779,7 @@ thread_local! {
 /// pick up design tokens.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let th = theme();
 /// let label: Element<()> = text("Saved").color(th.colors.success).font_size(th.font_size_sm);
 /// ```

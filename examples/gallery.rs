@@ -7,10 +7,10 @@
 
 use std::rc::Rc;
 
-use rust_ui::image::{Fit, Image, Svg};
-use rust_ui::prelude::*;
-use rust_ui::tree::{TreeModel, TreeMsg, TreeState};
-use rust_ui::ClipboardContent;
+use charis_ui::image::{Fit, Image, Svg};
+use charis_ui::prelude::*;
+use charis_ui::tree::{TreeModel, TreeMsg, TreeState};
+use charis_ui::ClipboardContent;
 
 /// The gallery's pages, in sidebar order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -962,6 +962,6 @@ impl Gallery {
 #[allow(dead_code)]
 fn main() {
     #[cfg(feature = "window")]
-    rust_ui::run(Gallery::default(), WindowOptions::new("Widget gallery").size(1180.0, 820.0).min_size(760.0, 480.0))
+    charis_ui::run(Gallery::default(), WindowOptions::new("Widget gallery").size(1180.0, 820.0).min_size(760.0, 480.0))
         .expect("failed to open the window");
 }

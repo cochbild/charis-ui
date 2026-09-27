@@ -13,8 +13,8 @@
 //!
 //! ```no_run
 //! use std::rc::Rc;
-//! use rust_ui::prelude::*;
-//! use rust_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
+//! use charis_ui::prelude::*;
+//! use charis_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
 //!
 //! struct Files; // e.g. a file system
 //! impl TreeModel for Files {

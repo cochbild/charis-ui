@@ -3,7 +3,7 @@
 /// Easing curves.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// assert_eq!(Easing::Linear.apply(0.25), 0.25);
 /// let e = Easing::CubicBezier(0.4, 0.0, 0.2, 1.0);
 /// assert!(e.apply(0.5) > 0.5);

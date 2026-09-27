@@ -2,9 +2,9 @@
 //! overrides shown in menus, the command palette, the key binding
 //! recorder, and focusing dock panels by number.
 
-use rust_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 struct Ed {
     log: Vec<&'static str>,

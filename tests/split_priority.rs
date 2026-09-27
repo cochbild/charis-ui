@@ -1,8 +1,8 @@
 //! Split resize priorities (fixed panes shrink/grow by priority when the
 //! container changes) and panes that remember their size (Pane::key).
 
-use rust_ui::prelude::*;
-use rust_ui::{Event, MouseButton};
+use charis_ui::prelude::*;
+use charis_ui::{Event, MouseButton};
 
 struct S {
     /// Include a flex pane in the middle.

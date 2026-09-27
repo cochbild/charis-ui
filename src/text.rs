@@ -38,7 +38,7 @@ pub struct Span {
 /// Shorthand for a plain [`Span`].
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let msg: Element<()> = rich_text([
 ///     span("Saved to "),

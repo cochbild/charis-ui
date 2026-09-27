@@ -19,7 +19,7 @@ classes, so every layer reaches them.
 live.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn my_theme(dark: bool) -> Theme {
     let base = if dark { ThemeConfig::dark() } else { ThemeConfig::light() };
@@ -51,7 +51,7 @@ accents at 4.5:1 or more. `system_prefs().high_contrast` reports the OS setting,
 follow it:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 fn theme_for_os() -> Theme {
     let prefs = system_prefs();
     let t = if prefs.dark.unwrap_or(true) { Theme::dark() } else { Theme::light() };
@@ -65,7 +65,7 @@ fn theme_for_os() -> Theme {
 Every field of `Theme` is public. Override single values after generating the theme:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let mut t = Theme::dark();
 t.colors.background = hex("#0b0b0e");
 t.shadow_popover.clear();
@@ -81,7 +81,7 @@ A style class restyles every element tagged with it, using the same builder meth
 instance styling:
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 let t = Theme::dark()
     .style_class("button", |e| e.pill().px(18.0))
@@ -128,8 +128,8 @@ every save; errors are printed with their line number, and the last good version
 apply one yourself:
 
 ```rust
-use rust_ui::prelude::*;
-use rust_ui::stylesheet::Stylesheet;
+use charis_ui::prelude::*;
+use charis_ui::stylesheet::Stylesheet;
 
 let (sheet, errors) = Stylesheet::parse(".button { radius: 999; }");
 assert!(errors.is_empty());

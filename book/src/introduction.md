@@ -1,6 +1,6 @@
 # Introduction
 
-rust-ui is a desktop UI framework for Rust that borrows the good parts of the web: CSS-like
+Charis is a desktop UI framework for Rust that borrows the good parts of the web: CSS-like
 styling, flexbox and grid layout, design tokens and transitions. It adds the pieces that
 IDE-class apps need and most Rust toolkits lack: docking with tabs torn out into their own
 windows, JetBrains-style tool windows, named layouts, commands with a rebindable keymap, and

@@ -1,8 +1,8 @@
 //! App menus: shortcuts from the declaration (with the right precedence),
 //! and the self-managing in-window menu bar with submenus.
 
-use rust_ui::headless::HeadlessApp;
-use rust_ui::prelude::*;
+use charis_ui::headless::HeadlessApp;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Ed {
@@ -76,8 +76,8 @@ impl App for Ed {
     }
 }
 
-fn key(c: char, ctrl: bool, shift: bool, alt: bool) -> rust_ui::Event {
-    rust_ui::Event::Key(KeyEvent {
+fn key(c: char, ctrl: bool, shift: bool, alt: bool) -> charis_ui::Event {
+    charis_ui::Event::Key(KeyEvent {
         key: Key::Char(c),
         mods: Modifiers { ctrl, shift, alt, meta: false },
         repeat: false,

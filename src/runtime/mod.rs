@@ -41,7 +41,7 @@ use crate::theme::{self, Theme};
 /// and [`App::update`] for every message produced by user interaction.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// struct Counter { n: i32 }
 ///
@@ -254,7 +254,7 @@ impl<M> Cx<M> {
     /// Move keyboard focus to the element with the given `.id(...)`.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     ///
     /// struct Form;
     /// #[derive(Clone)]
@@ -321,7 +321,7 @@ impl<M: Send + 'static> Cx<M> {
     /// Run a future in the background and deliver its output as a message.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     ///
     /// #[derive(Default)]
     /// struct Loader { data: Option<String> }
@@ -474,8 +474,8 @@ pub enum MouseButton {
 /// [`Headless`](crate::headless::Headless) harness directly:
 ///
 /// ```
-/// use rust_ui::prelude::*;
-/// use rust_ui::Event;
+/// use charis_ui::prelude::*;
+/// use charis_ui::Event;
 ///
 /// struct Hello;
 /// impl App for Hello {
@@ -665,10 +665,10 @@ impl ScrollState {
     }
 }
 
-/// `RUI_PROFILE=1` prints per-frame timings (checked once).
+/// `CHARIS_PROFILE=1` prints per-frame timings (checked once).
 fn profiling() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("RUI_PROFILE").is_some())
+    *ON.get_or_init(|| std::env::var_os("CHARIS_PROFILE").is_some())
 }
 
 /// A node of the persistent layout tree, with what it was last synced from.
@@ -1270,7 +1270,7 @@ impl<A: App> Runtime<A> {
             damage_items: Vec::new(),
             damage_key: None,
             last_damage: crate::damage::Damage::Full,
-            damage_tracking: std::env::var_os("RUI_NO_DAMAGE").is_none(),
+            damage_tracking: std::env::var_os("CHARIS_NO_DAMAGE").is_none(),
             mac_keys: cfg!(target_os = "macos"),
             window_state: WindowInfo::DEFAULT,
             dialog_requests: Vec::new(),
@@ -1575,7 +1575,7 @@ impl<A: App> Runtime<A> {
     }
 
     /// Turn damage tracking off (every frame redrawn in full) or on (the
-    /// default; `RUI_NO_DAMAGE=1` turns it off too).
+    /// default; `CHARIS_NO_DAMAGE=1` turns it off too).
     pub fn set_damage_tracking(&mut self, on: bool) {
         self.damage_tracking = on;
     }

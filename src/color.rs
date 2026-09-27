@@ -3,7 +3,7 @@
 /// An sRGB color with straight (non-premultiplied) alpha. Components are 0..=1.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let blue = hex("#3b82f6");
 /// assert_eq!(blue, Color::rgb(0x3b, 0x82, 0xf6));
 /// let muted = blue.with_alpha(0.5).lighten(0.2);
@@ -255,7 +255,7 @@ fn oklab_to_linear_srgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
 /// Shorthand for [`Color::oklch`].
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// // Tailwind v4 zinc-900: oklch(21% 0.006 285.885) ≈ #18181b
 /// let c = oklch(0.21, 0.006, 285.885);
 /// assert!((c.r - hex("#18181b").r).abs() < 0.01);
@@ -282,7 +282,7 @@ pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color {
 /// A background fill, similar to CSS `background`.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 /// let solid: Fill = hex("#5b8cff").into();
 /// let sunset = Fill::linear(90.0, [(0.0, hex("#f97316")), (1.0, hex("#db2777"))]);
 /// assert!(!sunset.is_transparent());

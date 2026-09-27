@@ -1,4 +1,4 @@
-# rust-ui
+# Charis
 
 A web-inspired, highly customizable desktop UI framework for Rust. It aims to look as good as
 Electron / modern web apps while staying pure Rust, with no browser or webview.
@@ -36,7 +36,7 @@ Electron / modern web apps while staying pure Rust, with no browser or webview.
 ## Quick start
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Counter { n: i32 }
 
@@ -60,7 +60,7 @@ impl App for Counter {
 }
 
 fn main() {
-    rust_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
+    charis_ui::run(Counter { n: 0 }, WindowOptions::new("Counter")).unwrap();
 }
 ```
 
@@ -76,8 +76,8 @@ On Linux you need the usual X11/Wayland runtime libraries (e.g. `libxkbcommon-x1
 To start a new app from a template (see [`templates/`](templates/README.md)):
 
 ```sh
-cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
-cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
+cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell --name my-ide
+cargo generate --git https://github.com/cochbild/charis-ui templates/settings-app --name my-settings
 ```
 
 ## Documentation
@@ -428,7 +428,7 @@ overrides it from an in-app setting.
 ### Custom window chrome
 
 ```rust
-rust_ui::run(app, WindowOptions::new("My App").frameless(true))
+charis_ui::run(app, WindowOptions::new("My App").frameless(true))
 // in view:
 titlebar(title, left_content, right_content, window_info().maximized)
 ```
@@ -564,8 +564,8 @@ snapped to the pixel grid. Both backends apply identical correction, and a test 
 output matching the CPU reference.
 
 **Choosing a renderer.** The GPU backend is used when an adapter is available (Vulkan, Metal, DX12
-or GL). Otherwise the app falls back to the CPU backend. Set `RUI_RENDERER=cpu` to force the CPU,
-or build without the `gpu` feature. Set `RUI_PROFILE=1` to print the chosen adapter and per-frame
+or GL). Otherwise the app falls back to the CPU backend. Set `CHARIS_RENDERER=cpu` to force the CPU,
+or build without the `gpu` feature. Set `CHARIS_PROFILE=1` to print the chosen adapter and per-frame
 timings.
 
 **Performance.** On the CPU backend, a full 1440×900 IDE frame (about 600 elements) takes about

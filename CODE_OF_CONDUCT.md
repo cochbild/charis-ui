@@ -6,7 +6,7 @@ version 2.1.
 
 ## Our pledge
 
-We want taking part in rust-ui to be a harassment-free experience for everyone, regardless of
+We want taking part in Charis to be a harassment-free experience for everyone, regardless of
 age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity
 and expression, level of experience, education, socio-economic status, nationality, personal
 appearance, race, caste, color, religion, or sexual identity and orientation.

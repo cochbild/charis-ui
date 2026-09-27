@@ -160,7 +160,7 @@ struct Builder<M> {
 impl<M: Clone> Builder<M> {
     fn id(&mut self) -> MenuId {
         self.next += 1;
-        MenuId::new(format!("rust-ui-{}", self.next))
+        MenuId::new(format!("charis-{}", self.next))
     }
 
     fn fill(&mut self, sub: &Submenu, items: &[MenuItem<M>]) {

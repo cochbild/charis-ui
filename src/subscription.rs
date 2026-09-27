@@ -4,7 +4,7 @@
 //! every update, so subscriptions can be conditional:
 //!
 //! ```
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # use std::time::Duration;
 //! # #[derive(Clone)] enum Msg { Tick, CloseRequested, Resized(Size) }
 //! # let busy = true;

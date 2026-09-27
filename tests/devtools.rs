@@ -1,8 +1,8 @@
 //! Developer tools: the element inspector and stylesheets.
 
-use rust_ui::prelude::*;
-use rust_ui::stylesheet::Stylesheet;
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::stylesheet::Stylesheet;
+use charis_ui::Event;
 
 struct A {
     clicks: u32,

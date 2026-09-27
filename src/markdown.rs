@@ -1,7 +1,7 @@
 //! Markdown rendering (CommonMark + tables, task lists, strikethrough).
 //!
 //! ```
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! # #[derive(Clone)] enum Msg { Open(String) }
 //! let md: Element<Msg> = markdown("# Title\nSome **bold** text and `code`.\n\n```rust\nfn main() {}\n```")
 //!     .on_link(Msg::Open);

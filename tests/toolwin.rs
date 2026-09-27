@@ -1,8 +1,8 @@
 //! Tool windows: stripes, pinned panels that take space, auto-hide panels
 //! that slide over the content and hide again.
 
-use rust_ui::prelude::*;
-use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+use charis_ui::prelude::*;
+use charis_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Tool {
@@ -109,7 +109,7 @@ fn auto_hide_slides_over_and_hides_on_outside_click() {
     // Escape hides too.
     click_id(&mut h, "tool-stripe/Terminal");
     assert!(visible(&h, "Terminal"));
-    h.event(rust_ui::Event::Key(KeyEvent { key: Key::Escape, mods: Modifiers::default(), repeat: false }));
+    h.event(charis_ui::Event::Key(KeyEvent { key: Key::Escape, mods: Modifiers::default(), repeat: false }));
     h.settle();
     assert!(!visible(&h, "Terminal"));
 }
@@ -154,8 +154,8 @@ fn resizing() {
 }
 
 fn right_click(h: &mut Headless<Ide>, p: Point) {
-    h.event(rust_ui::Event::PointerDown(p, rust_ui::MouseButton::Right));
-    h.event(rust_ui::Event::PointerUp(p, rust_ui::MouseButton::Right));
+    h.event(charis_ui::Event::PointerDown(p, charis_ui::MouseButton::Right));
+    h.event(charis_ui::Event::PointerUp(p, charis_ui::MouseButton::Right));
     h.settle();
 }
 
@@ -192,7 +192,7 @@ fn commands_menu() {
     // Escape closes the menu (focus is in it).
     click_id(&mut h, "tool-options/Terminal");
     assert!(h.rt.rect_of_text("View Mode").is_some());
-    h.event(rust_ui::Event::Key(KeyEvent { key: Key::Escape, mods: Modifiers::default(), repeat: false }));
+    h.event(charis_ui::Event::Key(KeyEvent { key: Key::Escape, mods: Modifiers::default(), repeat: false }));
     h.settle();
     assert!(h.rt.rect_of_text("View Mode").is_none());
 }

@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct L {
     version: u32,
@@ -230,7 +230,7 @@ fn lazy_rows_in_virtual_lists() {
     assert!(h.rt.rect_of_text("row 0").is_some());
     let r = h.rt.rect_of("list").unwrap();
     for _ in 0..30 {
-        h.event(rust_ui::Event::Wheel(r.center(), Point::new(0.0, 100.0)));
+        h.event(charis_ui::Event::Wheel(r.center(), Point::new(0.0, 100.0)));
         h.advance(1.0 / 60.0);
     }
     h.settle();

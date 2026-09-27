@@ -5,8 +5,8 @@
 //! center to join it, or onto an edge to split that group left/right/top/bottom.
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
-//! use rust_ui::dock::{Dock, DockMsg, DockNode};
+//! use charis_ui::prelude::*;
+//! use charis_ui::dock::{Dock, DockMsg, DockNode};
 //!
 //! struct Ide { dock: Dock<&'static str> }
 //! #[derive(Clone)] enum Msg { Dock(DockMsg) }
@@ -303,7 +303,7 @@ impl<T> Dock<T> {
     /// A dock with this layout; group ids are assigned here.
     ///
     /// ```
-    /// use rust_ui::prelude::*;
+    /// use charis_ui::prelude::*;
     ///
     /// #[derive(Clone)]
     /// enum Msg {
@@ -912,8 +912,8 @@ pub struct FloatingDock<T> {
 /// Closing a floating window docks its tabs back into the main window.
 ///
 /// ```no_run
-/// use rust_ui::prelude::*;
-/// use rust_ui::dock::{Dock, DockNode, DockSpace, DockSpaceMsg};
+/// use charis_ui::prelude::*;
+/// use charis_ui::dock::{Dock, DockNode, DockSpace, DockSpaceMsg};
 ///
 /// struct Ide { dock: DockSpace<&'static str> }
 /// #[derive(Clone)] enum Msg { Dock(DockSpaceMsg) }

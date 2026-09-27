@@ -1,7 +1,7 @@
 //! Reduced motion: movement is instant, fades still fade.
 
-use rust_ui::anim::set_reduced_motion;
-use rust_ui::prelude::*;
+use charis_ui::anim::set_reduced_motion;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct M {
@@ -60,7 +60,7 @@ fn run(reduced: bool) -> (Headless<M>, bool, f32, u8, f32) {
     let mut h = Headless::new(M::default(), 400.0, 500.0, 1.0);
     h.settle();
     let r = h.rt.rect_of("list").unwrap();
-    h.event(rust_ui::Event::Wheel(r.center(), Point::new(0.0, 300.0)));
+    h.event(charis_ui::Event::Wheel(r.center(), Point::new(0.0, 300.0)));
     h.advance(1.0 / 60.0);
     // How far the content actually moved (on_scroll reports the target).
     let scroll_after_one_frame = r.y - h.rt.rect_of_text("row 0").map_or(r.y - 400.0, |t| t.y);

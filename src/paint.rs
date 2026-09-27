@@ -16,7 +16,7 @@ use crate::text::{TextStyle, TextSystem};
 /// with it via [`canvas`](crate::canvas).
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// // A rounded panel with a dot in the middle and a diagonal line.
 /// let ring: Element<()> = canvas(|c: &mut Canvas, r: Rect| {

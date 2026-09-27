@@ -1,4 +1,4 @@
-//! An IDE-style shell built on rust-ui: a custom title bar with menus, a
+//! An IDE-style shell built on Charis: a custom title bar with menus, a
 //! dock of editor tabs that can be torn out into their own windows, tool
 //! windows on the sides, a command palette, rebindable shortcuts, named
 //! layouts and a status bar.
@@ -12,12 +12,12 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use rust_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
-use rust_ui::dock::{DockSpace, DockSpaceMsg};
-use rust_ui::layouts::{LayoutMsg, Layouts};
-use rust_ui::prelude::*;
-use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
-use rust_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
+use charis_ui::commands::{pending_chord, CommandPalette, KeymapEditor, KeymapMsg, PaletteMsg};
+use charis_ui::dock::{DockSpace, DockSpaceMsg};
+use charis_ui::layouts::{LayoutMsg, Layouts};
+use charis_ui::prelude::*;
+use charis_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+use charis_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
 
 /// What can be docked.
 #[derive(Clone, Debug, PartialEq)]
@@ -406,7 +406,7 @@ impl Shell {
 
 fn main() {
     let opts = WindowOptions::new(env!("CARGO_PKG_NAME")).size(1280.0, 800.0).min_size(720.0, 480.0).frameless(true);
-    if let Err(e) = rust_ui::run(Shell::default(), opts) {
+    if let Err(e) = charis_ui::run(Shell::default(), opts) {
         eprintln!("error: {e}");
     }
 }

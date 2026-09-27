@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to rust-ui are listed here. The format follows
+All notable changes to Charis are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) as described in [docs/SEMVER.md](docs/SEMVER.md).
 
@@ -8,6 +8,11 @@ All notable changes to rust-ui are listed here. The format follows
 
 ### Breaking
 
+- The framework is now called **Charis**: the crate is `charis-ui` (`use charis_ui::…` instead
+  of `use rust_ui::…`), and the environment variables are `CHARIS_PROFILE`, `CHARIS_RENDERER`,
+  `CHARIS_NO_DAMAGE`, `CHARIS_DARK`, `CHARIS_HIGH_CONTRAST`, `CHARIS_REDUCED_MOTION` and
+  `CHARIS_DEBUG_EVENTS` (were `RUI_…`). A project can keep its code unchanged (still
+  `rust_ui::…`) by naming the dependency `rust-ui = { package = "charis-ui", … }`.
 - `#[non_exhaustive]` on enums that will grow: `Event`, `WindowRequest`, `ClipboardContent`,
   `ChromeHit`, `MouseButton`, `Key`, `WindowControl`, `Role`, `Icon`, `Cursor`, `FontFamily`,
   `Fit`, `ImageSource`, `Backdrop`, `Damage`, `DialogKind`, `Easing`, `Accent`, `GrayTint`,
@@ -45,7 +50,7 @@ All notable changes to rust-ui are listed here. The format follows
 
 - Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
 - Dropping a dock tab onto another window didn't work on Wayland.
-- Projects depending on rust-ui from git printed `invalid character '{' in package name`
+- Projects depending on Charis from git printed `invalid character '{' in package name`
   errors: the template manifests are now `Cargo.toml.liquid` (cargo-generate 0.23 or newer
   turns them back into `Cargo.toml`).
 

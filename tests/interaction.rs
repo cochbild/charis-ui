@@ -1,8 +1,8 @@
 //! End-to-end tests driving apps through the headless runtime.
 
-use rust_ui::prelude::*;
-use rust_ui::runtime::Event;
-use rust_ui::MouseButton;
+use charis_ui::prelude::*;
+use charis_ui::runtime::Event;
+use charis_ui::MouseButton;
 
 #[derive(Default)]
 struct Probe {

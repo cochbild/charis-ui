@@ -1,7 +1,7 @@
 //! The dialog of a `modal` is clickable although its full-window wrapper
 //! lets clicks through (`pointer_events(false)` with an opt-back-in).
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 struct A {
     n: u32,
 }

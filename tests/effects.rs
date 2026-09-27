@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use rust_ui::prelude::*;
-use rust_ui::TaskHandle;
+use charis_ui::prelude::*;
+use charis_ui::TaskHandle;
 
 #[derive(Default)]
 struct Fx {
@@ -192,7 +192,7 @@ fn follow_end_and_scroll_commands() {
     assert!(s.at_end, "still at end after growth: {s:?}");
     // User scrolls up: unpinned, growth doesn't move it.
     let r = h.rt.rect_of("log").unwrap();
-    h.event(rust_ui::Event::Wheel(r.center(), Point::new(0.0, -300.0)));
+    h.event(charis_ui::Event::Wheel(r.center(), Point::new(0.0, -300.0)));
     h.settle();
     let up = h.rt.app.last_scroll.unwrap();
     assert!(!up.at_end);

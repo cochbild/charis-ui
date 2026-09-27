@@ -1,7 +1,7 @@
 //! Runtime theme switching: the app's `theme()` is re-read every frame, so a
 //! message that changes appearance state repaints with the new tokens.
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Themed {
     dark: bool,

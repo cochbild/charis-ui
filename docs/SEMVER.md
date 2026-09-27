@@ -1,6 +1,6 @@
 # Versioning and stability policy
 
-rust-ui follows [Semantic Versioning](https://semver.org/) as Cargo interprets it. This page
+Charis follows [Semantic Versioning](https://semver.org/) as Cargo interprets it. This page
 says what counts as the public API, what may change in which release, and how changes are
 announced.
 
@@ -24,7 +24,7 @@ announced.
 ## What is public API
 
 The API covered by these guarantees is everything reachable from the crate root in rustdoc,
-including `rust_ui::prelude`, with these exceptions:
+including `charis_ui::prelude`, with these exceptions:
 
 - Items marked `#[doc(hidden)]`, such as the `cpu` module, are internal. They are public only so
   that sibling parts of the crate, benchmarks or tests can reach them. Don't depend on them.
@@ -65,6 +65,6 @@ the stable Rust release from six months earlier.
 
 ## Dependencies in the public API
 
-A few types from dependencies show up in rust-ui's API: `wgpu` types (in the `gpu` module) and
+A few types from dependencies show up in Charis's API: `wgpu` types (in the `gpu` module) and
 `tiny_skia` pixmaps (`Runtime::render` and the headless screenshots). Moving to a new major
-version of one of these is a breaking change for rust-ui and follows the rules above.
+version of one of these is a breaking change for Charis and follows the rules above.

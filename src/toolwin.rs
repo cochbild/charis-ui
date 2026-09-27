@@ -12,8 +12,8 @@
 //! switches the mode and the minus button hides it.
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
-//! use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+//! use charis_ui::prelude::*;
+//! use charis_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
 //!
 //! #[derive(Clone, Copy, PartialEq, Debug)]
 //! enum Tool { Files, Search, Terminal }

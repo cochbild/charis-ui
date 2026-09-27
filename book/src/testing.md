@@ -8,7 +8,7 @@ the pixels or the accessibility tree. It needs no display and no GPU, so it runs
 ## A first test
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct Login {
@@ -75,8 +75,8 @@ assert!(h.rt.app.submitted);
 Keys go through `Event::Key`:
 
 ```rust
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 # struct A;
 # impl App for A {
@@ -115,7 +115,7 @@ test and for documentation screenshots.
 shows the pattern: render at a fixed size with the bundled font, compare each pixel with a small
 tolerance, and regenerate the references with `UPDATE_GOLDEN=1` after an intended change. Keep
 the tolerance: anti-aliasing can differ slightly between releases (see the
-[versioning policy](https://github.com/cochbild/rust-ui/blob/main/docs/SEMVER.md)).
+[versioning policy](https://github.com/cochbild/charis-ui/blob/main/docs/SEMVER.md)).
 
 `h.save_png_gpu(path)` renders the same frame with wgpu when an adapter is available. The
 crate's own parity test uses it to keep the two renderers within a small difference of each

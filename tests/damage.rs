@@ -3,10 +3,10 @@
 //! scrolling, animations, layers, shadows and images; and small changes
 //! must redraw small areas.
 
-use rust_ui::damage::Damage;
-use rust_ui::image::Image;
-use rust_ui::prelude::*;
-use rust_ui::{Event, MouseButton};
+use charis_ui::damage::Damage;
+use charis_ui::image::Image;
+use charis_ui::prelude::*;
+use charis_ui::{Event, MouseButton};
 
 struct Ui {
     text: String,

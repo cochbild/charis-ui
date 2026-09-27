@@ -21,7 +21,7 @@ use crate::style::Cursor;
 /// Options for the native window.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let opts = WindowOptions::new("Notes").size(900.0, 600.0).min_size(400.0, 300.0).frameless(true);
 /// assert_eq!(opts.width, 900.0);
@@ -93,7 +93,7 @@ pub enum Backdrop {
 impl Default for WindowOptions {
     fn default() -> Self {
         Self {
-            title: "rust-ui".into(),
+            title: "Charis".into(),
             width: 1200.0,
             height: 780.0,
             min_width: 420.0,
@@ -288,7 +288,7 @@ const HELD_RELEASE: Duration = Duration::from_millis(250);
 /// by [`App::windows`] open and close as the app's state changes.
 ///
 /// ```no_run
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// struct Hello;
 /// impl App for Hello {
@@ -297,7 +297,7 @@ const HELD_RELEASE: Duration = Duration::from_millis(250);
 ///     fn view(&self) -> Element<()> { text("Hello") }
 /// }
 ///
-/// rust_ui::run(Hello, WindowOptions::new("Hello")).unwrap();
+/// charis_ui::run(Hello, WindowOptions::new("Hello")).unwrap();
 /// ```
 pub fn run<A: App>(app: A, mut opts: WindowOptions) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
@@ -674,7 +674,7 @@ impl<A: App> Shell<A> {
         match crate::stylesheet::Stylesheet::load(&*path) {
             Ok((sheet, errors)) => {
                 for e in &errors {
-                    eprintln!("rust-ui: {}:{}: {}", path.display(), e.line, e.message);
+                    eprintln!("charis: {}:{}: {}", path.display(), e.line, e.message);
                 }
                 for w in &mut self.wins {
                     w.rt.set_stylesheet(Some(sheet.clone()));
@@ -683,7 +683,7 @@ impl<A: App> Shell<A> {
                     }
                 }
             }
-            Err(e) => eprintln!("rust-ui: can't read stylesheet {}: {e}", path.display()),
+            Err(e) => eprintln!("charis: can't read stylesheet {}: {e}", path.display()),
         }
     }
 
@@ -995,26 +995,26 @@ fn hwnd(w: &Window) -> Option<isize> {
 }
 
 /// GPU by default; falls back to the CPU renderer when no adapter is
-/// available or `RUI_RENDERER=cpu` is set.
+/// available or `CHARIS_RENDERER=cpu` is set.
 #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
 /// The GPU presenter when possible (`transparent`: with a see-through
 /// swapchain for a system backdrop), else the CPU one.
 #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
 fn create_presenter(window: &Arc<Window>, allow_gpu: bool, transparent: bool) -> Result<Presenter, String> {
     #[cfg(feature = "gpu")]
-    if allow_gpu && std::env::var("RUI_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
+    if allow_gpu && std::env::var("CHARIS_RENDERER").map(|v| v != "cpu").unwrap_or(true) {
         let size = window.inner_size();
         if let Some(gs) = crate::gpu::GpuSurface::new(window.clone(), size.width, size.height, transparent) {
-            if std::env::var("RUI_PROFILE").is_ok() {
-                eprintln!("rust-ui: GPU renderer on {}", gs.renderer.adapter_name);
+            if std::env::var("CHARIS_PROFILE").is_ok() {
+                eprintln!("charis: GPU renderer on {}", gs.renderer.adapter_name);
             }
             return Ok(Presenter::Gpu(Box::new(gs)));
         }
     }
     let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
     let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
-    if std::env::var("RUI_PROFILE").is_ok() {
-        eprintln!("rust-ui: CPU renderer");
+    if std::env::var("CHARIS_PROFILE").is_ok() {
+        eprintln!("charis: CPU renderer");
     }
     Ok(Presenter::Cpu { surface, _context: context })
 }
@@ -1197,7 +1197,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 w.rt.handle(Event::Wheel(p, d));
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
+                if std::env::var("CHARIS_DEBUG_EVENTS").is_ok() {
                     eprintln!("key {:?} text {:?} state {:?}", event.logical_key, event.text, event.state);
                 }
                 if event.state != ElementState::Pressed {
@@ -1230,7 +1230,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Shell<A> {
                 }
             }
             WindowEvent::Ime(ime) => {
-                if std::env::var("RUI_DEBUG_EVENTS").is_ok() {
+                if std::env::var("CHARIS_DEBUG_EVENTS").is_ok() {
                     eprintln!("ime {ime:?}");
                 }
                 let rt = &mut self.wins[i].rt;

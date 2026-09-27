@@ -55,7 +55,7 @@ impl Size {
 /// An axis-aligned rectangle in logical pixels.
 ///
 /// ```
-/// use rust_ui::prelude::*;
+/// use charis_ui::prelude::*;
 ///
 /// let r = Rect::new(10.0, 10.0, 100.0, 50.0);
 /// assert_eq!(r.right(), 110.0);

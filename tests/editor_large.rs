@@ -1,8 +1,8 @@
 //! Multi-line inputs with very large documents: only what's on screen is
 //! laid out, and editing, scrolling, selection and undo stay correct.
 
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 struct Ed {
     text: String,

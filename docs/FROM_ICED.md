@@ -24,7 +24,7 @@ style. This page covers:
 
 | iced | This framework |
 |---|---|
-| `iced::application(boot, update, view).run()` | `rust_ui::run(app, WindowOptions::new("Title"))` with `impl App for MyApp` |
+| `iced::application(boot, update, view).run()` | `charis_ui::run(app, WindowOptions::new("Title"))` with `impl App for MyApp` |
 | `fn update(&mut self, msg) -> Task<Message>` | `fn update(&mut self, msg, cx: &mut Cx)`; effects go through `cx` |
 | `Task::perform(future, Msg::Done)` | `cx.spawn(future, Msg::Done)` (or `cx.spawn_blocking(\|\| …)` for blocking work); returns a `TaskHandle` you can `abort()` |
 | `Task::run(stream, Msg::Item)` | `cx.run(stream, Msg::Item)` |

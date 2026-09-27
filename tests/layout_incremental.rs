@@ -1,7 +1,7 @@
 //! The layout tree persists between frames; these check that every kind of
 //! change still re-lays out correctly (nothing stale is reused).
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Default)]
 struct L {

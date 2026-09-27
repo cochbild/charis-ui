@@ -1,4 +1,4 @@
-//! An Electron/VS Code–style IDE shell showing off rust-ui:
+//! An Electron/VS Code–style IDE shell showing off Charis:
 //! frameless window with custom title bar and menus, activity bar,
 //! resizable + collapsible split panes in every direction, tabs, tree view,
 //! a settings inspector full of widgets, live theme switching and more.
@@ -6,7 +6,7 @@
 //! Run:        cargo run --release --example showcase
 //! Screenshot: cargo run --release --example showcase -- --screenshot out.png
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Activity {
@@ -627,7 +627,7 @@ impl Nebula {
                 ("$ cargo build --release", c.text),
                 ("   Compiling taffy v0.14.0", c.success),
                 ("   Compiling cosmic-text v0.19.0", c.success),
-                ("   Compiling rust-ui v0.1.0 (/home/dev/rust-ui)", c.success),
+                ("   Compiling charis-ui v0.1.0 (/home/dev/charis-ui)", c.success),
                 ("    Finished `release` profile [optimized] target(s) in 24.31s", c.success),
                 ("$ cargo run --example showcase", c.text),
                 ("     Running `target/release/examples/showcase`", c.text_muted),
@@ -892,7 +892,7 @@ fn minimap() -> Element<Msg> {
     .border_l(1.0, theme().colors.border)
 }
 
-const CODE: &str = r#"use rust_ui::prelude::*;
+const CODE: &str = r#"use charis_ui::prelude::*;
 
 /// Application state.
 struct Nebula {
@@ -923,7 +923,7 @@ impl App for Nebula {
 
 fn main() {
     let opts = WindowOptions::new("Nebula").frameless(true);
-    rust_ui::run(Nebula { sidebar_open: true, font_size: 13.0 }, opts).unwrap();
+    charis_ui::run(Nebula { sidebar_open: true, font_size: 13.0 }, opts).unwrap();
 }"#;
 
 fn highlight(line: &str) -> Vec<(String, Color)> {
@@ -1037,7 +1037,7 @@ fn main() {
             let t = std::time::Instant::now();
             for i in 0..n {
                 // Alternate hover targets so every frame rebuilds, lays out and repaints.
-                h.rt.handle(rust_ui::Event::PointerMove(Point::new(100.0 + (i % 2) as f32 * 40.0, 200.0)));
+                h.rt.handle(charis_ui::Event::PointerMove(Point::new(100.0 + (i % 2) as f32 * 40.0, 200.0)));
                 h.rt.invalidate();
                 h.rt.render();
             }
@@ -1082,7 +1082,7 @@ fn main() {
         println!("saved {out}");
         return;
     }
-    rust_ui::run(
+    charis_ui::run(
         Nebula::new(),
         WindowOptions::new("Nebula Studio").size(1440.0, 900.0).min_size(720.0, 460.0).frameless(true),
     )

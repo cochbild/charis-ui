@@ -1,6 +1,6 @@
 # {{project-name}}
 
-A settings app built on [rust-ui](https://github.com/cochbild/rust-ui):
+A settings app built on [Charis](https://github.com/cochbild/charis-ui):
 
 - sections in a sidebar, with a search box that filters them;
 - forms built from switches, dropdowns, segmented controls, sliders, number inputs and text

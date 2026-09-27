@@ -163,7 +163,7 @@ impl GpuRenderer {
 
     pub(crate) fn with_adapter(adapter: &wgpu::Adapter, format: wgpu::TextureFormat) -> Option<Self> {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("rust-ui"),
+            label: Some("charis-ui"),
             required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
             ..Default::default()
         }))
@@ -178,20 +178,20 @@ impl GpuRenderer {
         let healthy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let h = healthy.clone();
         device.on_uncaptured_error(std::sync::Arc::new(move |e: wgpu::Error| {
-            eprintln!("rust-ui: GPU error, falling back to CPU rendering: {e}");
+            eprintln!("charis: GPU error, falling back to CPU rendering: {e}");
             h.store(false, std::sync::atomic::Ordering::Relaxed);
         }));
         let h = healthy.clone();
         device.set_device_lost_callback(move |reason, msg| {
-            eprintln!("rust-ui: GPU device lost ({reason:?}): {msg}");
+            eprintln!("charis: GPU device lost ({reason:?}): {msg}");
             h.store(false, std::sync::atomic::Ordering::Relaxed);
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rust-ui shader"),
+            label: Some("charis shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("gpu.wgsl").into()),
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("rust-ui bgl"),
+            label: Some("charis bgl"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -232,7 +232,7 @@ impl GpuRenderer {
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("rust-ui layout"),
+            label: Some("charis layout"),
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
@@ -244,7 +244,7 @@ impl GpuRenderer {
             })
             .collect();
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("rust-ui pipeline"),
+            label: Some("charis pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -273,18 +273,18 @@ impl GpuRenderer {
             cache: None,
         });
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rust-ui globals"),
+            label: Some("charis globals"),
             size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let max = device.limits().max_texture_dimension_2d.min(4096);
-        let mask = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::R8Unorm, 1, "rust-ui mask atlas");
+        let mask = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::R8Unorm, 1, "charis mask atlas");
         // Color emoji and images.
-        let color = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::Rgba8Unorm, 4, "rust-ui color atlas");
+        let color = Atlas::new(&device, max.min(2048), wgpu::TextureFormat::Rgba8Unorm, 4, "charis color atlas");
         // Images drawn larger than their raster in the atlas (very big ones) stretch smoothly.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("rust-ui image sampler"),
+            label: Some("charis image sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -292,7 +292,7 @@ impl GpuRenderer {
         let mask_view = mask.texture.create_view(&Default::default());
         let color_view = color.texture.create_view(&Default::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("rust-ui bind group"),
+            label: Some("charis bind group"),
             layout: &bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
@@ -339,7 +339,7 @@ impl GpuRenderer {
         let bytes = (inst.len().max(1) * std::mem::size_of::<Instance>()) as u64;
         if self.instances.as_ref().is_none_or(|b| b.size() < bytes) {
             self.instances = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rust-ui instances"),
+                label: Some("charis instances"),
                 size: bytes.next_power_of_two(),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -350,10 +350,10 @@ impl GpuRenderer {
             self.queue.write_buffer(buf, 0, as_bytes(&inst));
         }
         let bg = scene.background;
-        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rust-ui") });
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("charis-ui") });
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("rust-ui pass"),
+                label: Some("charis pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     depth_slice: None,
@@ -395,7 +395,7 @@ impl GpuRenderer {
     pub fn render_to_pixmap(&mut self, scene: &Scene, text: &mut TextSystem) -> Option<Pixmap> {
         let (w, h) = (scene.width.max(1), scene.height.max(1));
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rust-ui offscreen"),
+            label: Some("charis offscreen"),
             size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
@@ -408,7 +408,7 @@ impl GpuRenderer {
         self.render_to_view(scene, text, &view);
         let row = (w * 4).div_ceil(256) * 256;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rust-ui readback"),
+            label: Some("charis readback"),
             size: (row * h) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
@@ -849,7 +849,7 @@ fn pick_adapter(
         });
         match found {
             Some(a) => return Some(a),
-            None => eprintln!("rust-ui: no GPU adapter matches WGPU_ADAPTER_NAME={want:?}; using the default"),
+            None => eprintln!("charis: no GPU adapter matches WGPU_ADAPTER_NAME={want:?}; using the default"),
         }
     }
     pollster::block_on(instance.request_adapter(&opts)).ok()

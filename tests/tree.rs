@@ -5,9 +5,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use rust_ui::prelude::*;
-use rust_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
-use rust_ui::Event;
+use charis_ui::prelude::*;
+use charis_ui::tree::{TreeEvent, TreeModel, TreeMsg, TreeState};
+use charis_ui::Event;
 
 /// `roots` folders ("Folder r", ids 1..=roots) of `fanout` files each
 /// ("file r.j", ids r * 1_000_000 + j).

@@ -13,8 +13,8 @@
 //!   `serde` feature) edited in a [`KeymapEditor`].
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
-//! use rust_ui::commands::{Command, Commands, Keymap};
+//! use charis_ui::prelude::*;
+//! use charis_ui::commands::{Command, Commands, Keymap};
 //!
 //! #[derive(Clone)] enum Msg { Save, Find }
 //! struct Editor { keymap: Keymap }

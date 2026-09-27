@@ -1,8 +1,8 @@
 //! Images, SVGs, radio groups and number inputs.
 
-use rust_ui::image::{Fit, Image};
-use rust_ui::prelude::*;
-use rust_ui::Event;
+use charis_ui::image::{Fit, Image};
+use charis_ui::prelude::*;
+use charis_ui::Event;
 
 /// `w`×`h`, left half red, right half blue.
 fn halves(w: u32, h: u32) -> Image {
@@ -67,7 +67,7 @@ fn images_size_fit_and_round() {
 #[cfg(feature = "svg")]
 #[test]
 fn svg_renders_and_tints() {
-    use rust_ui::image::Svg;
+    use charis_ui::image::Svg;
     struct S(Svg);
     impl App for S {
         type Msg = Msg;

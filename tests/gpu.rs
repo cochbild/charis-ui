@@ -2,8 +2,8 @@
 //! GPU adapter (hardware or software, e.g. lavapipe) is available.
 #![cfg(feature = "gpu")]
 
-use rust_ui::gpu::GpuRenderer;
-use rust_ui::prelude::*;
+use charis_ui::gpu::GpuRenderer;
+use charis_ui::prelude::*;
 
 struct Gallery;
 
@@ -49,7 +49,7 @@ impl App for Gallery {
             .child(
                 row()
                     .gap(12.0)
-                    .child(image(photo()).w(120.0).h(60.0).fit(rust_ui::image::Fit::Cover).rounded(12.0))
+                    .child(image(photo()).w(120.0).h(60.0).fit(charis_ui::image::Fit::Cover).rounded(12.0))
                     .child(image(photo()).w(40.0))
                     .children(logo().map(|l| image(l).w(48.0).tint(th.colors.accent))),
             )
@@ -57,24 +57,24 @@ impl App for Gallery {
 }
 
 /// A 64×32 gradient "photo".
-fn photo() -> rust_ui::image::Image {
+fn photo() -> charis_ui::image::Image {
     let mut px = Vec::new();
     for y in 0..32u32 {
         for x in 0..64u32 {
             px.extend_from_slice(&[(x * 4) as u8, (y * 8) as u8, 200, 255]);
         }
     }
-    rust_ui::image::Image::from_rgba(64, 32, &px).unwrap()
+    charis_ui::image::Image::from_rgba(64, 32, &px).unwrap()
 }
 
 #[cfg(feature = "svg")]
-fn logo() -> Option<rust_ui::image::Svg> {
-    rust_ui::image::Svg::parse(
+fn logo() -> Option<charis_ui::image::Svg> {
+    charis_ui::image::Svg::parse(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10"/></svg>"#,
     )
 }
 #[cfg(not(feature = "svg"))]
-fn logo() -> Option<rust_ui::image::Image> {
+fn logo() -> Option<charis_ui::image::Image> {
     None
 }
 

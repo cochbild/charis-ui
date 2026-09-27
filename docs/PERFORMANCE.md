@@ -46,7 +46,7 @@ Frames where nothing changed skip rasterizing entirely. The window presents only
 rectangle (softbuffer's `present_with_damage`, keeping older back buffers up to date by their
 age). Tests check that partial frames are pixel-identical to full ones through hover, typing,
 overlays, scrolling, fades, shadows and images, and through 600 random interactions at four
-scales. `RUI_NO_DAMAGE=1` or `Runtime::set_damage_tracking(false)` turns it off.
+scales. `CHARIS_NO_DAMAGE=1` or `Runtime::set_damage_tracking(false)` turns it off.
 
 With it, a hover frame in the showcase costs 1.3 ms instead of a 6.4 ms full redraw.
 
@@ -102,7 +102,7 @@ bookkeeping.
    thousands of strings every frame means reshaping them all.
 4. **Wrap expensive, rarely-changing parts in `lazy`.** Chat messages, rendered markdown,
    settings pages and sidebars are good candidates. The lmfast demo memoizes each chat message.
-5. **Profile** with `RUI_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
+5. **Profile** with `CHARIS_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
    paint.
 
 ## Large text documents

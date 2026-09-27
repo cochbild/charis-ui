@@ -1,6 +1,6 @@
 # Panels and docking
 
-rust-ui has four layers of panel management. Use as many as the app needs:
+Charis has four layers of panel management. Use as many as the app needs:
 
 | Type | What it does |
 |---|---|
@@ -16,7 +16,7 @@ and each one comes with a message type you wrap in your app's `Msg`.
 ## A dock
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Clone, Debug, PartialEq)]
 enum Panel {
@@ -88,8 +88,8 @@ Your code opens tabs with `dock.open(panel)`. To move keyboard focus into the n-
 `DockSpace` wraps a `Dock` and adds floating windows. Hook it up in four places:
 
 ```rust
-# use rust_ui::prelude::*;
-use rust_ui::dock::{DockSpace, DockSpaceMsg};
+# use charis_ui::prelude::*;
+use charis_ui::dock::{DockSpace, DockSpaceMsg};
 # #[derive(Clone, Debug, PartialEq)] enum Panel { Editor, Terminal }
 # fn title(p: &Panel) -> String { format!("{p:?}") }
 # fn content(p: &Panel) -> Element<Msg> { text(title(p)) }
@@ -139,8 +139,8 @@ edge and is either *pinned* (it takes space, with a splitter) or *auto-hide* (it
 content and hides on an outside click or Escape). One tool window per edge is open at a time.
 
 ```rust
-use rust_ui::prelude::*;
-use rust_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
+use charis_ui::prelude::*;
+use charis_ui::toolwin::{Side, ToolMode, ToolMsg, ToolWindows};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Tool {

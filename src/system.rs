@@ -9,7 +9,7 @@
 //! choice, typically:
 //!
 //! ```
-//! # use rust_ui::prelude::*;
+//! # use charis_ui::prelude::*;
 //! fn theme() -> Theme {
 //!     let prefs = system_prefs();
 //!     Theme::from_config(ThemeConfig {
@@ -19,7 +19,7 @@
 //! }
 //! ```
 //!
-//! Set `RUI_HIGH_CONTRAST`, `RUI_REDUCED_MOTION` or `RUI_DARK` to `1` or `0`
+//! Set `CHARIS_HIGH_CONTRAST`, `CHARIS_REDUCED_MOTION` or `CHARIS_DARK` to `1` or `0`
 //! to override detection (for testing).
 
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -64,13 +64,13 @@ pub fn system_prefs() -> SystemPrefs {
 pub fn refresh_system_prefs() -> SystemPrefs {
     let mut p = detect();
     let flag = |name: &str| std::env::var(name).ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    if let Some(v) = flag("RUI_HIGH_CONTRAST") {
+    if let Some(v) = flag("CHARIS_HIGH_CONTRAST") {
         p.high_contrast = v;
     }
-    if let Some(v) = flag("RUI_REDUCED_MOTION") {
+    if let Some(v) = flag("CHARIS_REDUCED_MOTION") {
         p.reduced_motion = v;
     }
-    if let Some(v) = flag("RUI_DARK") {
+    if let Some(v) = flag("CHARIS_DARK") {
         p.dark = Some(v);
     }
     PREFS.store(encode(p), Ordering::Relaxed);

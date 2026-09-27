@@ -1,6 +1,6 @@
 # {{project-name}}
 
-An IDE-style desktop app built on [rust-ui](https://github.com/cochbild/rust-ui):
+An IDE-style desktop app built on [Charis](https://github.com/cochbild/charis-ui):
 
 - a custom title bar with File / View / Window menus (the native menu bar on macOS);
 - editor tabs in a dock: drag them to split, reorder, or tear them out into their own windows;
@@ -21,5 +21,5 @@ Where to start in `src/main.rs`:
   shortcuts editor are built from it.
 - `sample_project` is an in-memory project. Replace it with a walk of a real folder.
 
-To keep the layout and key bindings between runs, enable rust-ui's `serde` feature and save
+To keep the layout and key bindings between runs, enable Charis's `serde` feature and save
 `dock`, `tools`, `layouts` and `keymap` on exit.

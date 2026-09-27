@@ -6,7 +6,7 @@
 menus show as the macOS menu bar or in the window with `menubar()`.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Editor {
     wrap: bool,
@@ -57,7 +57,7 @@ keys. Commands feed the menus, the command palette and the shortcuts editor, and
 rebind them.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Editor {
     wrap: bool,

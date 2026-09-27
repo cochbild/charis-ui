@@ -14,8 +14,8 @@
 //! layouts can persist across runs.
 //!
 //! ```no_run
-//! use rust_ui::prelude::*;
-//! use rust_ui::layouts::{LayoutMsg, Layouts};
+//! use charis_ui::prelude::*;
+//! use charis_ui::layouts::{LayoutMsg, Layouts};
 //!
 //! #[derive(Clone)]
 //! struct Arrangement { sidebar: bool }

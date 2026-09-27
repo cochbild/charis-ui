@@ -3,7 +3,7 @@
 ## Window options
 
 ```rust,no_run
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 # struct MyApp;
 # impl App for MyApp {
 #     type Msg = ();
@@ -17,12 +17,12 @@ let opts = WindowOptions::new("My App")
     .frameless(true) // draw your own title bar
     .backdrop(Backdrop::Mica) // Windows 11 material behind the window
     .system_font(true); // the platform UI font instead of Inter
-rust_ui::run(MyApp, opts).unwrap();
+charis_ui::run(MyApp, opts).unwrap();
 ```
 
 `run` opens the window and blocks until the app exits. It picks the GPU renderer when an
 adapter is available (Vulkan, Metal, DX12 or GL) and falls back to the CPU renderer otherwise,
-or when `RUI_RENDERER=cpu` is set.
+or when `CHARIS_RENDERER=cpu` is set.
 
 ## Custom title bars
 
@@ -30,7 +30,7 @@ With `frameless(true)` the app draws its own title bar. `titlebar(title, left, r
 is a ready-made one, with a drag area and window buttons:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # #[derive(Clone)] enum Msg {}
 fn chrome(body: Element<Msg>) -> Element<Msg> {
     col()
@@ -86,7 +86,7 @@ The IME is on only while a text input has focus.
   answer with a message, so nothing blocks:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 # use std::path::PathBuf;
 # #[derive(Clone)] enum Msg { Open, Opened(Option<PathBuf>) }
 # struct A;

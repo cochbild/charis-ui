@@ -1,8 +1,8 @@
-//! The smallest rust-ui app.
+//! The smallest Charis app.
 //!
 //! Run: cargo run --example counter
 
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 struct Counter {
     n: i32,
@@ -48,5 +48,5 @@ impl App for Counter {
 }
 
 fn main() {
-    rust_ui::run(Counter { n: 0 }, WindowOptions::new("Counter").size(480.0, 360.0)).unwrap();
+    charis_ui::run(Counter { n: 0 }, WindowOptions::new("Counter").size(480.0, 360.0)).unwrap();
 }

@@ -1,6 +1,6 @@
 # Layout
 
-Every element is a box laid out with flexbox or grid, the same model as CSS (rust-ui uses
+Every element is a box laid out with flexbox or grid, the same model as CSS (Charis uses
 [taffy](https://github.com/DioxusLabs/taffy)). Sizes are in logical pixels; the runtime scales
 them for the display.
 
@@ -21,7 +21,7 @@ Children are added with `.child(e)`, `.children(iter)` and `.child_if(cond, || e
 ## Flexbox
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 # #[derive(Clone)] enum Msg { Back }
 
 fn toolbar() -> Element<Msg> {
@@ -55,7 +55,7 @@ The flex methods mirror CSS:
 A length is a number of pixels, or a percentage with `pct(50.0)`:
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let sidebar: Element<()> = col().w(pct(25.0)).min_w(180.0).max_w(420.0).h_full();
 ```
 
@@ -69,7 +69,7 @@ or `Track::Auto`. Children flow into cells in order; `col_span(n)` and `row_span
 span.
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 fn settings_form() -> Element<()> {
     div()
@@ -97,7 +97,7 @@ For long lists, `virtual_list(count, |i| row)` builds only the rows near the vie
 have different heights; each is measured the first time it's shown.
 
 ```rust
-# use rust_ui::prelude::*;
+# use charis_ui::prelude::*;
 let log: Element<()> = virtual_list(100_000, |i| text(format!("line {i}")).h(20.0)).id("log").h(400.0);
 ```
 
@@ -113,7 +113,7 @@ overlapping elements.
 `hsplit` and `vsplit` lay out panes with draggable splitters between them:
 
 ```rust
-use rust_ui::prelude::*;
+use charis_ui::prelude::*;
 
 #[derive(Clone)]
 enum Msg {

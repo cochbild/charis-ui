@@ -48,6 +48,8 @@ All notable changes to Charis are listed here. The format follows
 
 ### Fixed
 
+- With the bundled fonts, a system-installed Inter of another version no longer replaces the
+  bundled one (it changed text metrics and broke the golden tests on Windows).
 - Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
 - Dropping a dock tab onto another window didn't work on Wayland.
 - Projects depending on Charis from git printed `invalid character '{' in package name`

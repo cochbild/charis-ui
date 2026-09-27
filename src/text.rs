@@ -241,7 +241,8 @@ impl TextSystem {
 
     fn scan_fonts() -> (fontdb::Database, Option<String>) {
         let mut db = fontdb::Database::new();
-        db.load_system_fonts();
+        // Bundled faces go in first: fontdb picks the earliest of equally good
+        // matches, so a system-installed Inter of another version can't replace them.
         #[cfg(feature = "bundled-fonts")]
         let mut ui_family = {
             for data in BUNDLED {
@@ -250,6 +251,7 @@ impl TextSystem {
             db.set_sans_serif_family("Inter");
             Some("Inter".to_string())
         };
+        db.load_system_fonts();
         #[cfg(not(feature = "bundled-fonts"))]
         let mut ui_family: Option<String> = None;
         let families: Vec<String> = db.faces().flat_map(|f| f.families.iter().map(|(n, _)| n.clone())).collect();

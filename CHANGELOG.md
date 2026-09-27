@@ -45,6 +45,9 @@ All notable changes to rust-ui are listed here. The format follows
 
 - Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
 - Dropping a dock tab onto another window didn't work on Wayland.
+- Projects depending on rust-ui from git printed `invalid character '{' in package name`
+  errors: the template manifests are now `Cargo.toml.liquid` (cargo-generate 0.23 or newer
+  turns them back into `Cargo.toml`).
 
 ## [0.1.0] - unreleased snapshot
 

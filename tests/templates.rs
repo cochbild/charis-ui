@@ -111,3 +111,21 @@ fn settings_text_round_trips_and_tolerates_junk() {
     assert_eq!(junk.radius, settings_app::Settings::default().radius);
     assert_eq!(junk.accent, Accent::ALL.len() - 1);
 }
+
+/// Cargo reads every `Cargo.toml` in a git dependency, so a template manifest
+/// with a `{{project-name}}` placeholder would print errors in every project
+/// that depends on rust-ui from git. Template manifests are `Cargo.toml.liquid`.
+#[test]
+fn templates_have_no_cargo_toml_with_placeholders() {
+    for t in ["ide-shell", "settings-app"] {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates").join(t);
+        assert!(!dir.join("Cargo.toml").exists(), "{t}: the manifest must be named Cargo.toml.liquid");
+        let manifest = std::fs::read_to_string(dir.join("Cargo.toml.liquid")).expect("Cargo.toml.liquid");
+        assert!(manifest.contains("name = \"{{project-name}}\""));
+        let config = std::fs::read_to_string(dir.join("cargo-generate.toml")).unwrap();
+        assert!(
+            config.contains(r#"include = ["Cargo.toml", "README.md"]"#),
+            "{t}: include matches the name after .liquid is stripped"
+        );
+    }
+}

@@ -8,7 +8,7 @@ Starters for [cargo-generate](https://github.com/cargo-generate/cargo-generate):
 | `settings-app` | A settings window: a searchable sidebar, forms, a live theme, settings saved to the user's config directory. |
 
 ```sh
-cargo install cargo-generate
+cargo install cargo-generate      # 0.23 or newer; on Rust older than 1.96 use --version 0.23.5
 cargo generate --git https://github.com/cochbild/rust-ui templates/ide-shell --name my-ide
 cargo generate --git https://github.com/cochbild/rust-ui templates/settings-app --name my-settings
 ```

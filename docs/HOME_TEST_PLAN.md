@@ -25,8 +25,9 @@ Items marked **(new)** cover code that has never run on a real machine.
    cd rust-ui
    git checkout claude/rust-ui-framework-u88b01
    ```
-3. Optional: `cargo install cargo-generate mdbook`, and NVDA (free) for the screen reader
-   checks.
+3. Optional: `cargo install cargo-generate mdbook` (cargo-generate 0.23 or newer; its latest
+   release needs Rust 1.96, otherwise add `--version 0.23.5`), and NVDA (free) for the screen
+   reader checks.
 
 ### W-A. Build and automated checks
 

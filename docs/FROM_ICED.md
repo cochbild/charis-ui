@@ -5,7 +5,7 @@ style. This page covers:
 - why iced apps tend to look that way;
 - how this framework addresses each cause;
 - how iced concepts map to this framework;
-- what iced does well that we must match.
+- what iced still has that this framework doesn't.
 
 ## Why iced apps tend to look "off"
 
@@ -25,7 +25,13 @@ style. This page covers:
 | iced | This framework |
 |---|---|
 | `iced::application(boot, update, view).run()` | `rust_ui::run(app, WindowOptions::new("Title"))` with `impl App for MyApp` |
-| `fn update(&mut self, msg) -> Task<Message>` | `fn update(&mut self, msg, cx: &mut Cx)` (see "Gaps" below for async tasks) |
+| `fn update(&mut self, msg) -> Task<Message>` | `fn update(&mut self, msg, cx: &mut Cx)`; effects go through `cx` |
+| `Task::perform(future, Msg::Done)` | `cx.spawn(future, Msg::Done)` (or `cx.spawn_blocking(\|\| …)` for blocking work); returns a `TaskHandle` you can `abort()` |
+| `Task::run(stream, Msg::Item)` | `cx.run(stream, Msg::Item)` |
+| `fn subscription(&self) -> Subscription<Message>` | `fn subscriptions(&self) -> Subscriptions<Msg>`: `.every(period, msg)`, `.every_if(…)`, `.on_resize(…)`, `.on_focus_change(…)`, `.on_close_request(…)` |
+| `Subscription::run` with a channel from another thread | `cx.proxy()`: a `Proxy` any thread can send messages through |
+| keyboard subscriptions (`keyboard::on_key_press`) | `App::on_key`, or commands with key bindings (`App::commands`) |
+| `iced::daemon` and `window::open` | `App::windows()` returns `WindowSpec`s and `App::window_view(key)` draws each one; windows open and close as the list changes |
 | `fn view(&self) -> Element<'_, Message>` | `fn view(&self) -> Element<Msg>` (owned; no lifetime) |
 | `column![a, b].spacing(8).padding(12)` | `col().gap(8.0).p(12.0).child(a).child(b)` |
 | `row![…].align_y(Center)` | `row().items_center().child(…)` |
@@ -46,19 +52,16 @@ style. This page covers:
 | `lazy(deps, \|deps\| view)` (the closure can't borrow the app) | `lazy(key, deps, \|\| view)`: the closure can borrow `&self`, and layout is reused too |
 | `canvas` / `Program` | `canvas(|cv, rect| …)` |
 
-## Gaps: what iced has that we must match
+## What iced has that this framework doesn't
 
-iced does some things well that this framework doesn't do yet. These are on the roadmap:
+Async tasks, subscriptions, multiple windows, pick lists, combo boxes, radio buttons, images and
+SVGs, markdown, tables and headless testing have all landed (see the concept map above and the
+book). What's left:
 
-1. **Async tasks.** In iced, `update` returns a `Task` that runs futures (HTTP, file I/O) and
-   sends a message back when done. We need `cx.spawn(future)` or `Task` equivalents.
-2. **Subscriptions.** iced has timers, window and keyboard event streams, and external channels.
-   We need `App::subscriptions()` (at least time ticks, window events and a channel for
-   background threads).
-3. **Multiple windows.** iced has a daemon mode with several windows.
-4. **Wider widget set:** pick lists, combo boxes, radio buttons, images and SVGs, markdown,
-   `table`, and `qr_code`.
-5. **Tooling:** time-travel debugging, hot reloading, and the `iced_test` headless testing
-   crate.
-
-Items 1 and 2 matter most for real apps and are scheduled right after text input (roadmap M2).
+1. **`qr_code`.** There's no QR code widget. `canvas` can draw one from a QR encoding crate's
+   modules in a few lines.
+2. **Time-travel debugging.** iced's developer tools can replay messages. Here, the element
+   inspector (F12 in debug builds) shows the live tree, boxes and styles, but there's no
+   message history.
+3. **Hot reloading of code.** iced can hot-patch `view` code while the app runs. Here, styles
+   reload live from a stylesheet (`WindowOptions::stylesheet`), but code changes need a rebuild.

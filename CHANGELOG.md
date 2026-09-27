@@ -39,6 +39,8 @@ All notable changes to Charis are listed here. The format follows
 
 ### Changed
 
+- The `CHARIS_PROFILE=1` renderer line (and `GpuRenderer::adapter_name`) names the backend too,
+  for example `NVIDIA GeForce RTX 5080 (Vulkan)`.
 - `text_area` handles large documents: text is laid out by paragraph and only what's visible,
   at the caret or hit-tested is shaped. A 100k-line file opens in about 20 ms and edits in a few
   milliseconds per keystroke (it used to run out of memory).

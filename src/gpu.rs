@@ -148,7 +148,7 @@ pub struct GpuRenderer {
     frame: u64,
     format: wgpu::TextureFormat,
     healthy: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Name of the GPU adapter in use.
+    /// Name of the GPU adapter in use, with its backend.
     pub adapter_name: String,
 }
 
@@ -168,7 +168,8 @@ impl GpuRenderer {
             ..Default::default()
         }))
         .ok()?;
-        let adapter_name = adapter.get_info().name;
+        let info = adapter.get_info();
+        let adapter_name = format!("{} ({:?})", info.name, info.backend);
         Some(Self::new(device, queue, format, adapter_name))
     }
 

@@ -83,7 +83,8 @@ fn composition_is_painted_inline() {
         for x in (r.x as i32 + 12)..(r.x as i32 + 120) {
             for y in (r.y as i32 + 4)..(r.y + r.h - 4.0) as i32 {
                 let p = h.pixel(x as f32, y as f32);
-                if p[0] > 150 {
+                // Low enough to count thin, antialiased CJK strokes from any system font.
+                if p[0] > 80 {
                     n += 1;
                 }
             }

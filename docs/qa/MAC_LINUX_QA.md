@@ -1,7 +1,6 @@
 # macOS and Linux QA checklist
 
-This container compiles the macOS code and runs the Linux build headlessly (X11 under Xvfb), so
-these checks need real machines: macOS 15, and Ubuntu (or Fedora) with GNOME on Wayland and on
+The automated tests run headlessly on Linux (X11 under Xvfb), so these checks need real machines: macOS 15, and Ubuntu (or Fedora) with GNOME on Wayland and on
 X11. Run:
 
 ```sh

@@ -37,7 +37,7 @@ professional look without shipping a web engine.
 - **Fast.** GPU rendering by default, with a CPU renderer as a fallback. Typical frames take a
   few milliseconds.
 - **Testable.** Apps run headless in tests: click, type and drag, then check the result or save
-  a screenshot. Every screenshot on this page was made that way.
+  a screenshot. The screenshots on this page were rendered headlessly by the examples.
 
 | Light theme | Drag-and-drop docking |
 |---|---|
@@ -120,11 +120,11 @@ fn main() {
 }
 ```
 
-Or start from a template, an IDE-style shell or a settings app (see
+Or start from one of the templates, an IDE-style shell or a settings app (see
 [templates](templates/README.md)):
 
 ```sh
-cargo install cargo-generate
+cargo install cargo-generate   # 0.23 or newer; on Rust older than 1.96, add --version 0.23.5
 cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell --name my-app
 ```
 
@@ -141,9 +141,11 @@ cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell -
 
 ## Status
 
-Charis is a working 0.x framework heading for 1.0. It's tested on Windows 11 and on Linux, and
-the API may still change between minor releases; the [changelog](CHANGELOG.md) lists every
-change. The [roadmap](docs/ROADMAP.md) has the plan to 1.0.
+Charis is a working 0.x framework heading for 1.0, and the API may still change between minor
+releases; the [changelog](CHANGELOG.md) lists every change. The automated test suite passes on
+Windows 11 and Linux. Manual testing on real hardware (screen readers, input methods, macOS) is
+in progress, with checklists in [docs/qa](docs/qa/). The [roadmap](docs/ROADMAP.md) has the plan
+to 1.0.
 
 ## Contributing
 

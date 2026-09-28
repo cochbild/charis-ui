@@ -242,7 +242,8 @@ fn editor_benches(out: &mut Vec<Result>) {
     let keystrokes = (0..100)
         .map(|_| {
             let t0 = Instant::now();
-            h.type_text("y");
+            // Not h.type_text: that also draws a CPU frame, which a real keystroke doesn't.
+            h.rt.handle(Event::Text("y".into()));
             let _ = h.rt.render_scene();
             t0.elapsed()
         })

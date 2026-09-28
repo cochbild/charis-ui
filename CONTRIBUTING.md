@@ -18,9 +18,9 @@ sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi
 Then run the examples:
 
 ```sh
-cargo run --example showcase     # every widget, light and dark
-cargo run --example dock         # the IDE shell: docking, tool windows, commands
-cargo run --example gallery      # one page per widget
+cargo run --example gallery      # every widget, one page each
+cargo run --example showcase     # an IDE-style shell: title bar, menus, split panes, themes
+cargo run --example dock         # docking, tool windows, commands
 ```
 
 Useful environment variables while working:

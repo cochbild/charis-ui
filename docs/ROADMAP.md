@@ -26,8 +26,8 @@ frameworks don't provide.
   examples, the templates), frame budget benchmarks, the book and full API docs.
 
 **Missing for production:**
-- Windows and macOS have been implemented but not yet tested on real hardware (checklists in
-  `docs/WINDOWS_QA.md` and `docs/MAC_LINUX_QA.md`).
+- The automated suite passes on Windows 11; its manual checks are in progress. macOS hasn't
+  been tested on real hardware yet (checklists in `docs/qa/`).
 - Accessibility has not been tried with a real screen reader yet.
 - IME composition has only been tested by simulating the events (no real IME on Linux CI).
 - The name `charis-ui` isn't reserved on crates.io yet.
@@ -67,7 +67,7 @@ final name.
 
 ### M1: Platform correctness
 
-- [x] Windows (implemented; awaiting QA on real hardware, see `docs/WINDOWS_QA.md`):
+- [x] Windows (implemented; awaiting QA on real hardware, see `docs/qa/WINDOWS_QA.md`):
   - DWM frameless window with snap layouts and Aero shake;
   - hit testing for the custom title bar (maximize-button hover shows the Snap Layouts flyout);
   - rounded corners and shadow on Windows 11;

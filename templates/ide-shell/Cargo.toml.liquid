@@ -1,0 +1,10 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+charis-ui = { git = "https://github.com/cochbild/charis-ui" }
+
+[profile.release]
+lto = "thin"

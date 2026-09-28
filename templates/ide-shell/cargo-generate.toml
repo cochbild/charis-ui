@@ -1,0 +1,8 @@
+[template]
+cargo_generate_version = ">=0.23.0"
+# The manifest is stored as `Cargo.toml.liquid`: a file named `Cargo.toml` with a placeholder
+# name would make cargo print errors in every project that depends on Charis from git (cargo
+# reads every manifest in a git dependency). cargo-generate strips the `.liquid` extension
+# before matching `include`, so the manifest is listed here as `Cargo.toml`.
+# Only the manifest and readme have placeholders; the Rust sources are copied as they are.
+include = ["Cargo.toml", "README.md"]

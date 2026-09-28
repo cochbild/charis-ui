@@ -1,0 +1,11 @@
+[book]
+title = "The Charis Book"
+authors = ["The Charis contributors"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/cochbild/charis-ui"
+
+[rust]
+edition = "2021"

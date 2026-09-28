@@ -13,6 +13,27 @@ On Linux, winit needs the usual X11 and Wayland libraries at build time:
 sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
 ```
 
+### If the Windows build fails in `wgpu-hal`
+
+The GPU renderer's DirectX 12 code (in `wgpu-hal`) needs version 0.62 of the `windows` crate,
+and so must `gpu-allocator`, which it hands DirectX objects to. `gpu-allocator` accepts any
+`windows` version from 0.53 to 0.62, so if another dependency of your app already uses an older
+one (audio crates such as `cpal` can pull in 0.54), Cargo may give `gpu-allocator` that older
+version. The build then fails in `wgpu-hal` with type errors that mention two different
+versions of the `windows` crate.
+
+To check, list `gpu-allocator`'s direct dependencies; the `windows` line should say 0.62:
+
+```sh
+cargo tree -p gpu-allocator --depth 1 -e normal --target x86_64-pc-windows-msvc
+```
+
+If it shows an older version, edit `Cargo.lock`. In the `[[package]]` entry for
+`gpu-allocator`, its `dependencies` list has a line like `"windows 0.54.0"`. Change it to the
+0.62 version listed elsewhere in the file (for example `"windows 0.62.2"`), then build again.
+Charis itself can't prevent this, because the version is chosen when your app's lockfile is
+resolved.
+
 ## A first app
 
 An app is a struct that implements `App`. It has two required methods:

@@ -1,0 +1,9 @@
+/* A stylesheet for the dock example:
+     cargo run --release --example dock -- --stylesheet examples/dock.css
+   Edit and save it while the app runs: the app restyles itself. */
+
+.button { radius: 999; }
+.card { radius: 14; border: 1 accent / 0.4; }
+.tree-row:hover { background: accent / 0.18; }
+.tool-stripe { background: surface; }
+.command-palette { opacity: 1; }

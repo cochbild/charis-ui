@@ -1,0 +1,117 @@
+[package]
+name = "charis-ui"
+version = "0.1.0"
+edition = "2021"
+description = "A web-inspired, highly customizable retained/declarative UI framework for Rust desktop apps"
+license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+readme = "README.md"
+keywords = ["gui", "ui", "desktop", "docking", "widgets"]
+categories = ["gui"]
+exclude = ["docs/*.png", "tests/golden/*", "templates/*", "book/book"]
+
+[lib]
+name = "charis_ui"
+
+[features]
+default = ["window", "gpu", "bundled-fonts", "clipboard", "markdown", "accessibility", "dialogs", "native-menu", "svg", "jpeg"]
+# SVG images (resvg).
+svg = ["dep:resvg"]
+# JPEG decoding for images (PNG is always supported).
+jpeg = ["dep:zune-jpeg"]
+window = ["dep:winit", "dep:softbuffer", "dep:objc2", "dep:objc2-app-kit"]
+bundled-fonts = []
+clipboard = ["dep:arboard"]
+# Native file dialogs (Windows common item dialog, macOS panels, XDG portal on Linux).
+dialogs = ["window", "dep:rfd"]
+# The app menu as a native menu bar: the global menu on macOS (on by default),
+# and optionally a Win32 menu bar (WindowOptions::native_menu).
+native-menu = ["window", "dep:muda"]
+gpu = ["dep:wgpu", "dep:pollster"]
+# Run spawned futures on tokio (needed for tokio-based crates such as reqwest).
+tokio = ["dep:tokio"]
+serde = ["dep:serde"]
+markdown = ["dep:pulldown-cmark"]
+# Screen readers and other assistive technology via AccessKit
+# (UI Automation on Windows, NSAccessibility on macOS, AT-SPI on Linux).
+accessibility = ["window", "dep:accesskit", "dep:accesskit_winit"]
+
+[dependencies]
+taffy = "0.14"
+cosmic-text = "0.19"
+tiny-skia = "0.12"
+winit = { version = "0.30", optional = true }
+softbuffer = { version = "0.4", optional = true }
+arboard = { version = "3", optional = true, default-features = false, features = ["image-data"] }
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+pulldown-cmark = { version = "0.13", optional = true, default-features = false }
+futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+accesskit = { version = "0.25", optional = true }
+accesskit_winit = { version = "0.34", optional = true }
+rfd = { version = "0.17", optional = true }
+resvg = { version = "0.48", optional = true, default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+zune-jpeg = { version = "0.5", optional = true }
+
+
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+muda = { version = "0.20", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Traffic light placement for frameless windows (same versions winit's
+# dependencies use).
+objc2 = { version = "0.6", optional = true }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "NSButton",
+    "NSControl",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+    "objc2-core-foundation",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tiny-skia = "0.12"
+serde_json = "1"
+accesskit = "0.25"
+
+[[bench]]
+name = "frames"
+harness = false
+required-features = ["window"]
+
+[[example]]
+name = "showcase"
+required-features = ["window"]
+
+[[example]]
+name = "dock"
+required-features = ["window"]
+
+[[example]]
+name = "counter"
+required-features = ["window"]
+
+[[example]]
+name = "multiwindow"
+required-features = ["window"]
+
+[[example]]
+name = "lmfast_chat"
+required-features = ["window", "markdown"]

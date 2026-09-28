@@ -1,0 +1,1715 @@
+//! Ready-made widgets styled from the active [`Theme`](crate::Theme).
+//!
+//! Every widget is an ordinary [`Element`], so everything can be restyled
+//! after construction with the usual builder methods:
+//!
+//! ```no_run
+//! # use charis_ui::prelude::*;
+//! # #[derive(Clone)] enum Msg { Go }
+//! let b: Element<Msg> = primary_button("Deploy").pill().px(20.0).on_click(Msg::Go);
+//! ```
+
+use std::rc::Rc;
+
+use crate::color::Color;
+use crate::commands::KeyBinding;
+use crate::element::*;
+use crate::geometry::Point;
+use crate::icons::Icon;
+use crate::semantics::Role;
+use crate::style::*;
+use crate::theme::theme;
+
+// ---------------------------------------------------------------- buttons
+
+/// Visual variants for buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ButtonKind {
+    /// Neutral bordered button.
+    Secondary,
+    /// Filled accent button.
+    Primary,
+    /// Transparent until hovered.
+    Ghost,
+    /// Destructive action.
+    Danger,
+}
+
+/// A button with the given variant and label.
+pub fn button_kind<M: 'static>(kind: ButtonKind, label: impl Into<String>) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let base = row()
+        .items_center()
+        .justify(Justify::Center)
+        .gap(6.0)
+        .h(th.control_height)
+        .px(12.0)
+        .rounded(th.radius)
+        .medium()
+        .shrink(0.0)
+        .focusable()
+        .role(Role::Button)
+        .transition(th.transition)
+        .child(text(label).nowrap());
+    let (styled, class) = match kind {
+        ButtonKind::Primary => (
+            base.bg(c.accent)
+                .color(c.accent_text)
+                .shadows(th.shadow_sm.clone())
+                .hover(|s| s.bg(c.accent_hover))
+                .active(|s| s.bg(c.accent.darken(0.1)).translate(0.0, 0.5)),
+            "button-primary",
+        ),
+        ButtonKind::Secondary => (
+            base.bg(c.elevated)
+                .border(1.0, c.border_strong)
+                .color(c.text)
+                .shadows(th.shadow_sm.clone())
+                .hover(|s| s.bg(c.elevated.blend(c.hover)).border_color(c.border_strong.lighten(0.08)))
+                .active(|s| s.bg(c.elevated.blend(c.pressed)).translate(0.0, 0.5)),
+            "button-secondary",
+        ),
+        ButtonKind::Ghost => (
+            base.color(c.text_muted).hover(|s| s.bg(c.hover).color(c.text)).active(|s| s.bg(c.pressed)),
+            "button-ghost",
+        ),
+        ButtonKind::Danger => (
+            base.bg(c.danger)
+                .color(c.danger_text)
+                .hover(|s| s.bg(c.danger.lighten(0.1)))
+                .active(|s| s.bg(c.danger.darken(0.1)).translate(0.0, 0.5)),
+            "button-danger",
+        ),
+    };
+    styled.class("button").class(class)
+}
+
+/// A neutral (secondary) button.
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Save,
+/// }
+///
+/// let save: Element<Msg> = button("Save").on_click(Msg::Save);
+/// ```
+pub fn button<M: 'static>(label: impl Into<String>) -> Element<M> {
+    button_kind(ButtonKind::Secondary, label)
+}
+
+/// A filled accent button.
+pub fn primary_button<M: 'static>(label: impl Into<String>) -> Element<M> {
+    button_kind(ButtonKind::Primary, label)
+}
+
+/// A transparent button.
+pub fn ghost_button<M: 'static>(label: impl Into<String>) -> Element<M> {
+    button_kind(ButtonKind::Ghost, label)
+}
+
+/// A destructive button.
+pub fn danger_button<M: 'static>(label: impl Into<String>) -> Element<M> {
+    button_kind(ButtonKind::Danger, label)
+}
+
+/// A square, transparent icon-only button (toolbar style).
+pub fn icon_button<M: 'static>(i: Icon) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    div()
+        .center()
+        .square(28.0)
+        .rounded(th.radius)
+        .shrink(0.0)
+        .color(c.text_muted)
+        .focusable()
+        .role(Role::Button)
+        .transition(th.transition)
+        .hover(|s| s.bg(c.hover).color(c.text))
+        .active(|s| s.bg(c.pressed))
+        .child(icon(i).font_size(16.0))
+        .class("icon-button")
+}
+
+/// An [`icon_button`] with a tooltip.
+pub fn tooltip_icon_button<M: 'static>(i: Icon, tip: &str) -> Element<M> {
+    icon_button(i).tooltip(tip)
+}
+
+impl<M: 'static> Element<M> {
+    /// Copy `text` to the clipboard when clicked (no message needed).
+    pub fn copy_on_click(mut self, text: impl Into<String>) -> Self {
+        self.behavior = Behavior::Copy(text.into());
+        if self.style.cursor.is_none() {
+            self.style.cursor = Some(Cursor::Pointer);
+        }
+        self
+    }
+
+    /// Prepend an icon to a button-like row.
+    pub fn with_icon(mut self, i: Icon) -> Self {
+        let size = self.style.font_size.unwrap_or(theme().font_size) + 2.0;
+        self.children.insert(0, icon(i).font_size(size));
+        self
+    }
+}
+
+// ----------------------------------------------------------------- inputs
+
+/// A single-line text input. The value is controlled by the app: handle
+/// `on_input` and store the new value.
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Name(String),
+///     Submit,
+/// }
+///
+/// let name = String::from("Ada");
+/// let field: Element<Msg> = text_input(name, Msg::Name).placeholder("Your name").on_submit(Msg::Submit);
+/// ```
+pub fn text_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let mut e = Element::new(Content::Input(InputSpec {
+        value: std::rc::Rc::from(value.into()),
+        placeholder: String::new(),
+        password: false,
+        multiline: false,
+        submit_on_enter: false,
+        rows: (1, 1),
+    }));
+    e.handlers.input = Some(cb(on_input));
+    e.focusable = true;
+    e.h(th.control_height)
+        .px(10.0)
+        .w_full()
+        .min_w(40.0)
+        .bg(c.input)
+        .border(1.0, c.border_strong)
+        .rounded(th.radius)
+        .cursor(Cursor::Text)
+        .transition(th.transition)
+        .hover(|s| s.border_color(c.border_strong.lighten(0.1)))
+        .focus_style(|s| s.border_color(c.accent).outline(3.0, 0.0, c.accent.with_alpha(0.22)))
+        .class("input")
+}
+
+impl<M: 'static> Element<M> {
+    /// Placeholder text for a text input.
+    pub fn placeholder(mut self, p: impl Into<String>) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.placeholder = p.into();
+        }
+        self
+    }
+    /// Mask a text input's contents.
+    pub fn password(mut self) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.password = true;
+        }
+        self
+    }
+    /// Message sent when Enter is pressed in a text input.
+    pub fn on_submit(mut self, m: M) -> Self {
+        self.handlers.submit = Some(Out::Msg(m));
+        self
+    }
+    /// Message sent with the new value of a slider.
+    pub fn on_change(mut self, f: impl Fn(f32) -> M + 'static) -> Self {
+        self.handlers.value = Some(cb(f));
+        self
+    }
+}
+
+/// A multi-line text editor that grows with its content (1–8 rows by
+/// default; see [`Element::rows`]). Enter inserts a newline unless
+/// [`Element::submit_on_enter`] is set.
+pub fn text_area<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
+    let th = theme();
+    let mut e = text_input(value, on_input).h(Length::Auto).py(7.0).line_height(1.5);
+    if let Content::Input(spec) = &mut e.content {
+        spec.multiline = true;
+        spec.rows = (1, 8);
+    }
+    e.min_h(th.control_height).class("text-area")
+}
+
+impl<M: 'static> Element<M> {
+    /// Visible row range of a [`text_area`]: it grows from `min` to `max`
+    /// rows, then scrolls.
+    pub fn rows(mut self, min: u32, max: u32) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.rows = (min.max(1), max.max(min.max(1)));
+        }
+        self
+    }
+
+    /// For a [`text_area`]: Enter sends `msg`, Shift+Enter inserts a newline
+    /// (chat composer behaviour).
+    pub fn submit_on_enter(mut self, msg: M) -> Self {
+        if let Content::Input(spec) = &mut self.content {
+            spec.submit_on_enter = true;
+        }
+        self.handlers.submit = Some(Out::Msg(msg));
+        self
+    }
+}
+
+/// A dropdown list: shows the selected option and opens a popup to pick one.
+/// Keyboard: Up/Down, Enter, Escape; typing jumps to a matching option.
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Theme(usize),
+/// }
+///
+/// let theme: Element<Msg> = pick_list(["Light", "Dark", "System"], Some(2), Msg::Theme);
+/// ```
+pub fn pick_list<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    dropdown(options, selected, on_select, false)
+}
+
+/// A searchable dropdown: typing filters the options.
+pub fn combo_box<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    dropdown(options, selected, on_select, true)
+}
+
+fn dropdown<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+    searchable: bool,
+) -> Element<M> {
+    let th = theme();
+    let mut e = Element::new(Content::Dropdown(DropdownSpec {
+        options: options.into_iter().map(Into::into).collect(),
+        selected,
+        placeholder: "Select…".into(),
+        searchable,
+    }));
+    e.handlers.select = Some(cb(on_select));
+    e.focusable = true;
+    e.min_w(120.0).h(th.control_height).shrink(0.0)
+}
+
+impl<M: 'static> Element<M> {
+    /// Placeholder shown by a dropdown with nothing selected.
+    pub fn dropdown_placeholder(mut self, p: impl Into<String>) -> Self {
+        if let Content::Dropdown(d) = &mut self.content {
+            d.placeholder = p.into();
+        }
+        self
+    }
+}
+
+/// A search field with a leading magnifier icon.
+pub fn search_input<M: 'static>(value: impl Into<String>, on_input: impl Fn(String) -> M + 'static) -> Element<M> {
+    let th = theme();
+    div()
+        .w_full()
+        .items_center()
+        .child(text_input(value, on_input).pl(30.0).placeholder("Search"))
+        .child(
+            icon(Icon::Search).font_size(14.0).color(th.colors.text_faint).absolute().left(10.0).pointer_events(false),
+        )
+        .class("search-input")
+}
+
+/// A checkbox with a label. Attach `.on_click(...)` to toggle.
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Wrap(bool),
+/// }
+///
+/// let wrap = true;
+/// let cb: Element<Msg> = checkbox("Word wrap", wrap).on_click(Msg::Wrap(!wrap));
+/// ```
+pub fn checkbox<M: 'static>(label: impl Into<String>, checked: bool) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let bx = div()
+        .center()
+        .square(16.0)
+        .rounded(4.0)
+        .shrink(0.0)
+        .transition(th.transition)
+        .when(checked, |b| {
+            b.bg(c.accent).border(1.0, c.accent).color(c.accent_text).child(icon(Icon::Check).font_size(12.0).bold())
+        })
+        .when(!checked, |b| b.bg(c.input).border(1.0, c.border_strong));
+    row()
+        .items_center()
+        .gap(8.0)
+        .focusable()
+        .role(Role::CheckBox)
+        .aria_checked(checked)
+        .cursor(Cursor::Pointer)
+        .rounded(4.0)
+        .child(bx.class("checkbox-box").when(checked, |b| b.class("checkbox-box-checked")))
+        .child(text(label).nowrap())
+        .class("checkbox")
+}
+
+/// A set of mutually exclusive options (radio buttons). Click one, or focus
+/// the group and use the arrow keys, which select the next or previous
+/// option (WAI-ARIA). Vertical; `.flex_row()` lays it out in a row.
+pub fn radio_group<M: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    selected: Option<usize>,
+    on_select: impl Fn(usize) -> M + 'static,
+) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let options: Vec<String> = options.into_iter().map(Into::into).collect();
+    let n = options.len();
+    let on_select = Rc::new(on_select);
+    let mut group = col().gap(8.0).focusable().role(Role::RadioGroup).rounded(4.0).class("radio-group");
+    for (i, label) in options.into_iter().enumerate() {
+        let on = selected == Some(i);
+        let dot = div()
+            .center()
+            .square(16.0)
+            .rounded(8.0)
+            .shrink(0.0)
+            .transition(th.transition)
+            .bg(c.input)
+            .border(if on { 5.0 } else { 1.0 }, if on { c.accent } else { c.border_strong })
+            .class("radio-dot");
+        group = group.child(
+            row()
+                .items_center()
+                .gap(8.0)
+                .role(Role::RadioButton)
+                .aria_checked(on)
+                .aria_label(label.clone())
+                .cursor(Cursor::Pointer)
+                .on_click(on_select(i))
+                .child(dot)
+                .child(text(label).nowrap())
+                .class("radio"),
+        );
+    }
+    let f = on_select.clone();
+    group.on_key(move |k| {
+        if n == 0 {
+            return None;
+        }
+        let cur = selected.unwrap_or(0);
+        let next = match k.key {
+            Key::Down | Key::Right => (cur + 1) % n,
+            Key::Up | Key::Left => (cur + n - 1) % n,
+            Key::Home => 0,
+            Key::End => n - 1,
+            Key::Space if selected.is_none() => 0,
+            _ => return None,
+        };
+        Some(f(next))
+    })
+}
+
+/// A numeric field with − / + steppers (see [`NumberInput`]).
+///
+/// `id` keeps its editing state (the text being typed); it must be unique
+/// in the window.
+pub fn number_input<M: 'static>(
+    id: impl Into<String>,
+    value: f64,
+    on_change: impl Fn(f64) -> M + 'static,
+) -> NumberInput<M> {
+    NumberInput {
+        id: id.into(),
+        value,
+        on_change: Rc::new(on_change),
+        min: f64::NEG_INFINITY,
+        max: f64::INFINITY,
+        step: 1.0,
+        decimals: None,
+        label: None,
+    }
+}
+
+/// A numeric field: typing parses as you go, ↑/↓ (and the − / + buttons)
+/// step, PageUp/PageDown step by ten, Enter or leaving the field shows the
+/// value clamped and formatted again. Build it with [`number_input`].
+pub struct NumberInput<M> {
+    id: String,
+    value: f64,
+    on_change: Rc<dyn Fn(f64) -> M>,
+    min: f64,
+    max: f64,
+    step: f64,
+    decimals: Option<usize>,
+    label: Option<String>,
+}
+
+impl<M> NumberInput<M> {
+    /// The accessible name (what screen readers announce).
+    pub fn label(mut self, l: impl Into<String>) -> Self {
+        self.label = Some(l.into());
+        self
+    }
+    /// Allowed range (values are clamped to it).
+    pub fn range(mut self, min: f64, max: f64) -> Self {
+        (self.min, self.max) = (min.min(max), max.max(min));
+        self
+    }
+    /// Amount added or removed by the steppers and arrow keys.
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = step.abs().max(f64::EPSILON);
+        self
+    }
+    /// Digits shown after the decimal point (default: as many as needed).
+    pub fn decimals(mut self, n: usize) -> Self {
+        self.decimals = Some(n);
+        self
+    }
+}
+
+#[derive(Clone)]
+enum NumEv {
+    Edit(String),
+    Focus,
+    Blur,
+    Step(f64),
+    Commit,
+}
+
+impl<M: 'static> From<NumberInput<M>> for Element<M> {
+    fn from(n: NumberInput<M>) -> Element<M> {
+        let NumberInput { id, value, on_change, min, max, step, decimals, label } = n;
+        let label = label.unwrap_or_else(|| id.clone());
+        let fmt = move |v: f64| match decimals {
+            Some(d) => format!("{v:.d$}"),
+            None => {
+                // Up to 6 decimals, without trailing zeros.
+                let s = format!("{v:.6}");
+                let s = s.trim_end_matches('0').trim_end_matches('.');
+                if s == "-0" {
+                    "0".into()
+                } else {
+                    s.to_string()
+                }
+            }
+        };
+        let round = move |v: f64| match decimals {
+            Some(d) => {
+                let k = 10f64.powi(d as i32);
+                (v * k).round() / k
+            }
+            None => v,
+        };
+        let clamp = move |v: f64| round(v).clamp(min, max);
+        let key = ("number_input", id.clone());
+        crate::component::stateful(
+            key,
+            move |draft: &Option<String>| {
+                let th = theme();
+                let c = &th.colors;
+                let shown = draft.clone().unwrap_or_else(|| fmt(value));
+                let stepper = |i: Icon, d: f64, label: &str, enabled: bool| {
+                    div()
+                        .center()
+                        .w(26.0)
+                        .h_full()
+                        .shrink(0.0)
+                        .color(c.text_muted)
+                        .cursor(Cursor::Default)
+                        .role(Role::Button)
+                        .aria_label(label)
+                        .when(enabled, |b| b.hover(|s| s.bg(c.hover).color(c.text)).on_click(NumEv::Step(d)))
+                        .when(!enabled, |b| b.opacity(0.4))
+                        .child(icon(i).font_size(14.0))
+                };
+                row()
+                    .h(th.control_height)
+                    .min_w(110.0)
+                    .items(Align::Stretch)
+                    .bg(c.input)
+                    .border(1.0, c.border_strong)
+                    .rounded(th.radius)
+                    .clip()
+                    .child(stepper(Icon::Minus, -1.0, "Decrease", value > min))
+                    .child(
+                        text_input(shown, NumEv::Edit)
+                            .id(&format!("{id}/field"))
+                            .grow(1.0)
+                            .min_w(30.0)
+                            .border(0.0, Color::TRANSPARENT)
+                            .rounded(0.0)
+                            .h_full()
+                            .text_align(TextAlign::Center)
+                            .aria_label(label.clone())
+                            .on_submit(NumEv::Commit)
+                            .on_focus_change(|on| if on { NumEv::Focus } else { NumEv::Blur })
+                            .on_key_capture(|k| match k.key {
+                                Key::Up => Some(NumEv::Step(1.0)),
+                                Key::Down => Some(NumEv::Step(-1.0)),
+                                Key::PageUp => Some(NumEv::Step(10.0)),
+                                Key::PageDown => Some(NumEv::Step(-10.0)),
+                                _ => None,
+                            }),
+                    )
+                    .child(stepper(Icon::Plus, 1.0, "Increase", value < max))
+                    .class("number-input")
+            },
+            move |draft: &mut Option<String>, e| match e {
+                NumEv::Focus => None,
+                NumEv::Edit(t) => {
+                    let parsed = t.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite());
+                    *draft = Some(t);
+                    parsed.map(|v| on_change(v.clamp(min, max)))
+                }
+                NumEv::Step(k) => {
+                    *draft = None;
+                    let v = clamp(value + k * step);
+                    (v != value).then(|| on_change(v))
+                }
+                NumEv::Commit | NumEv::Blur => {
+                    *draft = None;
+                    let v = clamp(value);
+                    (v != value).then(|| on_change(v))
+                }
+            },
+        )
+    }
+}
+
+/// An image (a decoded [`Image`](crate::image::Image), or an
+/// [`Svg`](crate::image::Svg) with the `svg` feature). It takes its natural
+/// size, or keeps its aspect ratio when you set one side; `.fit()` says how
+/// it fills its box, `.rounded()` rounds it, `.aria_label()` describes it.
+pub fn image<M: 'static>(source: impl Into<crate::image::ImageSource>) -> Element<M> {
+    Element::new(Content::Image(ImageSpec { source: source.into(), fit: crate::image::Fit::Contain, tint: None }))
+        .role(Role::Image)
+        .class("image")
+}
+
+/// An SVG image; see [`image`]. `.tint(color)` recolors a monochrome one
+/// (like an icon).
+#[cfg(feature = "svg")]
+pub fn svg<M: 'static>(svg: &crate::image::Svg) -> Element<M> {
+    image(svg.clone())
+}
+
+impl<M> Element<M> {
+    /// How an [`image`] fills its box (CSS `object-fit`).
+    pub fn fit(mut self, fit: crate::image::Fit) -> Self {
+        if let Content::Image(spec) = &mut self.content {
+            spec.fit = fit;
+        }
+        self
+    }
+
+    /// Recolor an [`image`] with one color, keeping its shape (for
+    /// monochrome SVG icons).
+    pub fn tint(mut self, color: Color) -> Self {
+        if let Content::Image(spec) = &mut self.content {
+            spec.tint = Some(color);
+        }
+        self
+    }
+}
+
+/// An iOS/macOS-style toggle switch. Attach `.on_click(...)` to toggle.
+pub fn switch<M: 'static>(on: bool) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    div()
+        .w(34.0)
+        .h(20.0)
+        .pill()
+        .shrink(0.0)
+        .p(2.0)
+        .focusable()
+        .role(Role::Switch)
+        .aria_checked(on)
+        .cursor(Cursor::Pointer)
+        .transition(0.18)
+        .bg(if on { c.accent } else { c.border_strong })
+        .hover(|s| s.bg(if on { c.accent_hover } else { c.border_strong.lighten(0.08) }))
+        .child(
+            div()
+                .square(16.0)
+                .pill()
+                .bg(Color::WHITE)
+                .shadow(Shadow::new(0.0, 1.0, 3.0, 0.0, Color::BLACK.with_alpha(0.3)))
+                .transition(0.18)
+                .translate(if on { 14.0 } else { 0.0 }, 0.0)
+                .class("switch-thumb"),
+        )
+        .class("switch")
+        .when(on, |e| e.class("switch-on"))
+}
+
+/// A labeled switch row.
+pub fn switch_row<M: 'static>(label: impl Into<String>, on: bool) -> Element<M> {
+    let label = label.into();
+    row()
+        .items_center()
+        .gap(10.0)
+        .cursor(Cursor::Pointer)
+        .role(Role::Switch)
+        .aria_checked(on)
+        .aria_label(label.clone())
+        .focusable()
+        .child({
+            // The row is the control; the inner switch is just its visual.
+            let mut sw = switch(on).aria_hidden();
+            sw.focusable = false;
+            sw
+        })
+        .child(text(label).nowrap())
+}
+
+/// A horizontal slider. Handle `.on_change(|v| ...)`.
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Volume(f32),
+/// }
+///
+/// let volume: Element<Msg> = slider(0.5, 0.0, 1.0).on_change(Msg::Volume);
+/// ```
+pub fn slider<M: 'static>(value: f32, min: f32, max: f32) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let t = if max > min { ((value - min) / (max - min)).clamp(0.0, 1.0) } else { 0.0 };
+    let knob = 16.0;
+    let mut e = div()
+        .h(knob)
+        .w_full()
+        .min_w(60.0)
+        .items_center()
+        .focusable()
+        .cursor(Cursor::Pointer)
+        .rounded(knob / 2.0)
+        .child(
+            div()
+                .absolute()
+                .left(knob / 2.0)
+                .right(knob / 2.0)
+                .h(4.0)
+                .pill()
+                .bg(c.border_strong)
+                .child(div().h_full().w(pct(t * 100.0)).pill().bg(c.accent)),
+        )
+        .child(
+            // Knob positioned along the track.
+            div().absolute().left(0.0).right(0.0).h(knob).child(
+                div().flex_row().w_full().h(knob).child(div().w(pct(t * 100.0)).shrink(1.0)).child(
+                    div()
+                        .square(knob)
+                        .shrink(0.0)
+                        .ml(-(t * knob))
+                        .pill()
+                        .bg(Color::WHITE)
+                        .border(1.0, c.border_strong.with_alpha(0.3))
+                        .shadow(Shadow::new(0.0, 1.0, 3.0, 0.0, Color::BLACK.with_alpha(0.35))),
+                ),
+            ),
+        );
+    e.behavior = Behavior::Slider { value, min, max, step: 0.0 };
+    e.class("slider")
+}
+
+impl<M: 'static> Element<M> {
+    /// Snap a slider's values to multiples of `step`.
+    pub fn step(mut self, step: f32) -> Self {
+        if let Behavior::Slider { step: s, .. } = &mut self.behavior {
+            *s = step;
+        }
+        self
+    }
+}
+
+/// A progress bar, `value` in 0..=1.
+pub fn progress<M: 'static>(value: f32) -> Element<M> {
+    let th = theme();
+    div()
+        .h(6.0)
+        .w_full()
+        .pill()
+        .bg(th.colors.border)
+        .clip()
+        .role(Role::ProgressBar)
+        .aria_value((value.clamp(0.0, 1.0) * 100.0).round() as f64, 0.0, 100.0)
+        .child(
+            div()
+                .h_full()
+                .w(pct(value.clamp(0.0, 1.0) * 100.0))
+                .pill()
+                .gradient(90.0, [(0.0, th.colors.accent), (1.0, th.colors.accent_hover)]),
+        )
+        .class("progress")
+}
+
+// -------------------------------------------------------------- decoration
+
+/// A small pill label.
+pub fn badge<M: 'static>(label: impl Into<String>) -> Element<M> {
+    let th = theme();
+    row()
+        .items_center()
+        .h(18.0)
+        .px(7.0)
+        .pill()
+        .shrink(0.0)
+        .bg(th.colors.accent)
+        .color(th.colors.accent_text)
+        .font_size(11.0)
+        .semibold()
+        .child(text(label).nowrap())
+        .class("badge")
+}
+
+/// A soft, tinted tag.
+pub fn tag<M: 'static>(label: impl Into<String>, color: Color) -> Element<M> {
+    row()
+        .items_center()
+        .h(20.0)
+        .px(8.0)
+        .rounded(5.0)
+        .shrink(0.0)
+        .bg(color.with_alpha(0.15))
+        .color(color)
+        .font_size(11.5)
+        .medium()
+        .child(text(label).nowrap())
+        .class("tag")
+}
+
+/// A keyboard shortcut hint, e.g. `kbd("Ctrl+P")`.
+pub fn kbd<M: 'static>(keys: impl Into<String>) -> Element<M> {
+    let th = theme();
+    row()
+        .items_center()
+        .h(18.0)
+        .px(5.0)
+        .rounded(4.0)
+        .shrink(0.0)
+        .bg(th.colors.hover)
+        .border(1.0, th.colors.border)
+        .color(th.colors.text_muted)
+        .font_size(11.0)
+        .child(text(keys).nowrap())
+        .class("kbd")
+}
+
+/// A horizontal divider line.
+pub fn separator<M: 'static>() -> Element<M> {
+    div().h(1.0).w_full().shrink(0.0).bg(theme().colors.border).role(Role::Separator).class("separator")
+}
+
+/// A vertical divider line.
+pub fn vseparator<M: 'static>() -> Element<M> {
+    div()
+        .w(1.0)
+        .self_align(Align::Stretch)
+        .shrink(0.0)
+        .bg(theme().colors.border)
+        .role(Role::Separator)
+        .class("separator")
+}
+
+/// A raised card container.
+pub fn card<M: 'static>() -> Element<M> {
+    let th = theme();
+    col()
+        .bg(th.colors.elevated)
+        .border(1.0, th.colors.border)
+        .rounded(th.radius_lg)
+        .shadows(th.shadow_sm.clone())
+        .p(16.0)
+        .gap(10.0)
+        .class("card")
+}
+
+/// A circular avatar with initials.
+pub fn avatar<M: 'static>(initials: &str, color: Color) -> Element<M> {
+    div()
+        .center()
+        .square(28.0)
+        .pill()
+        .shrink(0.0)
+        .gradient(135.0, [(0.0, color.lighten(0.15)), (1.0, color.darken(0.15))])
+        .color(Color::WHITE)
+        .font_size(11.0)
+        .semibold()
+        .role(Role::Image)
+        .aria_label(initials.to_string())
+        .child(text(initials.to_string()).nowrap())
+        .class("avatar")
+}
+
+/// An uppercase section heading, as used in sidebars.
+pub fn section_header<M: 'static>(title: impl Into<String>) -> Element<M> {
+    let th = theme();
+    row()
+        .items_center()
+        .h(30.0)
+        .px(12.0)
+        .shrink(0.0)
+        .color(th.colors.text_faint)
+        .font_size(11.0)
+        .semibold()
+        .letter_spacing(0.6)
+        .child(text(title.into().to_uppercase()).nowrap())
+        .class("section-header")
+}
+
+// ------------------------------------------------------------- list / tree
+
+/// A selectable list row with an optional icon.
+pub fn list_item<M: 'static>(i: Option<Icon>, label: impl Into<String>, selected: bool) -> Element<M> {
+    tree_row(0, None, i, label, selected).role(Role::ListItem).class("list-item")
+}
+
+/// A tree-view row. `expanded`: `Some(true/false)` shows a disclosure chevron.
+pub fn tree_row<M: 'static>(
+    depth: usize,
+    expanded: Option<bool>,
+    i: Option<Icon>,
+    label: impl Into<String>,
+    selected: bool,
+) -> Element<M> {
+    let th = theme();
+    let c = &th.colors;
+    let mut r = row()
+        .items_center()
+        .h(th.row_height)
+        .pl(8.0 + depth as f32 * 14.0)
+        .pr(8.0)
+        .gap(6.0)
+        .mx(6.0)
+        .rounded(th.radius_sm)
+        .shrink(0.0)
+        .color(if selected { c.text } else { c.text_muted })
+        .transition(0.08)
+        .hover(|s| s.bg(if selected { c.accent_soft } else { c.hover }).color(c.text))
+        .cursor(Cursor::Default)
+        .role(Role::TreeItem)
+        .aria_selected(selected);
+    if let Some(e) = expanded {
+        r = r.aria_expanded(e);
+    }
+    if selected {
+        r = r.bg(c.accent_soft);
+    }
+    r = match expanded {
+        Some(e) => {
+            r.child(icon(if e { Icon::ChevronDown } else { Icon::ChevronRight }).font_size(14.0).color(c.text_faint))
+        }
+        None if depth > 0 => r.child(div().w(14.0).shrink(0.0)),
+        None => r,
+    };
+    if let Some(i) = i {
+        r = r.child(icon(i).font_size(15.0));
+    }
+    r.child(text(label).ellipsis().grow(1.0)).class("tree-row").when(selected, |e| e.class("tree-row-selected"))
+}
+
+// -------------------------------------------------------------------- tabs
+
+/// One tab in a [`tab_bar`].
+pub struct Tab<M> {
+    /// Text shown on the tab.
+    pub label: String,
+    /// Optional icon before the label.
+    pub icon: Option<Icon>,
+    /// Whether this is the selected tab.
+    pub active: bool,
+    /// Unsaved changes: an inactive closable tab shows a dot instead of the close icon.
+    pub modified: bool,
+    /// Message sent when the tab is clicked.
+    pub on_select: M,
+    /// Message sent by the close button; `None` hides the button.
+    pub on_close: Option<M>,
+}
+
+impl<M> Tab<M> {
+    /// A tab with a label, its active state and the message sent when clicked.
+    pub fn new(label: impl Into<String>, active: bool, on_select: M) -> Self {
+        Self { label: label.into(), icon: None, active, modified: false, on_select, on_close: None }
+    }
+    /// Show an icon before the label.
+    pub fn icon(mut self, i: Icon) -> Self {
+        self.icon = Some(i);
+        self
+    }
+    /// Add a close button that sends `m`.
+    pub fn closable(mut self, m: M) -> Self {
+        self.on_close = Some(m);
+        self
+    }
+    /// Mark the tab as having unsaved changes.
+    pub fn modified(mut self, m: bool) -> Self {
+        self.modified = m;
+        self
+    }
+}
+
+/// Editor-style tabs (VS Code / browser look).
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Show(usize),
+///     Close(usize),
+/// }
+///
+/// let tabs: Element<Msg> = tab_bar(vec![
+///     Tab::new("main.rs", true, Msg::Show(0)).closable(Msg::Close(0)),
+///     Tab::new("lib.rs", false, Msg::Show(1)).closable(Msg::Close(1)).modified(true),
+/// ]);
+/// ```
+pub fn tab_bar<M: Clone + 'static>(tabs: Vec<Tab<M>>) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let mut bar = row()
+        .h(th.tab_height)
+        .shrink(0.0)
+        .bg(c.panel)
+        .border_b(1.0, c.border)
+        .scroll_x()
+        .items(Align::Stretch)
+        .role(Role::TabList);
+    for (i, t) in tabs.into_iter().enumerate() {
+        let mut tab = row()
+            .key(("tab", i, t.label.clone()))
+            .items_center()
+            .gap(7.0)
+            .pl(12.0)
+            .pr(if t.on_close.is_some() { 6.0 } else { 12.0 })
+            .min_w(80.0)
+            .shrink(0.0)
+            .border_r(1.0, c.border)
+            .color(if t.active { c.text } else { c.text_muted })
+            .transition(0.08)
+            .on_click(t.on_select.clone())
+            .cursor(Cursor::Default)
+            .role(Role::Tab)
+            .aria_selected(t.active)
+            .focusable();
+        if t.active {
+            tab = tab.bg(c.surface).child(div().absolute().top(0.0).left(0.0).right(0.0).h(2.0).bg(c.accent));
+            // Cover the bar's bottom border so the active tab merges into content.
+            tab = tab.child(div().absolute().bottom(-1.0).left(0.0).right(0.0).h(1.0).bg(c.surface));
+        } else {
+            tab = tab.hover(|s| s.bg(c.hover).color(c.text));
+        }
+        tab = tab.class("tab").when(t.active, |e| e.class("tab-active"));
+        if let Some(i) = &t.icon {
+            tab = tab.child(icon(i.clone()).font_size(14.0).color(if t.active { c.accent } else { c.text_faint }));
+        }
+        tab = tab.child(text(t.label).nowrap());
+        if let Some(close) = t.on_close {
+            let btn = div()
+                .center()
+                .square(20.0)
+                .rounded(4.0)
+                .color(c.text_faint)
+                .transition(0.08)
+                .hover(|s| s.bg(c.pressed).color(c.text))
+                .role(Role::Button)
+                .aria_label("Close tab")
+                .on_click(close);
+            let btn = if t.modified && !t.active {
+                btn.child(icon(Icon::Dot).font_size(10.0))
+            } else {
+                btn.child(icon(Icon::Close).font_size(13.0))
+            };
+            tab = tab.child(btn);
+        }
+        bar = bar.child(tab);
+    }
+    bar.class("tab-bar")
+}
+
+/// Segmented control / pill tabs.
+pub fn segmented<M: Clone + 'static>(items: Vec<(String, bool, M)>) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let mut r = row()
+        .p(3.0)
+        .gap(2.0)
+        .rounded(th.radius + 2.0)
+        .bg(c.input)
+        .border(1.0, c.border)
+        .shrink(0.0)
+        .self_align(Align::Start)
+        .role(Role::RadioGroup);
+    for (label, active, msg) in items {
+        let mut b = row()
+            .items_center()
+            .h(24.0)
+            .px(12.0)
+            .rounded(th.radius)
+            .font_size(12.0)
+            .medium()
+            .transition(0.12)
+            .on_click(msg)
+            .role(Role::RadioButton)
+            .aria_checked(active)
+            .focusable()
+            .child(text(label).nowrap());
+        b = if active {
+            b.bg(c.elevated).color(c.text).shadows(th.shadow_sm.clone())
+        } else {
+            b.color(c.text_muted).hover(|s| s.color(c.text))
+        };
+        b = b.class("segmented-item").when(active, |b| b.class("segmented-item-active"));
+        r = r.child(b);
+    }
+    r.class("segmented")
+}
+
+/// A round color swatch for theme/accent pickers. Selected swatches get a
+/// ring in the swatch's own color with a gap, like macOS/GitHub pickers.
+pub fn color_swatch<M: Clone + 'static>(color: Color, selected: bool) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    div()
+        .center()
+        .square(26.0)
+        .pill()
+        .shrink(0.0)
+        .role(Role::RadioButton)
+        .aria_checked(selected)
+        .focusable()
+        .border(2.0, if selected { color } else { Color::TRANSPARENT })
+        .transition(0.12)
+        .hover(move |s| if selected { s } else { s.border_color(c.border_strong) })
+        .child(div().square(18.0).pill().bg(color).border(1.0, Color::BLACK.with_alpha(0.12)))
+        .class("color-swatch")
+}
+
+// --------------------------------------------------------- window chrome
+
+/// Minimize / maximize / close buttons for frameless windows (Windows style).
+pub fn window_controls<M: 'static>(maximized: bool) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let btn = |i: Icon, ctl: WindowControl, danger: bool| {
+        div()
+            .id(match ctl {
+                WindowControl::Minimize => "window-control/minimize",
+                WindowControl::ToggleMaximize => "window-control/maximize",
+                WindowControl::Close => "window-control/close",
+            })
+            .center()
+            .w(46.0)
+            .h_full()
+            .color(c.text_muted)
+            .transition(0.08)
+            .hover(
+                |s| if danger { s.bg(Color::hex("#e81123")).color(Color::WHITE) } else { s.bg(c.hover).color(c.text) },
+            )
+            .window_control(ctl)
+            .child(icon(i).font_size(14.0).weight(Weight(300)))
+    };
+    row()
+        .h_full()
+        .shrink(0.0)
+        .child(btn(Icon::Minus, WindowControl::Minimize, false))
+        .child(btn(if maximized { Icon::Restore } else { Icon::Maximize }, WindowControl::ToggleMaximize, false))
+        .child(btn(Icon::Close, WindowControl::Close, true))
+        .class("window-controls")
+}
+
+/// A custom title bar: `left` content, a centered title, `right` content and
+/// window controls. The empty areas drag the window; double-click maximizes.
+///
+/// Where the OS draws the window buttons itself (the macOS traffic lights of
+/// a frameless window, see [`WindowInfo::native_buttons`](crate::runtime::WindowInfo)),
+/// it leaves room for them at the left instead of drawing its own.
+pub fn titlebar<M: 'static>(
+    title: impl Into<String>,
+    left: Element<M>,
+    right: Element<M>,
+    maximized: bool,
+) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let win = crate::runtime::window_info();
+    row()
+        .h(th.titlebar_height)
+        .shrink(0.0)
+        .items_center()
+        // Over a system backdrop, the title bar shows the material.
+        .bg(if win.backdrop { Color::TRANSPARENT } else { c.chrome })
+        .border_b(1.0, c.border)
+        .child_if(win.buttons_inset > 0.0, || {
+            div().w(win.buttons_inset).h_full().shrink(0.0).window_drag_area().id("titlebar-native-buttons")
+        })
+        .child(left.shrink(0.0))
+        .child(
+            row()
+                .grow(1.0)
+                .h_full()
+                .center()
+                .min_w(0.0)
+                .window_drag_area()
+                .color(c.text_muted)
+                .font_size(12.0)
+                .child(text(title).ellipsis().pointer_events(false)),
+        )
+        .child(right.shrink(0.0))
+        .child_if(!win.native_buttons, || window_controls(maximized))
+        .class("titlebar")
+}
+
+// ------------------------------------------------------------------- menus
+
+/// An entry in a dropdown or context menu.
+#[derive(Clone)]
+pub enum MenuItem<M> {
+    /// A clickable item that sends `msg`.
+    Action {
+        /// Text shown for the item.
+        label: String,
+        /// Key binding shown at the right (and triggering it in an app menu).
+        shortcut: Option<KeyBinding>,
+        /// Optional icon before the label.
+        icon: Option<Icon>,
+        /// Message sent when the item is picked.
+        msg: M,
+        /// Greys the item out and ignores clicks.
+        disabled: bool,
+    },
+    /// An item with a check mark that sends `msg` when picked.
+    Check {
+        /// Text shown for the item.
+        label: String,
+        /// Whether the check mark is shown.
+        checked: bool,
+        /// Message sent when the item is picked.
+        msg: M,
+        /// Key binding shown at the right (and triggering it in an app menu).
+        shortcut: Option<KeyBinding>,
+        /// Greys the item out and ignores clicks.
+        disabled: bool,
+    },
+    /// A nested menu, opened by hovering it.
+    Submenu {
+        /// Text shown for the item.
+        label: String,
+        /// Items of the nested menu.
+        items: Vec<MenuItem<M>>,
+        /// Greys the item out and keeps the submenu closed.
+        disabled: bool,
+    },
+    /// A horizontal divider line.
+    Separator,
+    /// A non-interactive section heading.
+    Header(String),
+}
+
+impl<M> MenuItem<M> {
+    /// An action item that sends `msg` when picked.
+    pub fn action(label: impl Into<String>, msg: M) -> Self {
+        MenuItem::Action { label: label.into(), shortcut: None, icon: None, msg, disabled: false }
+    }
+    /// A checkable item that sends `msg` when picked.
+    pub fn check(label: impl Into<String>, checked: bool, msg: M) -> Self {
+        MenuItem::Check { label: label.into(), checked, msg, shortcut: None, disabled: false }
+    }
+    /// A nested menu containing `items`.
+    pub fn submenu(label: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
+        MenuItem::Submenu { label: label.into(), items, disabled: false }
+    }
+    /// A keyboard shortcut such as `"Mod+S"` or a chord `"Ctrl+K Ctrl+S"`
+    /// (see [`KeyBinding::parse`]). In an app menu ([`App::menu`](crate::App::menu))
+    /// it also triggers the item.
+    pub fn shortcut(mut self, s: &str) -> Self {
+        let parsed = KeyBinding::parse(s);
+        debug_assert!(parsed.is_some(), "unrecognized shortcut {s:?}");
+        match &mut self {
+            MenuItem::Action { shortcut, .. } | MenuItem::Check { shortcut, .. } => *shortcut = parsed,
+            _ => {}
+        }
+        self
+    }
+    /// Show an icon before the label (action items only).
+    pub fn icon(mut self, i: Icon) -> Self {
+        if let MenuItem::Action { icon, .. } = &mut self {
+            *icon = Some(i);
+        }
+        self
+    }
+    /// Disable the item (actions, checks and submenus).
+    pub fn disabled(mut self, d: bool) -> Self {
+        match &mut self {
+            MenuItem::Action { disabled, .. }
+            | MenuItem::Check { disabled, .. }
+            | MenuItem::Submenu { disabled, .. } => *disabled = d,
+            _ => {}
+        }
+        self
+    }
+
+    /// Transform the item's messages.
+    pub fn map<N>(self, f: &dyn Fn(M) -> N) -> MenuItem<N> {
+        match self {
+            MenuItem::Action { label, shortcut, icon, msg, disabled } => {
+                MenuItem::Action { label, shortcut, icon, msg: f(msg), disabled }
+            }
+            MenuItem::Check { label, checked, msg, shortcut, disabled } => {
+                MenuItem::Check { label, checked, msg: f(msg), shortcut, disabled }
+            }
+            MenuItem::Submenu { label, items, disabled } => {
+                MenuItem::Submenu { label, items: items.into_iter().map(|i| i.map(f)).collect(), disabled }
+            }
+            MenuItem::Separator => MenuItem::Separator,
+            MenuItem::Header(h) => MenuItem::Header(h),
+        }
+    }
+
+    /// The enabled items' key bindings and messages, including submenus'.
+    pub(crate) fn bindings<'a>(&'a self, out: &mut Vec<(&'a KeyBinding, &'a M)>) {
+        match self {
+            MenuItem::Action { shortcut: Some(s), msg, disabled: false, .. }
+            | MenuItem::Check { shortcut: Some(s), msg, disabled: false, .. } => out.push((s, msg)),
+            MenuItem::Submenu { items, disabled: false, .. } => items.iter().for_each(|i| i.bindings(out)),
+            _ => {}
+        }
+    }
+}
+
+/// Events inside a menu panel that has submenus.
+#[derive(Clone)]
+enum PanelEv<M> {
+    /// Open submenu `Some(i)` at nesting `depth`, or close those below it.
+    Hover(usize, Option<usize>),
+    Nop,
+    Pick(M),
+}
+
+/// A dropdown menu panel (use inside an absolutely positioned container).
+/// Submenus open on hover.
+pub fn menu_panel<M: Clone + 'static>(items: Vec<MenuItem<M>>) -> Element<M> {
+    if !items.iter().any(|i| matches!(i, MenuItem::Submenu { .. })) {
+        return render_panel(items, &[], 0, None);
+    }
+    // The chain of open submenus is local UI state.
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for it in &items {
+            match it {
+                MenuItem::Action { label, .. } | MenuItem::Check { label, .. } | MenuItem::Submenu { label, .. } => {
+                    label.hash(&mut h)
+                }
+                MenuItem::Header(l) => l.hash(&mut h),
+                MenuItem::Separator => 0u8.hash(&mut h),
+            }
+        }
+        ("__menu_panel", h.finish())
+    };
+    let items: Vec<MenuItem<PanelEv<M>>> = items.into_iter().map(|i| i.map(&PanelEv::Pick)).collect();
+    crate::component::stateful(
+        key,
+        move |path: &Vec<usize>| {
+            let hover: HoverFn<PanelEv<M>> = Rc::new(|d, o| match o {
+                Some(usize::MAX) => PanelEv::Nop,
+                o => PanelEv::Hover(d, o),
+            });
+            render_panel(items.clone(), path, 0, Some(hover))
+        },
+        |path: &mut Vec<usize>, e: PanelEv<M>| match e {
+            PanelEv::Hover(depth, o) => {
+                path.truncate(depth);
+                path.extend(o);
+                None
+            }
+            PanelEv::Nop => None,
+            PanelEv::Pick(m) => {
+                path.clear();
+                Some(m)
+            }
+        },
+    )
+}
+
+/// Reports hovering at a menu depth: `Some(i)` = submenu `i`, `None` =
+/// another item, `Some(usize::MAX)` = the pointer left an item.
+type HoverFn<M> = Rc<dyn Fn(usize, Option<usize>) -> M>;
+
+fn render_panel<M: Clone + 'static>(
+    items: Vec<MenuItem<M>>,
+    path: &[usize],
+    depth: usize,
+    on_hover: Option<HoverFn<M>>,
+) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let mut panel = col()
+        .min_w(220.0)
+        .p(5.0)
+        .bg(c.elevated)
+        .border(1.0, c.border_strong)
+        .rounded(th.radius + 2.0)
+        .shadows(th.shadow_popover.clone())
+        .role(Role::Menu);
+    let item_row = |label: String, lead: Element<M>, trail: Option<Element<M>>, msg: Option<M>, disabled: bool| {
+        let mut r = row()
+            .items_center()
+            .h(th.row_height + 2.0)
+            .px(8.0)
+            .gap(8.0)
+            .rounded(th.radius_sm)
+            .color(c.text)
+            .transition(0.06)
+            .role(Role::MenuItem)
+            .aria_label(label.clone())
+            .class("menu-item")
+            .child(lead)
+            .child(text(label).nowrap().grow(1.0));
+        if let Some(t) = trail {
+            r = r.child(t);
+        }
+        if disabled {
+            r.disabled(true).opacity(0.45)
+        } else {
+            let r = r.hover(|s| s.bg(c.accent).color(c.accent_text)).cursor(Cursor::Default);
+            match msg {
+                Some(m) => r.on_click(m),
+                None => r,
+            }
+        }
+    };
+    // Keyboard: the first enabled item takes focus when the menu opens.
+    let first = items.iter().position(|it| match it {
+        MenuItem::Action { disabled, .. } | MenuItem::Check { disabled, .. } | MenuItem::Submenu { disabled, .. } => {
+            !disabled
+        }
+        _ => false,
+    });
+    let item_row = |i: usize, label, lead, trail, msg, disabled| {
+        let r = item_row(label, lead, trail, msg, disabled);
+        match (disabled, first == Some(i)) {
+            (true, _) => r,
+            (false, true) => r.autofocus(),
+            (false, false) => r.focusable(),
+        }
+    };
+    let blank = || div().w(15.0).shrink(0.0);
+    let hint = |s: Option<KeyBinding>| s.map(|s| text(s.label()).nowrap().font_size(11.5).opacity(0.6).ml(24.0));
+    for (i, it) in items.into_iter().enumerate() {
+        let hover_close = |r: Element<M>| match &on_hover {
+            // Hovering any other item closes submenus opened at this level.
+            Some(h) => {
+                let h = h.clone();
+                r.on_hover(move |entered| h(depth, if entered { None } else { Some(usize::MAX) }))
+            }
+            None => r,
+        };
+        panel = match it {
+            MenuItem::Action { label, shortcut, icon: ic, msg, disabled } => {
+                let lead = ic.map(|i| icon(i).font_size(15.0)).unwrap_or_else(blank);
+                panel.child(hover_close(item_row(i, label, lead, hint(shortcut), Some(msg), disabled)))
+            }
+            MenuItem::Check { label, checked, msg, shortcut, disabled } => {
+                let lead = if checked { icon(Icon::Check).font_size(15.0) } else { blank() };
+                panel.child(
+                    hover_close(item_row(i, label, lead, hint(shortcut), Some(msg), disabled)).aria_checked(checked),
+                )
+            }
+            MenuItem::Submenu { label, items, disabled } => {
+                let open = path.get(depth) == Some(&i) && !disabled;
+                let chevron = icon(Icon::ChevronRight).font_size(13.0).opacity(0.6).ml(24.0);
+                let mut r = item_row(i, label, blank(), Some(chevron), None, disabled).aria_expanded(open);
+                if let Some(h) = &on_hover {
+                    let h2 = h.clone();
+                    r = r.on_hover(move |entered| h2(depth, if entered { Some(i) } else { Some(usize::MAX) }));
+                    if !disabled {
+                        // Keyboard: Enter or → opens it.
+                        let h3 = h.clone();
+                        r = r
+                            .on_click(h(depth, Some(i)))
+                            .on_key(move |k| (k.key == Key::Right).then(|| h3(depth, Some(i))));
+                    }
+                }
+                if open {
+                    r = r.bg(c.hover).child(
+                        render_panel(items, path, depth + 1, on_hover.clone())
+                            .absolute()
+                            .top(-6.0)
+                            .left(pct(100.0))
+                            .ml(2.0)
+                            .z_index(101),
+                    );
+                }
+                panel.child(r)
+            }
+            MenuItem::Separator => panel.child(div().h(1.0).my(4.0).mx(4.0).bg(c.border)),
+            MenuItem::Header(h) => panel.child(
+                row()
+                    .h(24.0)
+                    .px(8.0)
+                    .items_center()
+                    .color(c.text_faint)
+                    .font_size(11.0)
+                    .semibold()
+                    .child(text(h).nowrap()),
+            ),
+        };
+    }
+    panel.class("menu")
+}
+
+/// A full-window invisible layer that closes popups when clicked.
+pub fn backdrop<M: 'static>(on_dismiss: M, dim: bool) -> Element<M> {
+    let mut b = div()
+        .fixed()
+        .top(0.0)
+        .left(0.0)
+        .right(0.0)
+        .bottom(0.0)
+        .z_index(90)
+        .on_click(on_dismiss)
+        .cursor(Cursor::Default);
+    if dim {
+        b = b.bg(Color::BLACK.with_alpha(0.45));
+    }
+    b
+}
+
+/// A context menu at a window position, with a dismiss backdrop.
+pub fn context_menu<M: Clone + 'static>(at: Point, items: Vec<MenuItem<M>>, on_dismiss: M) -> Element<M> {
+    let esc = on_dismiss.clone();
+    div().child(backdrop(on_dismiss, false)).child(
+        menu_panel(items)
+            .fixed()
+            .left(at.x)
+            .top(at.y)
+            .z_index(100)
+            .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone())),
+    )
+}
+
+/// A top-level menu for a [`menu_bar`] or an app menu ([`App::menu`](crate::App::menu)).
+#[derive(Clone)]
+pub struct Menu<M> {
+    /// Title shown in the menu bar.
+    pub title: String,
+    /// The menu's entries.
+    pub items: Vec<MenuItem<M>>,
+}
+
+impl<M> Menu<M> {
+    /// A menu with a title and its items.
+    pub fn new(title: impl Into<String>, items: Vec<MenuItem<M>>) -> Self {
+        Self { title: title.into(), items }
+    }
+
+    /// Transform the menu's messages.
+    pub fn map<N>(self, f: &dyn Fn(M) -> N) -> Menu<N> {
+        Menu { title: self.title, items: self.items.into_iter().map(|i| i.map(f)).collect() }
+    }
+}
+
+/// Events of a [`menubar`].
+#[derive(Clone)]
+enum BarEv<M> {
+    Open(Option<usize>),
+    Pick(M),
+}
+
+/// An in-window menu bar that manages which menu is open by itself (unlike
+/// [`menu_bar`], whose open menu the app controls). Picking an item closes
+/// the menu and sends its message. Pass the app's menus:
+/// `menubar(self.menu())` (see [`App::menu`](crate::App::menu)).
+///
+/// ```
+/// use charis_ui::prelude::*;
+///
+/// #[derive(Clone)]
+/// enum Msg {
+///     Open,
+///     Quit,
+/// }
+///
+/// let bar: Element<Msg> = menubar(vec![Menu::new(
+///     "File",
+///     vec![
+///         MenuItem::action("Open…", Msg::Open).shortcut("Mod+O"),
+///         MenuItem::Separator,
+///         MenuItem::action("Quit", Msg::Quit),
+///     ],
+/// )]);
+/// ```
+pub fn menubar<M: Clone + 'static>(menus: Vec<Menu<M>>) -> Element<M> {
+    if crate::menu::native_menu_bar() {
+        // Shown by the OS instead (macOS menu bar, or a native Win32 menu bar).
+        return div();
+    }
+    let menus: Vec<Menu<BarEv<M>>> = menus.into_iter().map(|m| m.map(&BarEv::Pick)).collect();
+    crate::component::stateful(
+        "__menubar",
+        move |open: &Option<usize>| menu_bar(menus.clone(), *open, BarEv::Open),
+        |open: &mut Option<usize>, e: BarEv<M>| match e {
+            BarEv::Open(o) => {
+                *open = o;
+                None
+            }
+            BarEv::Pick(m) => {
+                *open = None;
+                Some(m)
+            }
+        },
+    )
+}
+
+/// An application menu bar (File, Edit, View…). `open` is the index of the
+/// open menu, and `on_open` is called with the menu to open (or `None` to close).
+pub fn menu_bar<M: Clone + 'static>(
+    menus: Vec<Menu<M>>,
+    open: Option<usize>,
+    on_open: impl Fn(Option<usize>) -> M + 'static,
+) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let on_open = Rc::new(on_open);
+    let mut bar = row().h_full().items_center().px(4.0).gap(1.0).role(Role::MenuBar);
+    for (i, m) in menus.into_iter().enumerate() {
+        let is_open = open == Some(i);
+        let o = on_open.clone();
+        let mut btn = row()
+            .items_center()
+            .h(th.row_height)
+            .px(9.0)
+            .rounded(th.radius_sm)
+            .font_size(12.5)
+            .color(if is_open { c.text } else { c.text_muted })
+            .transition(0.06)
+            .hover(|s| s.bg(c.hover).color(c.text))
+            .on_click(on_open(if is_open { None } else { Some(i) }))
+            .role(Role::MenuItem)
+            .aria_label(m.title.clone())
+            .aria_expanded(is_open)
+            .focusable()
+            .class("menu-bar-item")
+            .child(text(m.title).nowrap());
+        if open.is_some() && !is_open {
+            // While a menu is open, hovering another title switches to it.
+            btn.handlers.hover = Some(cb(move |_entered: bool| o(Some(i))));
+        }
+        if is_open {
+            btn = btn.bg(c.pressed).child(menu_panel(m.items).absolute().top(28.0).left(0.0).z_index(100));
+        }
+        bar = bar.child(btn);
+    }
+    if open.is_some() {
+        bar = bar.child(backdrop(on_open(None), false));
+    }
+    bar.class("menu-bar")
+}
+
+/// A centered modal dialog with a dimmed backdrop.
+pub fn modal<M: Clone + 'static>(
+    title: impl Into<String>,
+    body: Element<M>,
+    actions: Vec<Element<M>>,
+    on_dismiss: M,
+) -> Element<M> {
+    let th = theme();
+    let c = th.colors.clone();
+    let title = title.into();
+    let esc = on_dismiss.clone();
+    div()
+        .child(backdrop(on_dismiss.clone(), true).aria_hidden())
+        .child(
+            div().fixed().top(0.0).left(0.0).right(0.0).bottom(0.0).z_index(95).center().pointer_events(false).child(
+                col()
+                    .pointer_events(true)
+                    // Escape closes it (from anywhere inside, e.g. a text field).
+                    .on_key(move |k| (k.key == Key::Escape).then(|| esc.clone()))
+                    .aria_modal()
+                    .aria_label(title.clone())
+                    .w(440.0)
+                    .max_w(pct(90.0))
+                    .bg(c.elevated)
+                    .border(1.0, c.border_strong)
+                    .rounded(th.radius_lg + 2.0)
+                    .shadows(th.shadow_popover.clone())
+                    .child(
+                        row()
+                            .items_center()
+                            .px(18.0)
+                            .pt(16.0)
+                            .pb(6.0)
+                            .child(text(title).font_size(th.font_size_lg).semibold().grow(1.0).heading(2))
+                            .child(icon_button(Icon::Close).aria_label("Close").on_click(on_dismiss)),
+                    )
+                    .child(col().px(18.0).py(8.0).gap(10.0).color(c.text_muted).child(body))
+                    .child(row().justify(Justify::End).gap(8.0).px(18.0).pt(10.0).pb(16.0).children(actions)),
+            ),
+        )
+        .class("modal")
+}
+
+// ------------------------------------------------------------- status bar
+
+/// A thin status bar at the bottom of the window.
+pub fn status_bar<M: 'static>() -> Element<M> {
+    let th = theme();
+    row()
+        .h(24.0)
+        .shrink(0.0)
+        .items_center()
+        .px(8.0)
+        .gap(2.0)
+        .bg(th.colors.status_bar)
+        .border_t(1.0, th.colors.border)
+        .color(th.colors.status_text)
+        .font_size(11.5)
+        .role(Role::Status)
+        .class("status-bar")
+}
+
+/// An item in the status bar.
+pub fn status_item<M: 'static>(i: Option<Icon>, label: impl Into<String>) -> Element<M> {
+    let th = theme();
+    let mut r = row()
+        .items_center()
+        .gap(5.0)
+        .h(20.0)
+        .px(6.0)
+        .rounded(3.0)
+        .shrink(0.0)
+        .transition(0.08)
+        .hover(|s| s.bg(th.colors.hover).color(th.colors.text));
+    if let Some(i) = i {
+        r = r.child(icon(i).font_size(13.0));
+    }
+    r.child(text(label).nowrap()).class("status-item")
+}

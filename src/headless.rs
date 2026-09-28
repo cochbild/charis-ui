@@ -1,0 +1,390 @@
+//! Headless rendering: drive an app without a window, e.g. for tests,
+//! screenshots and CI.
+
+use crate::geometry::{Point, Size};
+use std::cell::{Ref, RefCell, RefMut};
+use std::rc::Rc;
+
+use crate::runtime::{App, Event, MouseButton, Runtime, Shared, WindowSpec};
+
+/// A windowless harness around a [`Runtime`] with a manual clock.
+pub struct Headless<A: App> {
+    /// The runtime, for reading the app (`rt.app`) and element rects.
+    pub rt: Runtime<A>,
+}
+
+impl<A: App> Headless<A> {
+    /// Render `app` at `width`×`height` logical px and `scale`.
+    ///
+    /// Headless runs don't follow the OS reduced-motion setting (so tests
+    /// behave the same on every machine) unless the thread has an explicit
+    /// [`set_reduced_motion`](crate::anim::set_reduced_motion).
+    pub fn new(app: A, width: f32, height: f32, scale: f32) -> Self {
+        if crate::anim::reduced_motion_override().is_none() {
+            crate::anim::set_reduced_motion(Some(false));
+        }
+        let mut rt = Runtime::new(app);
+        rt.resize(Size::new(width, height), scale);
+        rt.render();
+        Self { rt }
+    }
+
+    /// Advance the clock by `secs`, deliver background messages and due
+    /// timers, and render.
+    pub fn advance(&mut self, secs: f64) {
+        let t = self.rt.time() + secs;
+        self.rt.set_time(t);
+        self.rt.poll();
+        self.rt.render();
+    }
+
+    /// Wait (in real time, up to `timeout`) for background tasks until
+    /// `done(app)` holds, delivering their messages. Returns whether it held.
+    pub fn wait_until(&mut self, timeout: std::time::Duration, done: impl Fn(&A) -> bool) -> bool {
+        let start = std::time::Instant::now();
+        loop {
+            self.rt.poll();
+            if done(&self.rt.app) {
+                self.rt.render();
+                return true;
+            }
+            if start.elapsed() > timeout {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    /// Advance time until no animation is running (max 5s).
+    pub fn settle(&mut self) {
+        for _ in 0..300 {
+            self.advance(1.0 / 60.0);
+            match self.rt.next_frame() {
+                Some(t) if t <= self.rt.time() => continue,
+                _ => break,
+            }
+        }
+    }
+
+    /// Handle an input event and render.
+    pub fn event(&mut self, e: Event) {
+        self.rt.handle(e);
+        self.rt.render();
+    }
+
+    /// Move the pointer to (`x`, `y`).
+    pub fn move_to(&mut self, x: f32, y: f32) {
+        self.event(Event::PointerMove(Point::new(x, y)));
+    }
+
+    /// Move the pointer to (`x`, `y`) and click the left button there.
+    ///
+    /// ```
+    /// use charis_ui::prelude::*;
+    ///
+    /// #[derive(Default)]
+    /// struct Toggle { on: bool }
+    /// #[derive(Clone)]
+    /// enum Msg { Flip }
+    ///
+    /// impl App for Toggle {
+    ///     type Msg = Msg;
+    ///     fn update(&mut self, _: Msg, _: &mut Cx<Msg>) { self.on = !self.on }
+    ///     fn view(&self) -> Element<Msg> { button("Flip").id("flip").on_click(Msg::Flip) }
+    /// }
+    ///
+    /// let mut h = Headless::new(Toggle::default(), 200.0, 100.0, 1.0);
+    /// let r = h.rt.rect_of("flip").unwrap();
+    /// h.click(r.center().x, r.center().y);
+    /// assert!(h.rt.app.on);
+    /// ```
+    pub fn click(&mut self, x: f32, y: f32) {
+        self.move_to(x, y);
+        self.event(Event::PointerDown(Point::new(x, y), MouseButton::Left));
+        self.event(Event::PointerUp(Point::new(x, y), MouseButton::Left));
+    }
+
+    /// Drag with the left button from `from` to `to`, moving in `steps` steps.
+    pub fn drag(&mut self, from: (f32, f32), to: (f32, f32), steps: usize) {
+        self.move_to(from.0, from.1);
+        self.event(Event::PointerDown(Point::new(from.0, from.1), MouseButton::Left));
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32;
+            self.move_to(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+        }
+        self.event(Event::PointerUp(Point::new(to.0, to.1), MouseButton::Left));
+    }
+
+    /// Type `s` as committed text input.
+    pub fn type_text(&mut self, s: &str) {
+        self.event(Event::Text(s.to_string()));
+    }
+
+    /// Save the last frame as PNG.
+    ///
+    /// ```no_run
+    /// use charis_ui::prelude::*;
+    ///
+    /// struct Hello;
+    /// impl App for Hello {
+    ///     type Msg = ();
+    ///     fn update(&mut self, _: (), _: &mut Cx<()>) {}
+    ///     fn view(&self) -> Element<()> { text("Hello") }
+    /// }
+    ///
+    /// let mut h = Headless::new(Hello, 320.0, 200.0, 2.0);
+    /// h.save_png("hello.png").unwrap();
+    /// ```
+    pub fn save_png(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        self.rt.render();
+        self.rt.pixmap().ok_or("no frame")?.save_png(path).map_err(|e| e.to_string())
+    }
+
+    /// Render the current frame with the GPU backend and save it as PNG.
+    /// Returns an error if no GPU adapter is available.
+    #[cfg(feature = "gpu")]
+    pub fn save_png_gpu(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        let mut gpu = crate::gpu::GpuRenderer::headless().ok_or("no GPU adapter available")?;
+        self.rt.render_scene();
+        let pm = self.rt.with_scene(|s, t| gpu.render_to_pixmap(s, t)).flatten().ok_or("GPU render failed")?;
+        pm.save_png(path).map_err(|e| e.to_string())
+    }
+
+    /// RGBA pixel at logical coordinates (for assertions).
+    ///
+    /// # Panics
+    /// If nothing was rendered yet or the point is outside the window; this is
+    /// a test helper, so failing loudly is intended.
+    pub fn pixel(&self, x: f32, y: f32) -> [u8; 4] {
+        let pm = self.rt.pixmap().expect("frame");
+        let s = pm.width() as f32 / self.rt_size().w;
+        let px = pm.pixel((x * s) as u32, (y * s) as u32).expect("in bounds");
+        let c = px.demultiply();
+        [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    fn rt_size(&self) -> Size {
+        let pm = self.rt.pixmap().expect("frame");
+        // Logical size = physical / scale; derived from the runtime's state.
+        let _ = pm;
+        self.rt.logical_size()
+    }
+}
+
+/// A windowless harness for apps with several windows ([`App::windows`]):
+/// one [`Headless`] per open window around a shared app, kept in sync the
+/// way the windowing shell does it.
+///
+/// ```
+/// # use charis_ui::prelude::*;
+/// # use charis_ui::headless::HeadlessApp;
+/// # #[derive(Default)] struct A { open: bool }
+/// # #[derive(Clone, Debug)] enum Msg { Open, Close }
+/// # impl App for A {
+/// #     type Msg = Msg;
+/// #     fn update(&mut self, m: Msg, _: &mut Cx<Msg>) { self.open = matches!(m, Msg::Open) }
+/// #     fn view(&self) -> Element<Msg> { button("Open").id("open").on_click(Msg::Open) }
+/// #     fn windows(&self) -> Vec<WindowSpec<Msg>> {
+/// #         if self.open { vec![WindowSpec::new("tool", "Tool", Msg::Close)] } else { vec![] }
+/// #     }
+/// # }
+/// let mut h = HeadlessApp::new(A::default(), 400.0, 300.0);
+/// let r = h.main().rt.rect_of("open").unwrap();
+/// h.click(None, r.center().x, r.center().y);
+/// assert!(h.window("tool").is_some());
+/// h.close("tool");
+/// assert!(h.window("tool").is_none());
+/// ```
+pub struct HeadlessApp<A: App> {
+    app: Rc<RefCell<A>>,
+    main: Headless<Shared<A>>,
+    windows: Vec<OpenWindow<A>>,
+}
+
+/// An extra window of a [`HeadlessApp`]: its spec and harness.
+type OpenWindow<A> = (WindowSpec<<A as App>::Msg>, Headless<Shared<A>>);
+
+impl<A: App> HeadlessApp<A> {
+    /// Open `app`'s main window at `width`×`height` (scale 1), plus the extra
+    /// windows it declares.
+    pub fn new(app: A, width: f32, height: f32) -> Self {
+        let app = Rc::new(RefCell::new(app));
+        let main = Headless::new(Shared::new(app.clone(), None), width, height, 1.0);
+        let mut h = Self { app, main, windows: Vec::new() };
+        h.sync();
+        h
+    }
+
+    /// The shared app state.
+    pub fn app(&self) -> Ref<'_, A> {
+        self.app.borrow()
+    }
+
+    /// The shared app state, mutably.
+    pub fn app_mut(&mut self) -> RefMut<'_, A> {
+        self.app.borrow_mut()
+    }
+
+    /// The main window's harness.
+    pub fn main(&mut self) -> &mut Headless<Shared<A>> {
+        &mut self.main
+    }
+
+    /// An open extra window.
+    pub fn window(&mut self, key: &str) -> Option<&mut Headless<Shared<A>>> {
+        self.windows.iter_mut().find(|(s, _)| s.key == key).map(|(_, h)| h)
+    }
+
+    /// Keys of the open extra windows, in declaration order.
+    pub fn window_keys(&self) -> Vec<String> {
+        self.windows.iter().map(|(s, _)| s.key.clone()).collect()
+    }
+
+    fn get(&mut self, key: Option<&str>) -> &mut Headless<Shared<A>> {
+        match key {
+            None => &mut self.main,
+            Some(k) => self.window(k).unwrap_or_else(|| panic!("no window {k:?}")),
+        }
+    }
+
+    /// Click in a window (`None` = main).
+    pub fn click(&mut self, window: Option<&str>, x: f32, y: f32) {
+        self.get(window).click(x, y);
+        self.sync();
+    }
+
+    /// Deliver an event to a window (`None` = main).
+    pub fn event(&mut self, window: Option<&str>, e: Event) {
+        self.get(window).event(e);
+        self.sync();
+    }
+
+    /// Type text into a window's focused input.
+    pub fn type_text(&mut self, window: Option<&str>, s: &str) {
+        self.get(window).type_text(s);
+        self.sync();
+    }
+
+    /// Place a window on a virtual screen (logical px), so drags can cross
+    /// between windows and report screen positions.
+    pub fn set_origin(&mut self, window: Option<&str>, x: f32, y: f32) {
+        self.get(window).rt.set_screen_origin(Some(Point::new(x, y)));
+    }
+
+    fn runtimes(&mut self) -> Vec<&mut Runtime<Shared<A>>> {
+        std::iter::once(&mut self.main.rt).chain(self.windows.iter_mut().map(|(_, h)| &mut h.rt)).collect()
+    }
+
+    fn index(&self, window: Option<&str>) -> usize {
+        match window {
+            None => 0,
+            Some(k) => {
+                1 + self.windows.iter().position(|(s, _)| s.key == k).unwrap_or_else(|| panic!("no window {k:?}"))
+            }
+        }
+    }
+
+    /// Drag with the mouse from `from` in `window` to the screen point `to`
+    /// (which may be outside the window, or over another window of the app),
+    /// the way the window shell routes it. Windows need screen origins
+    /// ([`HeadlessApp::set_origin`]).
+    pub fn drag(&mut self, window: Option<&str>, from: Point, to: Point, steps: usize) {
+        self.drag_path(window, from, &[to], steps);
+    }
+
+    /// Like [`HeadlessApp::drag`], through several screen points in turn.
+    pub fn drag_path(&mut self, window: Option<&str>, from: Point, path: &[Point], steps: usize) {
+        let src = self.index(window);
+        let origin = self.get(window).rt.screen_origin().unwrap_or_default();
+        self.get(window).event(Event::PointerDown(from, MouseButton::Left));
+        let mut at = from;
+        for &to in path {
+            let to = to - origin;
+            let steps = steps.max(1);
+            for k in 1..=steps {
+                let t = k as f32 / steps as f32;
+                let p = Point::new(at.x + (to.x - at.x) * t, at.y + (to.y - at.y) * t);
+                self.get(window).move_to(p.x, p.y);
+                crate::runtime::route_drag(&mut self.runtimes(), src, p, false);
+                self.sync();
+            }
+            at = to;
+        }
+        // The window under the pointer gets the drop before the drag ends.
+        crate::runtime::route_drag(&mut self.runtimes(), src, at, true);
+        self.sync();
+        let h = if src == 0 { &mut self.main } else { &mut self.windows[src - 1].1 };
+        h.event(Event::PointerUp(at, MouseButton::Left));
+        self.sync();
+    }
+
+    /// Drag from `from` in window `src` out of it and release over window
+    /// `dst` at `at` (`dst`'s coordinates), the way it goes where window
+    /// positions are unknown (Wayland): the source only sees the pointer
+    /// leave; the destination sees it arrive after the release and takes the
+    /// drop. Needs no screen origins.
+    pub fn drag_to_window(&mut self, src: Option<&str>, from: Point, dst: Option<&str>, at: Point) {
+        let (si, di) = (self.index(src), self.index(dst));
+        let size = self.get(src).rt.window_size();
+        let outside = Point::new(size.w + 40.0, from.y);
+        self.get(src).event(Event::PointerDown(from, MouseButton::Left));
+        for k in 1..=8 {
+            let t = k as f32 / 8.0;
+            let p = Point::new(from.x + (outside.x - from.x) * t, from.y);
+            self.get(src).move_to(p.x, p.y);
+            self.sync();
+        }
+        crate::runtime::drop_into(&mut self.runtimes(), si, di, at);
+        self.sync();
+        self.get(src).event(Event::PointerUp(outside, MouseButton::Left));
+        self.sync();
+    }
+
+    /// The user closes an extra window (its `on_close` message is sent).
+    pub fn close(&mut self, key: &str) {
+        if let Some((spec, _)) = self.windows.iter().find(|(s, _)| s.key == key) {
+            let m = spec.on_close.clone();
+            self.main.rt.send(m);
+            self.main.rt.poll();
+        }
+        self.sync();
+    }
+
+    /// Advance every window's clock.
+    pub fn advance(&mut self, secs: f64) {
+        self.main.advance(secs);
+        for (_, w) in &mut self.windows {
+            w.advance(secs);
+        }
+        self.sync();
+    }
+
+    /// Propagate app updates to every window and open/close windows to
+    /// match [`App::windows`].
+    pub fn sync(&mut self) {
+        let mut updated = self.main.rt.take_updated();
+        for (_, w) in &mut self.windows {
+            updated |= w.rt.take_updated();
+        }
+        let specs = self.app.borrow().windows();
+        let mut next = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let h = match self.windows.iter().position(|(s, _)| s.key == spec.key) {
+                Some(i) => self.windows.remove(i).1,
+                None => {
+                    Headless::new(Shared::new(self.app.clone(), Some(spec.key.clone())), spec.width, spec.height, 1.0)
+                }
+            };
+            next.push((spec, h));
+        }
+        self.windows = next;
+        if updated {
+            self.main.rt.invalidate();
+            self.main.rt.render();
+            for (_, w) in &mut self.windows {
+                w.rt.invalidate();
+                w.rt.render();
+            }
+        }
+    }
+}

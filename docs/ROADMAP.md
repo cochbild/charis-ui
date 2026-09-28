@@ -30,8 +30,7 @@ frameworks don't provide.
   been tested on real hardware yet (checklists in `docs/qa/`).
 - Accessibility has not been tried with a real screen reader yet.
 - IME composition has only been tested by simulating the events (no real IME on Linux CI).
-- The name `charis-ui` isn't reserved on crates.io yet.
-- No CI yet, so the book and API docs aren't published as a site.
+- No CI yet, so the book isn't published as a site. The API docs are on docs.rs.
 
 ## Decisions (September 2026)
 
@@ -49,8 +48,7 @@ Each milestone ends with a tagged release, and each has exit criteria that can b
 
 ### M0: Release engineering
 
-- [ ] Final crate name, reserved on crates.io: **Charis**, crate `charis-ui` (free as of September
-      2026; the code is renamed). Still to do: publish a placeholder to reserve it.
+- [x] Final crate name: **Charis**, crate `charis-ui`, published on crates.io with 0.1.0.
 - [x] `LICENSE-MIT` and `LICENSE-APACHE`, `CONTRIBUTING.md`, `CHANGELOG.md` and `CODE_OF_CONDUCT.md`.
 - [ ] CI with GitHub Actions (**deferred to the end**):
   - fmt, clippy (`-D warnings`), and tests on Linux, Windows and macOS;

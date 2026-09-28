@@ -6,10 +6,9 @@ All notable changes to Charis are listed here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased snapshot
+## [0.1.0] - 2026-09-28
 
-The first version, ahead of a public release. It started as an internal prototype called
-`rust-ui`. The list below groups what it contains.
+The first public release. It started as an internal prototype called `rust-ui`. The list below groups what it contains.
 
 ### Core
 

@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-charis-ui = { git = "https://github.com/cochbild/charis-ui" }
+charis-ui = "0.1"
 ```
 
 On Linux, winit needs the usual X11 and Wayland libraries at build time:

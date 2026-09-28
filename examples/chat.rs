@@ -1,8 +1,9 @@
-//! A recreation of lmfast-rs's Chat screen (originally built with iced) to
-//! compare look and feature parity. Streaming is mocked.
+//! A local-LLM chat app: a conversation list, a streaming chat, a model table,
+//! a developer log, file attachments and live appearance settings. Streaming
+//! is mocked.
 //!
-//! Run:        cargo run --release --example lmfast_chat
-//! Screenshot: cargo run --release --example lmfast_chat -- --screenshot chat.png
+//! Run:        cargo run --release --example chat
+//! Screenshot: cargo run --release --example chat -- --screenshot chat.png
 //!             [--streaming] [--settings] [--light] [--accent violet] [--gray slate]
 //!
 //! The whole look is generated from a handful of `ThemeConfig` knobs, which the
@@ -60,7 +61,7 @@ impl Level {
     }
 }
 
-/// A model on disk (what lmfast's Models screen lists).
+/// A model on disk, as the Models screen lists it.
 struct ModelInfo {
     name: String,
     arch: &'static str,
@@ -183,7 +184,7 @@ impl StylePreset {
     }
 }
 
-/// The user's appearance choices (what lmfast would persist in settings).
+/// The user's appearance choices (what an app would persist in its settings).
 #[derive(Clone, Debug, PartialEq)]
 struct Appearance {
     dark: bool,
@@ -282,7 +283,7 @@ struct Convo {
     folder: Option<&'static str>,
 }
 
-struct LmFast {
+struct ChatApp {
     screen: Screen,
     models: Vec<&'static str>,
     model: Option<usize>,
@@ -354,7 +355,7 @@ enum Msg {
     Noop,
 }
 
-impl App for LmFast {
+impl App for ChatApp {
     type Msg = Msg;
 
     fn theme(&self) -> Theme {
@@ -417,7 +418,7 @@ impl App for LmFast {
                 });
                 self.tokens = 0;
                 self.started = Some(Instant::now());
-                // Mock token stream (in lmfast this is llama-server's SSE stream).
+                // Mock token stream (a real app would read a server's SSE stream here).
                 let chunks: Vec<String> =
                     MOCK_REPLY.split_inclusive([' ', '\n']).map(str::to_string).collect::<Vec<_>>();
                 let stream = futures::stream::iter(chunks).then(|t| async move {
@@ -524,7 +525,7 @@ impl App for LmFast {
     }
 }
 
-impl LmFast {
+impl ChatApp {
     fn nav(&self) -> Element<Msg> {
         let th = theme();
         let c = &th.colors;
@@ -567,7 +568,7 @@ impl LmFast {
                 col()
                     .gap(2.0)
                     .px(4.0)
-                    .child(rich_text([span("LM").size(20.0).bold(), span("Fast").size(20.0).bold().color(c.accent)]))
+                    .child(rich_text([span("Local").size(20.0).bold(), span("Chat").size(20.0).bold().color(c.accent)]))
                     .child(text("local LLMs · native speed").mono().font_size(11.0).color(c.text_faint)),
             )
             .child(
@@ -1208,8 +1209,8 @@ impl LmFast {
 
 const MOCK_REPLY: &str = "Here's how to **stream tokens** into the UI without blocking it:\n\n1. Spawn the request as a stream with `cx.run`.\n2. Append each chunk in `update`.\n3. Keep the transcript pinned with `follow_end()`.\n\n```rust\nlet handle = cx.run(token_stream, Msg::Token);\n// later, on Stop:\nhandle.abort();\n```\n\n| Model | Speed |\n|---|---|\n| qwen2.5-7b | 92 tok/s |\n| llama-3.1-8b | 85 tok/s |\n\n> Tip: select any part of this reply and press **Ctrl+C**.\n";
 
-fn initial() -> LmFast {
-    LmFast {
+fn initial() -> ChatApp {
+    ChatApp {
         screen: Screen::Chat,
         models: vec![
             "qwen2.5-7b-instruct-q4_k_m",
@@ -1265,7 +1266,7 @@ fn initial() -> LmFast {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--screenshot") {
-        let out = args.get(pos + 1).cloned().unwrap_or_else(|| "lmfast_chat.png".into());
+        let out = args.get(pos + 1).cloned().unwrap_or_else(|| "chat.png".into());
         let arg =
             |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.to_lowercase());
         let mut app = initial();
@@ -1323,6 +1324,6 @@ fn main() {
         println!("saved {out}");
         return;
     }
-    let opts = WindowOptions::new("LM Fast").size(1360.0, 860.0).min_size(940.0, 600.0);
+    let opts = WindowOptions::new("Local Chat").size(1360.0, 860.0).min_size(940.0, 600.0);
     charis_ui::run(initial(), opts).expect("run");
 }

@@ -101,7 +101,7 @@ bookkeeping.
 3. **Keep changing text small.** A per-second clock or a streaming token counter is cheap. Changing
    thousands of strings every frame means reshaping them all.
 4. **Wrap expensive, rarely-changing parts in `lazy`.** Chat messages, rendered markdown,
-   settings pages and sidebars are good candidates. The lmfast demo memoizes each chat message.
+   settings pages and sidebars are good candidates. The `chat` example memoizes each message.
 5. **Profile** with `CHARIS_PROFILE=1`, which prints per-frame timings for view, flatten, layout and
    paint.
 

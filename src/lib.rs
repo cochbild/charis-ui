@@ -169,12 +169,16 @@ mod book {
     struct Styling;
     #[doc = include_str!("../book/src/theming.md")]
     struct Theming;
+    #[doc = include_str!("../book/src/widgets.md")]
+    struct Widgets;
     #[doc = include_str!("../book/src/panels.md")]
     struct Panels;
     #[doc = include_str!("../book/src/commands.md")]
     struct Commands;
     #[doc = include_str!("../book/src/windows.md")]
     struct Windows;
+    #[doc = include_str!("../book/src/accessibility.md")]
+    struct Accessibility;
     #[doc = include_str!("../book/src/testing.md")]
     struct Testing;
     #[doc = include_str!("../book/src/performance.md")]

@@ -69,8 +69,8 @@ UI Automation on Windows, NSAccessibility on macOS and AT-SPI on Linux. Built-in
 their role, name, state and actions. For custom widgets, use the ARIA-style methods: `.role()`,
 `.aria_label()`, `.aria_checked()`, `.aria_expanded()`, `.aria_value()` and so on.
 
-The runtime also follows the OS preferences for reduced motion and high contrast; see
-[Theming](theming.md#high-contrast).
+The runtime also follows the OS preferences for reduced motion and high contrast. See
+[Accessibility](accessibility.md) for all of it.
 
 ## IME
 
@@ -83,7 +83,9 @@ The IME is on only while a text input has focus.
 - `cx.copy_to_clipboard(text)`, `cx.copy_image(image)` and `cx.read_clipboard(f)`; pasting an
   image into an element with `.on_paste_image(f)` hands you the image.
 - `cx.open_file`, `cx.open_files`, `cx.pick_folder` and `cx.save_file` show native dialogs and
-  answer with a message, so nothing blocks:
+  answer with a message, so nothing blocks. The dialog is modal to the window that asked: the
+  common item dialog on Windows, the system panels on macOS, and the XDG desktop portal on
+  Linux, falling back to zenity:
 
 ```rust
 # use charis_ui::prelude::*;

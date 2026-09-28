@@ -1,9 +1,10 @@
 # Home test plan: Windows 11 and WSL
 
-Everything that needs a real machine, in one list. Some of it has never run outside the Linux
-build container, so expect some failures; those are what this plan is for.
+The checks that need a real machine rather than the headless test suite: windows, GPUs,
+input methods, screen readers and the desktop around them. Run them before a release, or after
+changing platform code.
 
-- **Part 1: Windows 11** (native): the platform code that was only type-checked so far.
+- **Part 1: Windows 11** (native).
 - **Part 2: WSL** (Ubuntu under WSLg): Linux on real Wayland and X11 (XWayland) sessions, with
   a GPU.
 
@@ -19,11 +20,10 @@ Items marked **(new)** cover code that has never run on a real machine.
 
 1. Install Rust with the MSVC toolchain (`rustup-init.exe`, default host
    `x86_64-pc-windows-msvc`) and Visual Studio Build Tools with "Desktop development with C++".
-2. Get the branch:
+2. Get the code:
    ```powershell
    git clone https://github.com/cochbild/charis-ui
    cd charis-ui
-   git checkout claude/rust-ui-framework-u88b01
    ```
 3. Optional: `cargo install cargo-generate mdbook` (cargo-generate 0.23 or newer; its latest
    release needs Rust 1.96, otherwise add `--version 0.23.5`), and NVDA (free) for the screen
@@ -57,7 +57,7 @@ Run each with `$env:CHARIS_PROFILE=1` and check that it opens, draws and closes 
 - [ ] **W-B3** `cargo run --release --example showcase`.
 - [ ] **W-B4** `cargo run --release --example dock`.
 - [ ] **W-B5** `cargo run --release --example multiwindow`.
-- [ ] **W-B6** `cargo run --release --example lmfast_chat`.
+- [ ] **W-B6** `cargo run --release --example chat`.
 - [ ] **W-B7** `cargo run --release --example editor` **(new)**.
 - [ ] **W-B8** `cargo run --release --example stress` prints frame times.
 - [ ] **W-B9** The renderer line says it uses your GPU through DX12 or Vulkan, not a fallback.
@@ -253,15 +253,15 @@ Run each with `$env:CHARIS_PROFILE=1` and check that it opens, draws and closes 
 - [ ] **W-M3** Alt+1, then expand "generated (100000 files)": wheel, ↓, PageDown and End are
       smooth. Double-clicking a file opens it.
 
-### W-N. File dialogs (`lmfast_chat` example)
+### W-N. File dialogs (`chat` example)
 
 - [ ] **W-N1** "Document" opens the Windows file picker, modal to the window, with its filter.
       Picking two files shows two chips; Cancel changes nothing.
 
 ### W-O. Templates (new)
 
-- [ ] **W-O1** `cargo generate --git https://github.com/cochbild/charis-ui --branch
-      claude/rust-ui-framework-u88b01 templates/ide-shell --name my-ide`, then `cd my-ide`
+- [ ] **W-O1** `cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell
+      --name my-ide`, then `cd my-ide`
       and `cargo run --release`. It builds and runs, with the name filled in, and no `{{` left in
       `Cargo.toml` or `README.md`.
 - [ ] **W-O2** In my-ide: double-click files in the Project tree to open tabs, edit them, and use
@@ -352,7 +352,7 @@ To choose the display server for a run:
 - [ ] **L-D2 (new)** Gallery ▸ Images ▸ "Copy image", then paste it into Paint. Then take a Windows
       screenshot (Windows+Shift+S) and paste it into the paste box. Note if WSLg doesn't carry
       images across; that would be a WSLg limitation, not ours.
-- [ ] **L-D3** File dialogs (the lmfast_chat "Document" button): a zenity file picker opens, and
+- [ ] **L-D3** File dialogs (the `chat` example's "Document" button): a zenity file picker opens, and
       picking files works.
 - [ ] **L-D4** Preferences overrides:
       - `CHARIS_DARK=0 cargo run --release --example gallery` starts light;
@@ -370,7 +370,7 @@ To choose the display server for a run:
   `CHARIS_*` overrides in L-D4.
 - **Real multi-monitor placement.**
 
-These need a real Linux desktop later (see `docs/MAC_LINUX_QA.md`).
+These need a real Linux desktop later (see [MAC_LINUX_QA.md](MAC_LINUX_QA.md)).
 
 ---
 

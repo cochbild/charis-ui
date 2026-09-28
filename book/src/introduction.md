@@ -32,10 +32,13 @@ item in it is documented.
    windows.
 3. [Layout](layout.md) and [Styling](styling.md) cover the element tree.
 4. [Theming](theming.md) covers tokens, style classes and stylesheets.
-5. [Panels and docking](panels.md) and [Menus and commands](commands.md) cover the IDE-shell
+5. [Widgets](widgets.md) covers the built-in widgets, long lists, trees and tables.
+6. [Panels and docking](panels.md) and [Menus and commands](commands.md) cover the IDE-shell
    features.
-6. [Windows and platforms](windows.md) covers window options and per-platform behavior.
-7. [Testing](testing.md) and [Performance](performance.md) cover keeping an app correct and
+7. [Windows and platforms](windows.md) covers window options and per-platform behavior.
+8. [Accessibility](accessibility.md) covers screen readers, the keyboard, high contrast and
+   reduced motion.
+9. [Testing](testing.md) and [Performance](performance.md) cover keeping an app correct and
    fast.
 
 The Rust examples in this book are compiled and run as part of the crate's test suite, so they

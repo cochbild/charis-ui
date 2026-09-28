@@ -11,11 +11,11 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-To report a security vulnerability, please contact **Dale Cochran** via [GitHub](https://github.com/cochbild).
+To report a security vulnerability, use GitHub's [private vulnerability reporting](https://github.com/cochbild/charis-ui/security/advisories/new). Only the maintainer, **Dale Cochran** ([@cochbild](https://github.com/cochbild)), can see the report.
 
 Include as much of the following information as possible:
 
-- Type of issue (e.g. buffer overflow, SQL injection, XSS)
+- Type of issue (e.g. a crash or memory-safety issue from a malformed image, SVG or stylesheet)
 - Full paths of source file(s) related to the issue
 - Location of the affected source code (tag/branch/commit or direct URL)
 - Any special configuration required to reproduce the issue

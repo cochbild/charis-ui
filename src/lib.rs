@@ -1,21 +1,23 @@
 //! # Charis
 //!
-//! A web-inspired, highly customizable UI framework for Rust desktop apps.
+//! A desktop UI framework for Rust that looks like a modern web app, with no
+//! browser inside.
 //!
-//! * **Looks like the modern web.** CSS-like styling: flexbox & grid layout,
-//!   per-corner radii, layered blurred box shadows, gradients, opacity,
-//!   outlines/focus rings, and the Inter font bundled by default.
-//! * **Customizability is king.** Everything is an [`Element`] you can restyle
-//!   with chainable builder methods; built-in widgets read design tokens from a
-//!   [`Theme`] you can swap or tweak at runtime.
-//! * **IDE-grade layout.** [`hsplit`]/[`vsplit`] panes with draggable
-//!   splitters, min/max sizes, animated collapse, nested in any direction.
-//! * **Electron-style chrome.** Frameless windows with custom title bars,
-//!   window controls, menu bars, context menus, tooltips and modals.
-//! * **Smooth.** CSS-style transitions for hover/press/focus, smooth
-//!   scrolling with overlay scrollbars.
-//! * **Testable.** A [`headless`] renderer drives apps without a window and
-//!   saves PNG screenshots.
+//! * **Styling like CSS.** Flexbox and grid layout, per-corner radii, blurred
+//!   shadows, gradients, transitions, and the Inter font bundled.
+//! * **Themes from a few knobs.** An accent, a gray tint, a radius and a
+//!   density generate every color and size in light, dark and high contrast.
+//!   Every widget is an [`Element`] you can restyle.
+//! * **IDE-style panels.** [`hsplit`]/[`vsplit`] panes, docking with tabs that
+//!   tear out into their own windows, tool windows and named layouts.
+//! * **Menus and commands.** Menu bars, context menus, a command palette and
+//!   a rebindable keymap.
+//! * **Native behavior.** Frameless windows with custom title bars, screen
+//!   readers through AccessKit, IME, and a GPU renderer with a CPU fallback.
+//! * **Testable.** The [`headless`] runtime drives apps without a window:
+//!   click, type and drag, then check the layout, pixels or accessibility tree.
+//!
+//! The Charis Book (`book/` in the repository) is the guide.
 //!
 //! ```no_run
 //! use charis_ui::prelude::*;
@@ -31,7 +33,7 @@
 //!         match msg { Msg::Inc => self.n += 1, Msg::Dec => self.n -= 1 }
 //!     }
 //!     fn view(&self) -> Element<Msg> {
-//!         col().center().gap(12.0)
+//!         col().size_full().center().gap(12.0)
 //!             .child(text(format!("{}", self.n)).font_size(48.0).bold())
 //!             .child(row().gap(8.0)
 //!                 .child(button("−").on_click(Msg::Dec))
@@ -169,12 +171,16 @@ mod book {
     struct Styling;
     #[doc = include_str!("../book/src/theming.md")]
     struct Theming;
+    #[doc = include_str!("../book/src/widgets.md")]
+    struct Widgets;
     #[doc = include_str!("../book/src/panels.md")]
     struct Panels;
     #[doc = include_str!("../book/src/commands.md")]
     struct Commands;
     #[doc = include_str!("../book/src/windows.md")]
     struct Windows;
+    #[doc = include_str!("../book/src/accessibility.md")]
+    struct Accessibility;
     #[doc = include_str!("../book/src/testing.md")]
     struct Testing;
     #[doc = include_str!("../book/src/performance.md")]

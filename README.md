@@ -51,6 +51,18 @@ professional look without shipping a web engine.
 |---|---|
 | ![The command palette](docs/command-palette.png) | ![Normal, high contrast dark, and high contrast light](docs/high-contrast.png) |
 
+| Docking compass | Reordering tabs |
+|---|---|
+| ![The compass of drop targets while dragging a tab](docs/dock-compass.png) | ![Reordering tabs in a tab strip](docs/dock-reorder.png) |
+
+| Menus | A tree with 100,000 files |
+|---|---|
+| ![A menu bar and a context menu](docs/menus.png) | ![A virtualized tree with a 100,000-file folder](docs/tree.png) |
+
+| Input methods | Style classes |
+|---|---|
+| ![Japanese input being composed inline in a text area](docs/ime.png) | ![One app restyled four ways with style classes](docs/style-presets.png) |
+
 ## Getting started
 
 ### Prerequisites
@@ -134,10 +146,9 @@ cargo generate --git https://github.com/cochbild/charis-ui templates/ide-shell -
   theming, widgets, docking, menus, windows, accessibility, testing and performance. To read it
   as a website, run `mdbook serve book`.
 - **The API reference:** run `cargo doc --open`. Every public item is documented.
-- **More:** [architecture](docs/ARCHITECTURE.md), [customizing](docs/CUSTOMIZING.md),
-  [performance](docs/PERFORMANCE.md), [coming from iced](docs/FROM_ICED.md), the
-  [roadmap](docs/ROADMAP.md), the [versioning policy](docs/SEMVER.md) and the
-  [changelog](CHANGELOG.md).
+- **More:** [architecture](docs/ARCHITECTURE.md), [performance](docs/PERFORMANCE.md),
+  [coming from iced](docs/FROM_ICED.md), the [roadmap](docs/ROADMAP.md), the
+  [versioning policy](docs/SEMVER.md) and the [changelog](CHANGELOG.md).
 
 ## Status
 

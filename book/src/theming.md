@@ -90,10 +90,30 @@ let t = Theme::dark()
 # let _ = t;
 ```
 
-Built-in widgets tag themselves: `button` plus `button-primary` (or `-secondary`, `-ghost`,
-`-danger`), `input`, `checkbox`, `switch`, `card`, `tab`, `tab-active`, `tree-row`,
-`table-row`, `menu-item`, `modal`, `titlebar`, `status-bar` and more (the full list is in
-`docs/CUSTOMIZING.md`). Tag your own elements with `.class("sidebar")`.
+Built-in widgets tag themselves with these classes:
+
+| Widget | Classes |
+|---|---|
+| Buttons | `button`, plus one of `button-primary`, `button-secondary`, `button-ghost`, `button-danger` |
+| Icon button | `icon-button` |
+| Text input, search | `input`, `search-input` |
+| Text area | `input`, `text-area` |
+| Checkbox | `checkbox`, and on its box `checkbox-box`, `checkbox-box-checked` |
+| Switch | `switch`, `switch-on`, and `switch-thumb` on the knob |
+| Slider, progress | `slider`, `progress` |
+| Badge, tag, kbd, avatar | `badge`, `tag`, `kbd`, `avatar` |
+| Card, separator, section header | `card`, `separator`, `section-header` |
+| Tree and list rows | `tree-row`, `tree-row-selected`, `list-item` |
+| Tabs | `tab-bar`, `tab`, `tab-active` |
+| Segmented control, swatches | `segmented`, `segmented-item`, `segmented-item-active`, `color-swatch` |
+| Menus | `menu`, `menu-item`, `menu-bar`, `menu-bar-item` |
+| Dialog | `modal` |
+| Status bar | `status-bar`, `status-item` |
+| Window chrome | `titlebar`, `window-controls` |
+| Table | `table`, `table-header`, `table-header-cell`, `table-row`, `table-row-selected`, `table-cell` |
+
+Tag your own elements with `.class("sidebar")` and define `sidebar` in the theme. Unknown class
+names do nothing, so it's safe to tag elements before any theme defines them.
 
 Precedence works like CSS:
 
@@ -102,6 +122,16 @@ Precedence works like CSS:
 3. then whatever the app chains on that element.
 
 So `primary_button("Go").px(4.0)` stays narrow even under the `pill().px(18.0)` class above.
+
+A few rules:
+
+- Class functions can read tokens with `theme()` and set state styles (`hover`, `active`,
+  `focus_style`, `disabled_style`). Children they add are ignored.
+- Changing knobs with `with_accent`, `with_dark` and so on keeps the classes.
+- Classes cost nothing when a theme defines none, and one lookup per tagged element otherwise.
+
+The `chat` example's **Style** setting (Default, Pill, Sharp, Flat) is a few lines of classes per
+preset: see `StylePreset::apply` in `examples/chat.rs`.
 
 ## Stylesheets
 

@@ -6,62 +6,10 @@ All notable changes to Charis are listed here. The format follows
 
 ## [Unreleased]
 
-### Breaking
-
-- The framework is now called **Charis**: the crate is `charis-ui` (`use charis_ui::…` instead
-  of `use rust_ui::…`), and the environment variables are `CHARIS_PROFILE`, `CHARIS_RENDERER`,
-  `CHARIS_NO_DAMAGE`, `CHARIS_DARK`, `CHARIS_HIGH_CONTRAST`, `CHARIS_REDUCED_MOTION` and
-  `CHARIS_DEBUG_EVENTS` (were `RUI_…`). A project can keep its code unchanged (still
-  `rust_ui::…`) by naming the dependency `rust-ui = { package = "charis-ui", … }`.
-- `#[non_exhaustive]` on enums that will grow: `Event`, `WindowRequest`, `ClipboardContent`,
-  `ChromeHit`, `MouseButton`, `Key`, `WindowControl`, `Role`, `Icon`, `Cursor`, `FontFamily`,
-  `Fit`, `ImageSource`, `Backdrop`, `Damage`, `DialogKind`, `Easing`, `Accent`, `GrayTint`,
-  `ButtonKind`, `TreeEvent` and `DropZone`. A `match` on these needs a `_` arm.
-- The `edit` module (text-editing helpers used by the text widgets) is now private, and the
-  `cpu` module is hidden from the docs. Neither had documented uses outside the crate.
-
-### Added
-
-- `WindowOptions::resizable`.
-- A versioning policy (`docs/SEMVER.md`), `CONTRIBUTING.md`, this changelog and a code of
-  conduct.
-- The book (`book/`), whose examples run as doc tests, and docs on every public item
-  (`#![warn(missing_docs)]`).
-- A widget gallery (`cargo run --example gallery`) and `cargo generate` templates for an IDE
-  shell and a settings app (`templates/`).
-- `Runtime::accessibility_update` and `Runtime::reset_accessibility`: incremental accessibility
-  updates. The window now sends screen readers only the nodes that changed.
-- `HeadlessApp::drag_to_window`, for testing drags between windows without screen positions.
-- `WGPU_ADAPTER_NAME` picks the GPU adapter (falls back to the default if none matches).
-- `examples/editor.rs` (large files), a clipboard-image section in the gallery, and
-  `--native-menu` in the dock example.
-- `docs/qa/HOME_TEST_PLAN.md`: the Windows 11 and WSL test plan.
-
-### Changed
-
-- The `CHARIS_PROFILE=1` renderer line (and `GpuRenderer::adapter_name`) names the backend too,
-  for example `NVIDIA GeForce RTX 5080 (Vulkan)`.
-- `text_area` handles large documents: text is laid out by paragraph and only what's visible,
-  at the caret or hit-tested is shaped. A 100k-line file opens in about 20 ms and edits in a few
-  milliseconds per keystroke (it used to run out of memory).
-- Undo history stores edits instead of copies of the text.
-- A multi-line input follows its caret only when the caret moves, so the mouse wheel can scroll
-  away from it.
-
-### Fixed
-
-- With the bundled fonts, a system-installed Inter of another version no longer replaces the
-  bundled one (it changed text metrics and broke the golden tests on Windows).
-- Bold, italic and links inside tight Markdown list items (`- **bold** item`) were dropped.
-- Dropping a dock tab onto another window didn't work on Wayland.
-- Projects depending on Charis from git printed `invalid character '{' in package name`
-  errors: the template manifests are now `Cargo.toml.liquid` (cargo-generate 0.23 or newer
-  turns them back into `Cargo.toml`).
-
 ## [0.1.0] - unreleased snapshot
 
-This is the first version, developed ahead of a public release. The list below groups what it
-contains.
+The first version, ahead of a public release. It started as an internal prototype called
+`rust-ui`. The list below groups what it contains.
 
 ### Core
 
@@ -76,6 +24,7 @@ contains.
 - A hot-reloadable stylesheet layer (`stylesheet` module, `WindowOptions::stylesheet`).
 - Components with their own state (`Component`, `stateful`) and memoized subtrees (`lazy`).
 - Incremental layout, a text shaping cache, and CPU damage tracking.
+- `#[non_exhaustive]` on enums that will grow; see `docs/SEMVER.md`.
 - Async tasks (`cx.spawn`, `cx.spawn_blocking`, optional tokio), streams and subscriptions.
 
 ### Rendering
@@ -87,7 +36,8 @@ contains.
 
 ### Widgets
 
-- About 30 widgets: buttons, text inputs, `text_area` (undo/redo), checkboxes, switches,
+- About 30 widgets: buttons, text inputs, `text_area` (undo/redo, fast on documents of
+  100,000 lines or more), checkboxes, switches,
   sliders, radio groups, number inputs, `pick_list`, `combo_box`, progress bars, tabs, tooltips,
   modals, menus and context menus, markdown, rich selectable text, images.
 - Virtualized `virtual_list`, `table` (sortable, resizable columns, selection) and `tree`.
@@ -118,3 +68,13 @@ contains.
 - `Headless` test harness with PNG screenshots, golden screenshot tests and a GPU parity test.
 - An element inspector (F12 in debug builds).
 - Frame budget benchmarks (`cargo bench --bench frames`).
+- `CHARIS_PROFILE=1` prints the renderer, GPU and backend, and per-frame timings;
+  `WGPU_ADAPTER_NAME` picks the GPU adapter.
+
+### Documentation
+
+- The Charis Book (`book/`), whose examples run as doc tests, and docs on every public item.
+- Examples, including a widget gallery, and `cargo generate` templates for an IDE shell and a
+  settings app (`templates/`).
+- A versioning policy, contributing guide, code of conduct, and manual QA checklists
+  (`docs/qa/`).

@@ -702,7 +702,7 @@ impl Theme {
     }
 
     /// Add a style class. Built-in widgets use these names (see
-    /// `docs/CUSTOMIZING.md` for the full list): `button`, `button-primary`,
+    /// the book's Theming chapter for the full list): `button`, `button-primary`,
     /// `button-secondary`, `button-ghost`, `button-danger`, `icon-button`,
     /// `input`, `text-area`, `checkbox`, `switch`, `slider`, `progress`,
     /// `badge`, `tag`, `card`, `tab`, `tab-active`, `menu`, `menu-item`,

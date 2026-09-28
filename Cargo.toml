@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "A web-inspired, highly customizable retained/declarative UI framework for Rust desktop apps"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/cochbild/charis-ui"
 rust-version = "1.89"
 readme = "README.md"
 keywords = ["gui", "ui", "desktop", "docking", "widgets"]
 categories = ["gui"]
-exclude = ["docs/*.png", "tests/golden/*", "templates/*", "book/book"]
+exclude = [".github", "docs/*.png", "docs/qa", "tests/golden/*", "templates/*", "book/book"]
 
 [lib]
 name = "charis_ui"

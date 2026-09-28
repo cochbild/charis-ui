@@ -33,8 +33,8 @@ fn theme(&self) -> Theme {
 }
 ```
 
-- `theme()` is called every frame, so settings screens can change knobs live. The lmfast demo's
-  Settings → Appearance screen does this.
+- `theme()` is called every frame, so settings screens can change knobs live. The `chat`
+  example's Settings → Appearance screen does this.
 - Each color becomes a 12-step OKLCH scale (Radix-style), and the semantic palette is derived
   from those scales.
 - Button text on the accent automatically stays readable (WCAG contrast).
@@ -114,8 +114,8 @@ Unknown class names do nothing, so it's safe to tag elements before any theme de
 
 ![Style presets built only from classes](style-presets.png)
 
-The lmfast demo's **Style** setting (Default, Pill, Sharp, Flat) is a few lines of classes per
-preset (`StylePreset::apply` in `examples/lmfast_chat.rs`).
+The `chat` example's **Style** setting (Default, Pill, Sharp, Flat) is a few lines of classes per
+preset (`StylePreset::apply` in `examples/chat.rs`).
 
 ## 4. Instance styling
 

@@ -57,7 +57,7 @@ Run each with `$env:CHARIS_PROFILE=1` and check that it opens, draws and closes 
 - [ ] **W-B3** `cargo run --release --example showcase`.
 - [ ] **W-B4** `cargo run --release --example dock`.
 - [ ] **W-B5** `cargo run --release --example multiwindow`.
-- [ ] **W-B6** `cargo run --release --example lmfast_chat`.
+- [ ] **W-B6** `cargo run --release --example chat`.
 - [ ] **W-B7** `cargo run --release --example editor` **(new)**.
 - [ ] **W-B8** `cargo run --release --example stress` prints frame times.
 - [ ] **W-B9** The renderer line says it uses your GPU through DX12 or Vulkan, not a fallback.
@@ -253,7 +253,7 @@ Run each with `$env:CHARIS_PROFILE=1` and check that it opens, draws and closes 
 - [ ] **W-M3** Alt+1, then expand "generated (100000 files)": wheel, ↓, PageDown and End are
       smooth. Double-clicking a file opens it.
 
-### W-N. File dialogs (`lmfast_chat` example)
+### W-N. File dialogs (`chat` example)
 
 - [ ] **W-N1** "Document" opens the Windows file picker, modal to the window, with its filter.
       Picking two files shows two chips; Cancel changes nothing.
@@ -352,7 +352,7 @@ To choose the display server for a run:
 - [ ] **L-D2 (new)** Gallery ▸ Images ▸ "Copy image", then paste it into Paint. Then take a Windows
       screenshot (Windows+Shift+S) and paste it into the paste box. Note if WSLg doesn't carry
       images across; that would be a WSLg limitation, not ours.
-- [ ] **L-D3** File dialogs (the lmfast_chat "Document" button): a zenity file picker opens, and
+- [ ] **L-D3** File dialogs (the `chat` example's "Document" button): a zenity file picker opens, and
       picking files works.
 - [ ] **L-D4** Preferences overrides:
       - `CHARIS_DARK=0 cargo run --release --example gallery` starts light;

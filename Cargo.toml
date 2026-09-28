@@ -113,5 +113,5 @@ name = "multiwindow"
 required-features = ["window"]
 
 [[example]]
-name = "lmfast_chat"
+name = "chat"
 required-features = ["window", "markdown"]

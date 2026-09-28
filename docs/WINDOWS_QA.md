@@ -50,7 +50,7 @@ Set `$env:CHARIS_PROFILE=1` to print the renderer and adapter in use.
       type ("Save, button"; "Remember me, check box, not checked").
 - [ ] Pressing Space or Enter (or Narrator's Caps Lock+Enter) activates the focused button or
       checkbox, and the new state is announced.
-- [ ] In the lmfast demo's Settings screen, the accent swatches read as radio buttons, and the
+- [ ] In the `chat` example's Settings screen, the accent swatches read as radio buttons, and the
       corner-radius slider announces its value and changes with the arrow keys.
 - [ ] Narrator's scan mode (Caps Lock+Space) can move through headings and text in a chat reply.
 - [ ] Accessibility Insights for Windows (optional) shows the tree with sensible names and no
@@ -58,7 +58,7 @@ Set `$env:CHARIS_PROFILE=1` to print the renderer and adapter in use.
 
 **High contrast and reduced motion**
 - [ ] Turn on a contrast theme (Settings → Accessibility → Contrast themes → Aquatic), then switch
-      back to the lmfast demo: it starts (or, after refocusing, reports) high contrast. Settings →
+      back to the `chat` example: it starts (or, after refocusing, reports) high contrast. Settings →
       Appearance → Contrast → High looks the same.
 - [ ] Turn off Settings → Accessibility → Visual effects → Animation effects, then refocus the
       demo: wheel scrolling jumps instead of gliding, and collapsing a sidebar is instant. Hover
@@ -124,7 +124,7 @@ Set `$env:CHARIS_PROFILE=1` to print the renderer and adapter in use.
       the keyboard (↓, PageDown, End); it stays smooth. Double-clicking a file opens it in the
       editor group.
 
-**File dialogs** (`cargo run --release --example lmfast_chat --features markdown`)
+**File dialogs** (`cargo run --release --example chat --features markdown`)
 - [ ] "Document" under the message box opens the Windows file picker (modal to the window) with a
       "Documents" filter; picking two files shows two chips; ✕ removes one; Cancel changes nothing.
 

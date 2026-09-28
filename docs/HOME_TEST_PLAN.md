@@ -367,7 +367,7 @@ To choose the display server for a run:
 - **Native IME:** WSLg doesn't carry Windows' IME into Linux apps. You'd need ibus or fcitx
   inside WSL; this is optional.
 - **GNOME settings detection** (theme, contrast, animations): there's no GNOME session; use the
-  `RUI_*` overrides in L-D4.
+  `CHARIS_*` overrides in L-D4.
 - **Real multi-monitor placement.**
 
 These need a real Linux desktop later (see `docs/MAC_LINUX_QA.md`).

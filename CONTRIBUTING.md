@@ -91,7 +91,7 @@ cargo clippy --all-features --target aarch64-apple-darwin -- -D warnings
 - Add a line to the `Unreleased` section of `CHANGELOG.md` for anything a user would notice. List
   breaking changes under **Breaking**, with what to change.
 - A change to rendering, input or windows should say which platforms you tried it on. The QA
-  checklists are in `docs/WINDOWS_QA.md` and `docs/MAC_LINUX_QA.md`.
+  checklists are in `docs/qa/`.
 
 ## Reporting bugs
 

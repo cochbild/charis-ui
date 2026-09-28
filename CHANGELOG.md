@@ -35,7 +35,7 @@ All notable changes to Charis are listed here. The format follows
 - `WGPU_ADAPTER_NAME` picks the GPU adapter (falls back to the default if none matches).
 - `examples/editor.rs` (large files), a clipboard-image section in the gallery, and
   `--native-menu` in the dock example.
-- `docs/HOME_TEST_PLAN.md`: the Windows 11 and WSL test plan.
+- `docs/qa/HOME_TEST_PLAN.md`: the Windows 11 and WSL test plan.
 
 ### Changed
 

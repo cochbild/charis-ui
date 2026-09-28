@@ -11,6 +11,10 @@ keywords = ["gui", "ui", "desktop", "docking", "widgets"]
 categories = ["gui"]
 exclude = [".github", "docs/*.png", "docs/qa", "tests/golden/*", "templates/*", "book/book"]
 
+[package.metadata.docs.rs]
+# Document the optional APIs (serde, tokio) too.
+all-features = true
+
 [lib]
 name = "charis_ui"
 

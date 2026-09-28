@@ -86,11 +86,11 @@ cargo run --release --example dock       # drag-and-drop docking
 
 ### Use it in your app
 
-Charis isn't on crates.io yet, so add it from GitHub:
+Add it from [crates.io](https://crates.io/crates/charis-ui):
 
 ```toml
 [dependencies]
-charis-ui = { git = "https://github.com/cochbild/charis-ui" }
+charis-ui = "0.1"
 ```
 
 A complete app is a struct, a message type, and two methods:

@@ -1,7 +1,7 @@
 # Road to a production-grade 1.0
 
-The goal is a framework you can use in all of your own Rust projects, and one the public can adopt
-for production desktop apps. It should offer windowing and panel features that other Rust UI
+The goal is a framework for all of its author's Rust projects, and one the public can adopt for
+production desktop apps. It should offer windowing and panel features that other Rust UI
 frameworks don't provide.
 
 "Production grade" here means five concrete things:
@@ -22,7 +22,7 @@ frameworks don't provide.
 - docking with tear-out windows, tool windows, workspaces, commands and a keymap;
 - native window chrome on Windows, macOS and Linux, menus, file dialogs, the clipboard;
 - accessibility (AccessKit), IME, high contrast and reduced motion;
-- a headless test harness and about 280 tests (golden screenshots, GPU parity, the book's
+- a headless test harness and hundreds of tests (golden screenshots, GPU parity, the book's
   examples, the templates), frame budget benchmarks, the book and full API docs.
 
 **Missing for production:**
@@ -40,8 +40,8 @@ frameworks don't provide.
   UI projects with the same name.
 - **License:** MIT OR Apache-2.0.
 - **Platform priority:** Windows is hardened first.
-- **CI comes last** because CI minutes are limited. Until then, the full test suite (including
-  golden screenshots and GPU parity) runs locally with `cargo test`.
+- **CI comes after platform QA.** Until then, the full test suite (including golden screenshots
+  and GPU parity) runs locally with `cargo test`.
 
 ## Milestones
 
@@ -67,7 +67,8 @@ final name.
 
 ### M1: Platform correctness
 
-- [x] Windows (implemented; awaiting QA on real hardware, see `docs/qa/WINDOWS_QA.md`):
+- [x] Windows (automated suite passes on Windows 11; manual QA in progress, see
+  `docs/qa/HOME_TEST_PLAN.md`):
   - DWM frameless window with snap layouts and Aero shake;
   - hit testing for the custom title bar (maximize-button hover shows the Snap Layouts flyout);
   - rounded corners and shadow on Windows 11;
@@ -107,7 +108,7 @@ Real apps need these before they need more widgets. iced has them; see `docs/FRO
       `menubar()` in-window with submenus, native menu bar via muda on macOS (default, with the
       standard app menu) and Windows (opt-in). Linux has no native menu (GTK-free build).
 
-**Exit:** one of your own apps (currently built with iced) ported with no loss of function.
+**Exit:** one of the author's own apps (previously built with iced) ported with no loss of function.
 
 ### M2: Text and input
 
@@ -180,8 +181,8 @@ systems; a 100k-line file scrolls at 120fps.
   a floating window re-docks its tabs. Verified end to end under Xvfb with real OS windows.
   On Wayland (no window positions) a release over another window is handed to that window when
   the compositor reports the pointer there, so drops between windows work without previews;
-  where a torn-out window opens is up to the compositor (tested headlessly; no Wayland session
-  in this container).
+  where a torn-out window opens is up to the compositor (covered by headless tests and the WSL
+  checklist).
 - [x] Auto-hide (unpinned) panels that slide over the content, plus side "stripes" (JetBrains
       style): `ToolWindows` with pinned/auto-hide modes, one per edge, resizable, Escape and
       outside click hide, reduced-motion aware.
@@ -206,8 +207,8 @@ a restart.
 - [x] API review: consistent naming (`set_*` for runtime changes, `with_*` for theme builders,
       `on_*` for handlers); `#[non_exhaustive]` on the enums that will grow; internal modules
       private or hidden; the semver policy in `docs/SEMVER.md`.
-- [x] A book (`book/`, mdBook: guide, app model, layout, styling, theming, panels, commands,
-      windows, testing, performance; its examples run as doc tests) and rustdoc on every public
+- [x] A book (`book/`, mdBook: guide, app model, layout, styling, theming, widgets, panels,
+      commands, windows, accessibility, testing, performance; its examples run as doc tests) and rustdoc on every public
       item (`#![warn(missing_docs)]`, `cargo doc` clean with `-D warnings`), with examples on
       the main entry points. Publishing it as a site comes with CI.
 - [x] Optional hot-reloadable stylesheet layer (`stylesheet` module: CSS-like rules on style
@@ -217,7 +218,7 @@ a restart.
 - [x] Widget gallery app (`examples/gallery.rs`: every widget on its own page, live theme
       knobs) and `cargo generate` templates for an IDE shell and a settings app
       (`templates/`), both compiled and tested with the crate.
-- [ ] Two real applications built on it: your projects are the proving ground.
+- [ ] Two real applications built on it: the author's own projects are the proving ground.
 
 **Exit:** 1.0 with a semver guarantee.
 
@@ -226,5 +227,4 @@ a restart.
 - **Every feature ships with:** a headless test, an entry in the showcase or gallery, and docs.
 - **Fidelity:** CPU and GPU output must stay within the parity tolerance, and golden screenshots
   change only on purpose.
-- **Platform bugs:** found through QA on real hardware; this repo's container only covers Linux
-  (with a software GPU driver).
+- **Platform bugs:** found through QA on real hardware, using the checklists in `docs/qa/`.

@@ -1,15 +1,15 @@
 # Coming from iced
 
-iced is where this framework's author started: the app worked, but it looked plain and was hard to
+iced is where Charis's author started: the app worked, but it looked plain and was hard to
 style. This page covers:
 - why iced apps tend to look that way;
-- how this framework addresses each cause;
-- how iced concepts map to this framework;
-- what iced still has that this framework doesn't.
+- how Charis addresses each cause;
+- how iced concepts map to Charis;
+- what iced still has that Charis doesn't.
 
 ## Why iced apps tend to look "off"
 
-| iced (0.14) | Effect | This framework |
+| iced (0.14) | Effect | Charis |
 |---|---|---|
 | Theme = `Palette` of a few base colors plus an auto-derived extended palette | Few tones to work with; everything looks flat and similar | 12-step OKLCH scales and semantic roles (surface, panel, elevated, border, text_muted…), plus knobs for accent, gray tint, radius, density and scaling |
 | Styling via per-widget `style(|theme, status| Style { … })` closures | Every custom look is verbose, and hover/pressed states must be written by hand for each widget | CSS-like builders: `.bg()`, `.border()`, `.rounded()`, `.shadow()`, `.hover(|s| …)`, `.active(…)`, `.focus_style(…)`, with automatic transitions |
@@ -22,7 +22,7 @@ style. This page covers:
 
 ## Concept map
 
-| iced | This framework |
+| iced | Charis |
 |---|---|
 | `iced::application(boot, update, view).run()` | `charis_ui::run(app, WindowOptions::new("Title"))` with `impl App for MyApp` |
 | `fn update(&mut self, msg) -> Task<Message>` | `fn update(&mut self, msg, cx: &mut Cx)`; effects go through `cx` |
@@ -52,7 +52,7 @@ style. This page covers:
 | `lazy(deps, \|deps\| view)` (the closure can't borrow the app) | `lazy(key, deps, \|\| view)`: the closure can borrow `&self`, and layout is reused too |
 | `canvas` / `Program` | `canvas(|cv, rect| …)` |
 
-## What iced has that this framework doesn't
+## What iced has that Charis doesn't
 
 Async tasks, subscriptions, multiple windows, pick lists, combo boxes, radio buttons, images and
 SVGs, markdown, tables and headless testing have all landed (see the concept map above and the

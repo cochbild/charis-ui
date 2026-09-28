@@ -18,8 +18,8 @@ for anyone curious about the internals.
    measured by [cosmic-text].
 4. **Record.** The frame is recorded once into a display list (`scene`): rectangles, borders,
    shadows, glyph runs, paths and images, with clips and layers.
-5. **Draw.** A backend turns the display list into pixels: the GPU backend by default, or the
-   CPU backend as a fallback and in tests.
+5. **Draw.** A renderer turns the display list into pixels: the GPU renderer by default, or the
+   CPU renderer as a fallback and in tests.
 6. **Events.** Input from winit (or from a headless test) is hit-tested against the laid-out
    tree, routed to handlers, and turned into the app's messages. `update` runs, and the cycle
    starts again.
@@ -34,8 +34,8 @@ for anyone curious about the internals.
 | Layout (flexbox and grid) | [taffy] |
 | Text shaping and rasterization | `text`, `text_doc` ([cosmic-text] and swash, with Inter bundled) |
 | Display list | `scene`, `paint` (the `canvas` API records into it) |
-| GPU backend (default) | `gpu`, `gpu.wgsl`: wgpu |
-| CPU backend (fallback, tests) | `cpu`, `damage`: [tiny-skia] |
+| GPU renderer (default) | `gpu`, `gpu.wgsl`: wgpu |
+| CPU renderer (fallback, tests) | `cpu`, `damage`: [tiny-skia] |
 | Theme and styling | `theme`, `color`, `stylesheet` |
 | Commands, menus and key bindings | `commands`, `menu`, `native_menu` |
 | Accessibility | `semantics`, `runtime::a11y` ([AccessKit]) |
@@ -47,24 +47,24 @@ for anyone curious about the internals.
 
 **GPU.** The whole frame is one instanced draw call. Rounded rectangles and borders are signed
 distance fields, shadows are analytic Gaussian blurs, and glyphs and paths come from texture
-atlases. The GPU backend is used when wgpu finds an adapter: Vulkan, Metal, DX12 or GL.
+atlases. The GPU renderer is used when wgpu finds an adapter: Vulkan, Metal, DX12 or GL.
 
 **CPU.** tiny-skia draws the same display list, with bounded scratch buffers for clips and
 layers. It redraws only the parts of the window that changed (damage tracking) and presents
 just those regions. Set `CHARIS_NO_DAMAGE=1` to force full redraws when debugging.
 
-**Choosing one.** Set `CHARIS_RENDERER=cpu` to force the CPU backend, or build without the
+**Choosing one.** Set `CHARIS_RENDERER=cpu` to force the CPU renderer, or build without the
 `gpu` feature. `WGPU_ADAPTER_NAME` picks a specific adapter by name. `CHARIS_PROFILE=1` prints
 the chosen adapter and backend at startup, followed by per-frame timings.
 
-**Parity.** A test renders the same frame on both backends and fails if they differ by more
-than a small tolerance, so the CPU backend stays a faithful reference.
+**Parity.** A test renders the same frame on both renderers and fails if they differ by more
+than a small tolerance, so the CPU renderer stays a faithful reference.
 
 ## Text quality
 
 Glyph coverage gets DirectWrite-style contrast enhancement and gamma correction, the approach
 Windows Terminal and Zed use to match browser and native text. Baselines snap to the pixel
-grid. Both backends apply the same correction.
+grid. Both renderers apply the same correction.
 
 Large documents in `text_area` are split into paragraphs. Only the paragraphs that are visible,
 under the caret or being hit-tested are shaped, so a 100,000-line document opens in tens of
@@ -72,11 +72,10 @@ milliseconds and edits stay fast.
 
 ## Performance
 
-On the CPU backend, a full 1440×900 IDE frame (about 600 elements) takes about 10 ms at 1× and
-about 20 ms at 2× on one core. On the GPU backend, the CPU side of a frame is layout (about
-5 ms) plus recording (about 0.4 ms), and the GPU draws everything in one call. Unchanged frames
-and small changes cost far less, because layout is incremental and damage tracking limits
-redraws.
+An unchanged frame of the showcase app costs under a millisecond of CPU time, and a full redraw
+on the CPU renderer about 6 ms. On the GPU renderer, the CPU side of a frame is view, layout and
+recording, and the GPU draws everything in one call. Small changes cost little, because layout
+is incremental and damage tracking limits redraws.
 
 `cargo bench --bench frames` measures frame times for typical scenarios against their budgets.
 [PERFORMANCE.md](PERFORMANCE.md) has the numbers and guidelines for keeping apps fast.

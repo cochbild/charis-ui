@@ -15,7 +15,7 @@ To report a security vulnerability, please contact **Dale Cochran** via [GitHub]
 
 Include as much of the following information as possible:
 
-- Type of issue (e.g. buffer overflow, SQL injection, XSS)
+- Type of issue (e.g. a crash or memory-safety issue from a malformed image, SVG or stylesheet)
 - Full paths of source file(s) related to the issue
 - Location of the affected source code (tag/branch/commit or direct URL)
 - Any special configuration required to reproduce the issue

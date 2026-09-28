@@ -2,7 +2,7 @@
 
 Measured with `cargo run --release --example stress`. That benchmark is the worst case: N rows of
 mixed widgets (icon, text, badge, button) with no virtualization. Frame times are CPU time on
-the build container, not a fast desktop.
+a modest Linux VM without a GPU, not a fast desktop.
 
 | Elements | Unchanged frame (hover, scroll, animation) | Every row's text changed |
 |---|---|---|
@@ -16,7 +16,7 @@ because only the rows near the viewport exist.
 ## Frame budgets
 
 `cargo bench --bench frames` measures CPU time per frame against the roadmap's budgets (release
-build, this container's CPU; `-- --json out.json` writes the numbers for tracking). "scene" is
+build, the same Linux VM; `-- --json out.json` writes the numbers for tracking). "scene" is
 the work the GPU backend needs (view, layout, paint recording); "cpu" adds rasterizing on the CPU
 backend.
 

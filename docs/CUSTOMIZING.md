@@ -33,7 +33,7 @@ fn theme(&self) -> Theme {
 }
 ```
 
-- `theme()` is called every frame, so settings screens can change knobs live. The `chat`
+- `App::theme` is called every frame, so settings screens can change knobs live. The `chat`
   example's Settings → Appearance screen does this.
 - Each color becomes a 12-step OKLCH scale (Radix-style), and the semantic palette is derived
   from those scales.
